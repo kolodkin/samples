@@ -3,14 +3,18 @@
 
 import os
 import clickhouse_connect
+from rich.console import Console
+from rich.table import Table
 
 
-def timed(client, query, label):
-    """Execute a query and return (result, elapsed_seconds) using ClickHouse server timing."""
-    result = client.query(query)
-    elapsed = int(result.summary.get("elapsed_ns", 0)) / 1e9
-    print(f"  {label}: {elapsed:.4f}s")
-    return result, elapsed
+NUM_ROWS = 10_000_000
+
+console = Console()
+
+
+def elapsed_s(result):
+    """Extract server-side elapsed seconds from a query result."""
+    return int(result.summary.get("elapsed_ns", 0)) / 1e9
 
 
 def main():
@@ -26,7 +30,7 @@ def main():
     client.command("DROP TABLE IF EXISTS events_lc")
 
     # --- Create tables ---
-    print("Creating tables...")
+    console.print("Creating tables...")
 
     client.command("""
         CREATE TABLE events_string (
@@ -44,73 +48,82 @@ def main():
         ) ENGINE = MergeTree() ORDER BY id
     """)
 
-    # --- Insert 1M rows ---
-    print("\nInserting 1M rows...")
+    # --- Insert rows ---
+    console.print(f"Inserting {NUM_ROWS:,} rows...")
 
-    _, t_insert_string = timed(client, """
+    r = client.query(f"""
         INSERT INTO events_string
-        SELECT
-            number,
+        SELECT number,
             ['active', 'inactive', 'pending', 'banned', 'deleted'][number % 5 + 1],
             now()
-        FROM numbers(1000000)
-    """, "events_string (String)")
+        FROM numbers({NUM_ROWS})
+    """)
+    t_insert_string = elapsed_s(r)
 
-    _, t_insert_lc = timed(client, """
+    r = client.query(f"""
         INSERT INTO events_lc
-        SELECT
-            number,
+        SELECT number,
             ['active', 'inactive', 'pending', 'banned', 'deleted'][number % 5 + 1],
             now()
-        FROM numbers(1000000)
-    """, "events_lc (LowCardinality)")
+        FROM numbers({NUM_ROWS})
+    """)
+    t_insert_lc = elapsed_s(r)
 
-    # --- Storage comparison ---
-    print("\nStorage comparison:")
-    result, _ = timed(client, """
+    # --- Storage ---
+    console.print("Measuring storage...")
+    storage = client.query("""
         SELECT
             table,
             formatReadableSize(sum(data_compressed_bytes)) AS compressed,
-            formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed,
-            count() AS parts
+            formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed
         FROM system.parts
         WHERE table IN ('events_string', 'events_lc') AND active
         GROUP BY table
-    """, "storage query")
+        ORDER BY table
+    """)
+    storage_by_table = {row[0]: (row[1], row[2]) for row in storage.result_rows}
 
-    print(f"\n  {'Table':<20} {'Compressed':<15} {'Uncompressed':<15} {'Parts':<6}")
-    print(f"  {'-'*56}")
-    for row in result.result_rows:
-        print(f"  {row[0]:<20} {row[1]:<15} {row[2]:<15} {row[3]:<6}")
-
-    # --- Query performance comparison ---
-    queries = [
+    # --- Query performance ---
+    console.print("Running queries...")
+    bench_queries = [
         ("COUNT with filter", "SELECT count() FROM {table} WHERE status = 'active'"),
         ("GROUP BY",          "SELECT status, count() FROM {table} GROUP BY status"),
         ("DISTINCT",          "SELECT DISTINCT status FROM {table}"),
     ]
 
-    print("\n\nQuery performance (each run 3 times, showing average):")
-    print(f"  {'Query':<25} {'String':<12} {'LowCard':<12} {'Speedup':<10}")
-    print(f"  {'-'*59}")
+    # Build results table
+    table = Table(title=f"String vs LowCardinality(String) — {NUM_ROWS:,} rows")
+    table.add_column("Metric", style="bold")
+    table.add_column("String", justify="right")
+    table.add_column("LowCardinality", justify="right")
+    table.add_column("Speedup", justify="right", style="green")
 
-    for label, query_tpl in queries:
+    # Insert row
+    speedup = t_insert_string / t_insert_lc if t_insert_lc > 0 else float("inf")
+    table.add_row("INSERT", f"{t_insert_string:.4f}s", f"{t_insert_lc:.4f}s", f"{speedup:.2f}x")
+
+    # Query rows
+    for label, query_tpl in bench_queries:
         times = {"events_string": [], "events_lc": []}
-        for table in ("events_string", "events_lc"):
-            q = query_tpl.format(table=table)
+        for tbl in ("events_string", "events_lc"):
+            q = query_tpl.format(table=tbl)
             for _ in range(3):
                 r = client.query(q)
-                elapsed = int(r.summary.get("elapsed_ns", 0)) / 1e9
-                times[table].append(elapsed)
+                times[tbl].append(elapsed_s(r))
 
         avg_s = sum(times["events_string"]) / 3
         avg_lc = sum(times["events_lc"]) / 3
         speedup = avg_s / avg_lc if avg_lc > 0 else float("inf")
-        print(f"  {label:<25} {avg_s:.4f}s      {avg_lc:.4f}s      {speedup:.2f}x")
+        table.add_row(label, f"{avg_s:.4f}s", f"{avg_lc:.4f}s", f"{speedup:.2f}x")
 
-    # --- Summary ---
-    print(f"\n\nInsert timing: String={t_insert_string:.4f}s, LowCardinality={t_insert_lc:.4f}s")
-    print("Done.")
+    # Storage rows
+    table.add_section()
+    for tbl_key, tbl_label in [("events_lc", "LowCardinality"), ("events_string", "String")]:
+        compressed, uncompressed = storage_by_table.get(tbl_key, ("?", "?"))
+        table.add_row(f"Storage ({tbl_label})", compressed, uncompressed, "")
+
+    console.print()
+    console.print(table)
 
     # Cleanup
     client.command("DROP TABLE IF EXISTS events_string")
