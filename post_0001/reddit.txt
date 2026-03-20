@@ -16,15 +16,19 @@ CREATE TABLE events (
 
 | Metric | UInt64 (Snowflake) | UUID | String |
 |---|---|---|---|
-| **INSERT** | 4.20s | 5.24s (1.25x) | 6.34s (1.51x) |
-| **JOIN** | 0.75s | 0.93s (1.25x) | 1.56s (2.09x) |
-| **GROUP BY** | 0.51s | 0.69s (1.37x) | 1.75s (3.45x) |
-| **Compressed storage** | 421 MiB | 498 MiB | 587 MiB |
-| **Uncompressed storage** | 572 MiB | 725 MiB | 1.23 GiB |
+| **INSERT** | 0.31s | 0.55s (1.78x) | 1.12s (3.62x) |
+| **Point lookup** | 0.0015s | 0.0016s (~1x) | 0.0016s (~1x) |
+| **Range scan** | 0.0035s | 0.0028s (0.79x) | 0.0028s (0.79x) |
+| **ORDER BY** | 0.0020s | 0.0021s (~1x) | 0.0030s (1.53x) |
+| **GROUP BY** | 0.39s | 0.32s (0.81x) | 0.31s (0.80x) |
+| **Compressed** | 115 MiB | 153 MiB | 197 MiB |
+| **Uncompressed** | 153 MiB | 229 MiB | 496 MiB |
 
-Simple lookups (point, range, IN) are comparable across all three.
-The pain shows up in aggregations and storage — String is dramatically worse for GROUP BY and uses significantly more uncompressed space.
-UUID is a reasonable middle ground, but if your IDs are already 64-bit integers, UInt64 is the clear winner. ([docs](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint))
+UInt64 wins decisively on **INSERT** and **storage**.
+But UUID actually edges out UInt64 on **range scans** and **GROUP BY** — likely due to how ClickHouse handles 128-bit types internally.
+Point lookups and IN queries are a wash across all three.
+String is the clear loser: slowest writes, largest storage, and worst ORDER BY.
+If your IDs are already 64-bit integers, UInt64 is still the best overall choice. ([docs](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint))
 ```sql
 CREATE TABLE events (
     id UInt64,
