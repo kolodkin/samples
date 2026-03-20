@@ -116,14 +116,20 @@ def main():
         speedup = avg_s / avg_lc if avg_lc > 0 else float("inf")
         table.add_row(label, f"{avg_s:.4f}s", f"{avg_lc:.4f}s", f"{speedup:.2f}x")
 
-    # Storage rows
-    table.add_section()
-    for tbl_key, tbl_label in [("events_lc", "LowCardinality"), ("events_string", "String")]:
-        compressed, uncompressed = storage_by_table.get(tbl_key, ("?", "?"))
-        table.add_row(f"Storage ({tbl_label})", compressed, uncompressed, "")
-
     console.print()
     console.print(table)
+
+    # Storage table
+    st = Table(title="Storage")
+    st.add_column("Table", style="bold")
+    st.add_column("Compressed", justify="right")
+    st.add_column("Uncompressed", justify="right")
+    for tbl_key in ("events_string", "events_lc"):
+        compressed, uncompressed = storage_by_table.get(tbl_key, ("?", "?"))
+        st.add_row(tbl_key, compressed, uncompressed)
+
+    console.print()
+    console.print(st)
 
     # Cleanup
     client.command("DROP TABLE IF EXISTS events_string")
