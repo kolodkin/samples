@@ -13,19 +13,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v4
 
       - name: Install dependencies
-        run: pip install clickhouse-connect rich
+        run: uv sync
 
       - name: Start ClickHouse
         run: bash infra/setup-ch
 
       - name: Run LowCardinality benchmark
         run: |
-          python post_0001/clickhouse_lowcardinality_benchmark.py | tee /tmp/lc_bench.txt
+          uv run python post_0001/clickhouse_lowcardinality_benchmark.py | tee /tmp/lc_bench.txt
           echo '## LowCardinality(String) Benchmark' >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           cat /tmp/lc_bench.txt >> "$GITHUB_STEP_SUMMARY"
@@ -33,7 +31,7 @@ jobs:
 
       - name: Run Snowflake ID benchmark
         run: |
-          python post_0001/clickhouse_snowflake_id_benchmark.py | tee /tmp/sf_bench.txt
+          uv run python post_0001/clickhouse_snowflake_id_benchmark.py | tee /tmp/sf_bench.txt
           echo '## Snowflake ID Benchmark' >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           cat /tmp/sf_bench.txt >> "$GITHUB_STEP_SUMMARY"
