@@ -15,7 +15,10 @@ BENCH_QUERIES = [
     ("ORDER BY",     "SELECT id FROM {table} ORDER BY id DESC LIMIT 100"),
     ("IN (5 vals)",  "SELECT * FROM {table} WHERE id IN ({in_list})"),
     ("GROUP BY val", "SELECT value, count() FROM {table} GROUP BY value"),
+    ("JOIN",         "SELECT count() FROM {table} a JOIN {lookup} b ON a.id = b.id"),
 ]
+
+LOOKUP_SIZE = 100_000
 
 COL_DEFS = {
     "uint64": {"id_type": "UInt64", "id_default": "generateSnowflakeID()"},
@@ -61,6 +64,23 @@ def run_bench(client):
         """)
         insert_times[key] = elapsed_s(r)
 
+    # Create lookup tables for JOIN benchmark
+    lookups = {}
+    for key, tbl in tables.items():
+        lookup = f"{tbl}_lookup"
+        lookups[key] = lookup
+        defs = COL_DEFS[key]
+        client.command(f"DROP TABLE IF EXISTS {lookup}")
+        client.command(f"""
+            CREATE TABLE {lookup} (
+                id {defs['id_type']}
+            ) ENGINE = MergeTree() ORDER BY id
+        """)
+        client.command(f"""
+            INSERT INTO {lookup}
+            SELECT id FROM {tbl} ORDER BY rand() LIMIT {LOOKUP_SIZE}
+        """)
+
     # Grab sample IDs for parameterised queries
     samples = {}
     for key, tbl in tables.items():
@@ -95,6 +115,7 @@ def run_bench(client):
 
             query = query_tpl.format(
                 table=tbl,
+                lookup=lookups[key],
                 id_expr=q(ids[0]),
                 range_start=q(ids[0]),
                 range_end=q(ids[-1]),
@@ -110,6 +131,8 @@ def run_bench(client):
     # Cleanup
     for tbl in tables.values():
         client.command(f"DROP TABLE IF EXISTS {tbl}")
+    for lookup in lookups.values():
+        client.command(f"DROP TABLE IF EXISTS {lookup}")
 
     return results, storage_by_table
 

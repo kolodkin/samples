@@ -16,8 +16,8 @@ CREATE TABLE events (
 
 UInt64 wins decisively on **INSERT** and **storage** — faster writes and significantly smaller on disk.
 But UUID actually edges out UInt64 on **range scans** and **GROUP BY**.
-Point lookups, ORDER BY, and IN queries are a wash between UInt64 and UUID.
-String is the clear loser across the board: slowest writes, largest storage, and worst ORDER BY.
+Point lookups, JOINs, ORDER BY, and IN queries are a wash between UInt64 and UUID.
+String is the clear loser across the board: slowest writes, largest storage, and worst JOINs and ORDER BY.
 If your IDs are already 64-bit integers, UInt64 is still the best overall choice. ([docs](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint))
 ```sql
 CREATE TABLE events (
