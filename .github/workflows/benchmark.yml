@@ -1,0 +1,48 @@
+name: ClickHouse Benchmarks
+
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    env:
+      CLICKHOUSE_PASSWORD: benchmark
+    services:
+      clickhouse:
+        image: clickhouse/clickhouse-server:latest
+        ports:
+          - 8123:8123
+          - 9000:9000
+        env:
+          CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+          CLICKHOUSE_PASSWORD: benchmark
+        options: >-
+          --health-cmd "clickhouse-client --password benchmark --query 'SELECT 1'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run LowCardinality benchmark
+        run: |
+          uv run python post_0001/clickhouse_lowcardinality_benchmark.py | tee /tmp/lc_bench.txt
+          echo '## LowCardinality(String) Benchmark' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat /tmp/lc_bench.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run Snowflake ID benchmark
+        run: |
+          uv run python post_0001/clickhouse_snowflake_id_benchmark.py | tee /tmp/sf_bench.txt
+          echo '## Snowflake ID Benchmark' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat /tmp/sf_bench.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
