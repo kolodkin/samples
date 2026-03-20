@@ -161,7 +161,9 @@ def main():
         password=os.getenv("CLICKHOUSE_PASSWORD", ""),
     )
 
-    console.print("\n[bold]ID Benchmark: Snowflake (UInt64) vs UUID vs String[/bold]")
+    version = client.command("SELECT version()")
+    console.print(f"\n[bold]ID Benchmark: Snowflake (UInt64) vs UUID vs String[/bold]")
+    console.print(f"  ClickHouse {version}")
     results, storage = run_bench(client)
     print_summary(results, storage)
 
