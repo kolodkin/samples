@@ -16,20 +16,11 @@ jobs:
         ports:
           - 8123:8123
           - 9000:9000
-        env:
-          CLICKHOUSE_USER: default
-          CLICKHOUSE_PASSWORD: clickhouse
-          CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
         options: >-
-          --health-cmd "clickhouse-client --password clickhouse --query 'SELECT 1'"
+          --health-cmd "clickhouse-client --query 'SELECT 1'"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-    env:
-      CLICKHOUSE_HOST: localhost
-      CLICKHOUSE_PORT: 8123
-      CLICKHOUSE_USER: default
-      CLICKHOUSE_PASSWORD: clickhouse
     steps:
       - uses: actions/checkout@v4
 
