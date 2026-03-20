@@ -9,9 +9,6 @@ from rich.table import Table
 NUM_ROWS = 10_000_000
 NUM_RUNS = 10
 
-# Snowflake-like epoch offset (2015-01-01 in ms)
-SNOWFLAKE_EPOCH_MS = 1420070400000
-
 BENCH_QUERIES = [
     ("Point lookup",    "SELECT * FROM {table} WHERE id = {id_expr}"),
     ("Range scan",      "SELECT count() FROM {table} WHERE id > {range_start} AND id < {range_end}"),
@@ -62,14 +59,14 @@ def run_bench(client):
     insert_times = {}
     for key, tbl in tables.items():
         if key == "uint64":
-            id_expr = f"bitShiftLeft(toUInt64({SNOWFLAKE_EPOCH_MS} + number), 22) + number % 4096"
-            user_id_expr = f"bitShiftLeft(toUInt64({SNOWFLAKE_EPOCH_MS} + (number % 10000)), 22) + (number % 10000) % 4096"
+            id_expr = "generateSnowflakeID()"
+            user_id_expr = "generateSnowflakeID()"
         elif key == "string":
-            id_expr = f"toString(bitShiftLeft(toUInt64({SNOWFLAKE_EPOCH_MS} + number), 22) + number % 4096)"
-            user_id_expr = f"toString(bitShiftLeft(toUInt64({SNOWFLAKE_EPOCH_MS} + (number % 10000)), 22) + (number % 10000) % 4096)"
+            id_expr = "toString(generateSnowflakeID())"
+            user_id_expr = "toString(generateSnowflakeID())"
         else:  # uuid
-            id_expr = f"toUUID(concat(hex(bitShiftLeft(toUInt64({SNOWFLAKE_EPOCH_MS} + number), 22) + number % 4096), '00000000000000000000000000000000'))"
-            user_id_expr = f"toUUID(concat(hex(bitShiftLeft(toUInt64({SNOWFLAKE_EPOCH_MS} + (number % 10000)), 22) + (number % 10000) % 4096), '00000000000000000000000000000000'))"
+            id_expr = "generateUUIDv7()"
+            user_id_expr = "generateUUIDv7()"
 
         r = client.query(f"""
             INSERT INTO {tbl}
@@ -82,13 +79,14 @@ def run_bench(client):
         """)
         insert_times[key] = elapsed_s(r)
 
-    # Grab sample IDs for parameterised queries (from uint64 table)
-    sample = client.query(f"""
-        SELECT id, user_id FROM {tables['uint64']}
-        ORDER BY id LIMIT 5
-    """)
-    sample_ids_uint = [row[0] for row in sample.result_rows]
-    sample_user_uint = sample.result_rows[0][1]
+    # Grab sample IDs per table for parameterised queries
+    samples = {}
+    for key, tbl in tables.items():
+        s = client.query(f"SELECT id, user_id FROM {tbl} ORDER BY id LIMIT 5")
+        samples[key] = {
+            "ids": [row[0] for row in s.result_rows],
+            "user_id": s.result_rows[0][1],
+        }
 
     # Storage
     storage = client.query(f"""
@@ -111,36 +109,25 @@ def run_bench(client):
     for label, query_tpl in BENCH_QUERIES:
         results[label] = {}
         for key, tbl in tables.items():
-            # Build type-appropriate expressions
-            if key == "uint64":
-                id_val = str(sample_ids_uint[0])
-                range_s = str(sample_ids_uint[0])
-                range_e = str(sample_ids_uint[-1])
-                in_list = ",".join(str(i) for i in sample_ids_uint)
-                user_val = str(sample_user_uint)
-            elif key == "string":
-                id_val = f"'{sample_ids_uint[0]}'"
-                range_s = f"'{sample_ids_uint[0]}'"
-                range_e = f"'{sample_ids_uint[-1]}'"
-                in_list = ",".join(f"'{i}'" for i in sample_ids_uint)
-                user_val = f"'{sample_user_uint}'"
-            else:  # uuid
-                def to_uuid_literal(n):
-                    h = format(n, '032x')
-                    return f"'{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:]}'"
-                id_val = to_uuid_literal(sample_ids_uint[0])
-                range_s = to_uuid_literal(sample_ids_uint[0])
-                range_e = to_uuid_literal(sample_ids_uint[-1])
-                in_list = ",".join(to_uuid_literal(i) for i in sample_ids_uint)
-                user_val = to_uuid_literal(sample_user_uint)
+            ids = samples[key]["ids"]
+            user_id = samples[key]["user_id"]
 
-            q = query_tpl.format(
+            def q(v):
+                return f"'{v}'" if isinstance(v, (str, type(None))) or key != "uint64" else str(v)
+
+            id_val = q(ids[0])
+            range_s = q(ids[0])
+            range_e = q(ids[-1])
+            in_list = ",".join(q(i) for i in ids)
+            user_val = q(user_id)
+
+            query = query_tpl.format(
                 table=tbl, id_expr=id_val, range_start=range_s,
                 range_end=range_e, in_list=in_list, user_id_expr=user_val,
             )
             times = []
             for i in range(NUM_RUNS + 1):
-                r = client.query(q)
+                r = client.query(query)
                 if i > 0:
                     times.append(elapsed_s(r))
             results[label][key] = sum(times) / NUM_RUNS
