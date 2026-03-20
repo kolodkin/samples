@@ -48,7 +48,7 @@ def run_bench(client):
         client.command(f"""
             CREATE TABLE {tbl} (
                 id {defs['id']},
-                user_id {defs['id']},
+                user_id {defs['user_id']},
                 payload String,
                 created_at DateTime
             ) ENGINE = MergeTree() ORDER BY id
