@@ -1,7 +1,8 @@
 **ClickHouse performance: two easy schema wins**
 **1. `LowCardinality(String)` for low-variance string columns**
 Dictionary-encodes repeated strings (status, country, event_type).
-In our benchmark, filters, DISTINCT, LIKE, and GROUP BY all got noticeably faster, and compressed storage shrank — with bigger wins at higher cardinality.
+In our benchmark, filters, DISTINCT, LIKE, and GROUP BY all got noticeably faster.
+Compressed storage also shrank — and the savings grew with cardinality: at 10 unique values plain String already compresses well, but at 1000 the LC dictionary keeps things tight while plain String balloons.
 ([docs](https://clickhouse.com/docs/en/sql-reference/data-types/lowcardinality))
 ```sql
 CREATE TABLE events (
