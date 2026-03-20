@@ -2,15 +2,13 @@
 """Compare ClickHouse String vs LowCardinality(String) storage and query performance."""
 
 import os
-import time
 import clickhouse_connect
 
 
 def timed(client, query, label):
-    """Execute a query and return (result, elapsed_seconds)."""
-    start = time.perf_counter()
+    """Execute a query and return (result, elapsed_seconds) using ClickHouse server timing."""
     result = client.query(query)
-    elapsed = time.perf_counter() - start
+    elapsed = int(result.summary.get("elapsed_ns", 0)) / 1e9
     print(f"  {label}: {elapsed:.4f}s")
     return result, elapsed
 
@@ -101,9 +99,9 @@ def main():
         for table in ("events_string", "events_lc"):
             q = query_tpl.format(table=table)
             for _ in range(3):
-                start = time.perf_counter()
-                client.query(q)
-                times[table].append(time.perf_counter() - start)
+                r = client.query(q)
+                elapsed = int(r.summary.get("elapsed_ns", 0)) / 1e9
+                times[table].append(elapsed)
 
         avg_s = sum(times["events_string"]) / 3
         avg_lc = sum(times["events_lc"]) / 3
