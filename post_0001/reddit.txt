@@ -23,7 +23,7 @@ CREATE TABLE events (
 | **Uncompressed storage** | 572 MiB | 725 MiB | 1.23 GiB |
 
 Simple lookups (point, range, IN) are comparable across all three.
-The pain shows up in aggregations and storage — String is dramatically worse for GROUP BY (3.45x slower) and uses over 2x the uncompressed space.
+The pain shows up in aggregations and storage — String is dramatically worse for GROUP BY and uses significantly more uncompressed space.
 UUID is a reasonable middle ground, but if your IDs are already 64-bit integers, UInt64 is the clear winner. ([docs](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint))
 ```sql
 CREATE TABLE events (
