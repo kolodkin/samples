@@ -1,6 +1,8 @@
 **ClickHouse performance: two easy schema wins**
 **1. `LowCardinality(String)` for low-variance string columns**
-Dictionary-encodes repeated strings (status, country, event_type). In our benchmark, filters, DISTINCT, LIKE, and GROUP BY all got noticeably faster, and compressed storage shrank — with bigger wins at higher cardinality. ([docs](https://clickhouse.com/docs/en/sql-reference/data-types/lowcardinality))
+Dictionary-encodes repeated strings (status, country, event_type).
+In our benchmark, filters, DISTINCT, LIKE, and GROUP BY all got noticeably faster, and compressed storage shrank — with bigger wins at higher cardinality.
+([docs](https://clickhouse.com/docs/en/sql-reference/data-types/lowcardinality))
 ```sql
 CREATE TABLE events (
     id UInt64,
@@ -20,7 +22,9 @@ CREATE TABLE events (
 | **Compressed storage** | 421 MiB | 498 MiB | 587 MiB |
 | **Uncompressed storage** | 572 MiB | 725 MiB | 1.23 GiB |
 
-Simple lookups (point, range, IN) are comparable across all three. The pain shows up in aggregations and storage — String is dramatically worse for GROUP BY (3.45x slower) and uses over 2x the uncompressed space. UUID is a reasonable middle ground, but if your IDs are already 64-bit integers, UInt64 is the clear winner. ([docs](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint))
+Simple lookups (point, range, IN) are comparable across all three.
+The pain shows up in aggregations and storage — String is dramatically worse for GROUP BY (3.45x slower) and uses over 2x the uncompressed space.
+UUID is a reasonable middle ground, but if your IDs are already 64-bit integers, UInt64 is the clear winner. ([docs](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint))
 ```sql
 CREATE TABLE events (
     id UInt64,
