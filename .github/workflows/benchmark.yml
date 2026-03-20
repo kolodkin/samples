@@ -3,9 +3,6 @@ name: ClickHouse Benchmarks
 on:
   workflow_dispatch:
   push:
-    paths:
-      - "post_0001/*.py"
-      - ".github/workflows/benchmark.yml"
 
 jobs:
   benchmark:
