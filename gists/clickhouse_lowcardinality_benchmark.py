@@ -9,39 +9,23 @@ from rich.table import Table
 
 NUM_ROWS = 10_000_000
 
-UI_EVENTS = [
-    # Navigation
-    "page_view", "page_leave", "tab_switch", "back_button", "forward_button",
-    "breadcrumb_click", "sidebar_toggle", "menu_open", "menu_close", "deep_link",
-    # Clicks
-    "button_click", "link_click", "icon_click", "card_click", "row_click",
-    "cell_click", "chip_click", "tag_click", "avatar_click", "logo_click",
-    # Forms
-    "form_submit", "form_reset", "form_abandon", "input_focus", "input_blur",
-    "input_change", "checkbox_toggle", "radio_select", "dropdown_open", "dropdown_select",
-    "datepicker_open", "datepicker_select", "slider_change", "switch_toggle", "textarea_resize",
-    # Scroll & viewport
-    "scroll_start", "scroll_end", "scroll_to_top", "scroll_to_bottom", "infinite_scroll_load",
-    "viewport_resize", "orientation_change", "zoom_in", "zoom_out", "pinch_zoom",
-    # Drag & drop
-    "drag_start", "drag_move", "drag_end", "drop_accept", "drop_reject",
-    # Modal & overlay
-    "modal_open", "modal_close", "dialog_confirm", "dialog_cancel", "tooltip_show",
-    "tooltip_hide", "popover_open", "popover_close", "toast_show", "toast_dismiss",
-    # Media
-    "video_play", "video_pause", "video_seek", "video_complete", "audio_play",
-    "audio_pause", "image_load", "image_zoom", "carousel_next", "carousel_prev",
-    # Search & filter
-    "search_focus", "search_submit", "search_clear", "filter_apply", "filter_remove",
-    "sort_change", "pagination_next", "pagination_prev", "page_size_change", "results_load",
-    # Clipboard & selection
-    "text_select", "text_copy", "text_paste", "text_cut", "clipboard_write",
-    # Auth & session
-    "login_attempt", "login_success", "login_fail", "logout", "session_timeout",
-    "password_reset", "mfa_prompt", "mfa_verify", "token_refresh", "permission_denied",
-    # File & upload
-    "file_select", "file_upload_start", "file_upload_complete", "file_download", "file_preview",
+_COMPONENTS = [
+    "button", "link", "icon", "card", "row", "cell", "chip", "tag", "avatar", "logo",
+    "modal", "dialog", "tooltip", "popover", "toast", "sidebar", "navbar", "toolbar",
+    "breadcrumb", "tab", "accordion", "carousel", "slider", "switch", "checkbox",
+    "radio", "dropdown", "datepicker", "timepicker", "colorpicker", "textarea",
+    "input", "form", "table", "list", "grid", "tree", "menu", "panel", "drawer",
+    "badge", "banner", "alert", "progress", "spinner", "skeleton", "divider",
+    "pagination", "stepper", "rating",
 ]
+
+_ACTIONS = [
+    "click", "dblclick", "hover", "focus", "blur", "open", "close", "toggle",
+    "submit", "reset", "select", "deselect", "expand", "collapse", "scroll",
+    "drag", "drop", "resize", "load", "error",
+]
+
+UI_EVENTS = [f"{comp}_{action}" for comp in _COMPONENTS for action in _ACTIONS]
 
 console = Console()
 
