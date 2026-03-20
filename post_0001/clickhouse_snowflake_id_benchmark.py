@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare ClickHouse UInt64 (Snowflake ID) vs UUID for ID storage and query performance."""
+"""Compare ClickHouse UInt64 (Snowflake) vs UUID vs String for ID storage and query performance."""
 
 import os
 import clickhouse_connect
@@ -20,9 +20,9 @@ BENCH_QUERIES = [
 ]
 
 COL_DEFS = {
-    "uint64":  {"id": "UInt64", "user_id": "UInt64"},
-    "uuidv7":  {"id": "UUID",   "user_id": "UUID"},
-    "uuidv4":  {"id": "UUID",   "user_id": "UUID"},
+    "uint64": {"id": "UInt64", "user_id": "UInt64"},
+    "uuid":   {"id": "UUID",   "user_id": "UUID"},
+    "string": {"id": "String", "user_id": "String"},
 }
 
 console = Console()
@@ -61,12 +61,12 @@ def run_bench(client):
         if key == "uint64":
             id_expr = "generateSnowflakeID()"
             user_id_expr = "generateSnowflakeID()"
-        elif key == "uuidv7":
+        elif key == "uuid":
             id_expr = "generateUUIDv7()"
             user_id_expr = "generateUUIDv7()"
-        else:  # uuidv4
-            id_expr = "generateUUIDv4()"
-            user_id_expr = "generateUUIDv4()"
+        else:  # string
+            id_expr = "toString(generateUUIDv7())"
+            user_id_expr = "toString(generateUUIDv7())"
 
         r = client.query(f"""
             INSERT INTO {tbl}
@@ -113,7 +113,7 @@ def run_bench(client):
             user_id = samples[key]["user_id"]
 
             def q(v):
-                return f"'{v}'" if isinstance(v, (str, type(None))) or key != "uint64" else str(v)
+                return str(v) if key == "uint64" else f"'{v}'"
 
             id_val = q(ids[0])
             range_s = q(ids[0])
@@ -144,21 +144,21 @@ def print_summary(results, storage_by_table):
     labels = ["INSERT"] + [label for label, _ in BENCH_QUERIES]
     keys = list(COL_DEFS.keys())
 
-    table = Table(title=f"Snowflake ID vs UUIDv7 vs UUIDv4 — {NUM_ROWS:,} rows")
+    table = Table(title=f"Snowflake (UInt64) vs UUID vs String — {NUM_ROWS:,} rows")
     table.add_column("Query", style="bold")
     for key in keys:
         table.add_column(key, justify="right")
-    table.add_column("UInt64 vs UUIDv7", justify="right", style="green")
-    table.add_column("UInt64 vs UUIDv4", justify="right", style="green")
+    table.add_column("UUID / Snowflake", justify="right", style="green")
+    table.add_column("String / Snowflake", justify="right", style="green")
 
     for label in labels:
         times = results[label]
         row = [label]
         for key in keys:
             row.append(f"{times[key]:.4f}s")
-        v7_speedup = times["uuidv7"] / times["uint64"] if times["uint64"] > 0 else float("inf")
-        v4_speedup = times["uuidv4"] / times["uint64"] if times["uint64"] > 0 else float("inf")
-        row += [f"{v7_speedup:.2f}x", f"{v4_speedup:.2f}x"]
+        uuid_ratio = times["uuid"] / times["uint64"] if times["uint64"] > 0 else float("inf")
+        str_ratio = times["string"] / times["uint64"] if times["uint64"] > 0 else float("inf")
+        row += [f"{uuid_ratio:.2f}x", f"{str_ratio:.2f}x"]
         table.add_row(*row)
 
     console.print()
@@ -186,7 +186,7 @@ def main():
         password=os.getenv("CLICKHOUSE_PASSWORD", ""),
     )
 
-    console.print("\n[bold]Snowflake ID Benchmark: Snowflake (UInt64) vs UUIDv7 vs UUIDv4[/bold]")
+    console.print("\n[bold]ID Benchmark: Snowflake (UInt64) vs UUID vs String[/bold]")
     results, storage = run_bench(client)
     print_summary(results, storage)
 
