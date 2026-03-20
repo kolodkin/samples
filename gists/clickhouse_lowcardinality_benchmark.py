@@ -121,21 +121,8 @@ def run_bench(client, cardinality):
     return results, storage_by_table
 
 
-def main():
-    client = clickhouse_connect.get_client(
-        host=os.getenv("CLICKHOUSE_HOST", "localhost"),
-        port=int(os.getenv("CLICKHOUSE_PORT", "8123")),
-        username=os.getenv("CLICKHOUSE_USER", "default"),
-        password=os.getenv("CLICKHOUSE_PASSWORD", ""),
-    )
-
-    all_results = {}
-    all_storage = {}
-    for card in CARDINALITIES:
-        console.print(f"\n[bold]Cardinality {card}[/bold]")
-        all_results[card], all_storage[card] = run_bench(client, card)
-
-    # --- Combined performance table ---
+def print_summary(all_results, all_storage):
+    """Print combined performance and storage tables."""
     labels = ["INSERT"] + [label for label, _ in BENCH_QUERIES]
 
     table = Table(title=f"String vs LowCardinality(String) — {NUM_ROWS:,} rows")
@@ -156,7 +143,6 @@ def main():
     console.print()
     console.print(table)
 
-    # --- Storage table ---
     st = Table(title="Storage")
     st.add_column("Cardinality", style="bold")
     st.add_column("String compressed", justify="right")
@@ -173,6 +159,23 @@ def main():
 
     console.print()
     console.print(st)
+
+
+def main():
+    client = clickhouse_connect.get_client(
+        host=os.getenv("CLICKHOUSE_HOST", "localhost"),
+        port=int(os.getenv("CLICKHOUSE_PORT", "8123")),
+        username=os.getenv("CLICKHOUSE_USER", "default"),
+        password=os.getenv("CLICKHOUSE_PASSWORD", ""),
+    )
+
+    all_results = {}
+    all_storage = {}
+    for card in CARDINALITIES:
+        console.print(f"\n[bold]Cardinality {card}[/bold]")
+        all_results[card], all_storage[card] = run_bench(client, card)
+
+    print_summary(all_results, all_storage)
 
 
 if __name__ == "__main__":
