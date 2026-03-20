@@ -57,3 +57,13 @@ coverage.xml
 # OS
 .DS_Store
 Thumbs.db
+
+# ClickHouse local data
+clickhouse
+cores/
+metadata/
+metadata_dropped/
+preprocessed_configs/
+store/
+status
+uuid
