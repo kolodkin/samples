@@ -107,12 +107,12 @@ def main():
         times = {"events_string": [], "events_lc": []}
         for tbl in ("events_string", "events_lc"):
             q = query_tpl.format(table=tbl)
-            for _ in range(3):
+            for _ in range(10):
                 r = client.query(q)
                 times[tbl].append(elapsed_s(r))
 
-        avg_s = sum(times["events_string"]) / 3
-        avg_lc = sum(times["events_lc"]) / 3
+        avg_s = sum(times["events_string"]) / 10
+        avg_lc = sum(times["events_lc"]) / 10
         speedup = avg_s / avg_lc if avg_lc > 0 else float("inf")
         table.add_row(label, f"{avg_s:.4f}s", f"{avg_lc:.4f}s", f"{speedup:.2f}x")
 
