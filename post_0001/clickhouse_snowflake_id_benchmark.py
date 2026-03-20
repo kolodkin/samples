@@ -20,8 +20,9 @@ BENCH_QUERIES = [
 ]
 
 COL_DEFS = {
-    "uint64": {"id": "UInt64", "user_id": "UInt64"},
-    "uuid":   {"id": "UUID",   "user_id": "UUID"},
+    "uint64":  {"id": "UInt64", "user_id": "UInt64"},
+    "uuidv7":  {"id": "UUID",   "user_id": "UUID"},
+    "uuidv4":  {"id": "UUID",   "user_id": "UUID"},
 }
 
 console = Console()
@@ -60,9 +61,12 @@ def run_bench(client):
         if key == "uint64":
             id_expr = "generateSnowflakeID()"
             user_id_expr = "generateSnowflakeID()"
-        else:  # uuid
+        elif key == "uuidv7":
             id_expr = "generateUUIDv7()"
             user_id_expr = "generateUUIDv7()"
+        else:  # uuidv4
+            id_expr = "generateUUIDv4()"
+            user_id_expr = "generateUUIDv4()"
 
         r = client.query(f"""
             INSERT INTO {tbl}
@@ -140,19 +144,21 @@ def print_summary(results, storage_by_table):
     labels = ["INSERT"] + [label for label, _ in BENCH_QUERIES]
     keys = list(COL_DEFS.keys())
 
-    table = Table(title=f"Snowflake ID vs UUID — {NUM_ROWS:,} rows")
+    table = Table(title=f"Snowflake ID vs UUIDv7 vs UUIDv4 — {NUM_ROWS:,} rows")
     table.add_column("Query", style="bold")
     for key in keys:
         table.add_column(key, justify="right")
-    table.add_column("Snowflake vs UUID", justify="right", style="green")
+    table.add_column("UInt64 vs UUIDv7", justify="right", style="green")
+    table.add_column("UInt64 vs UUIDv4", justify="right", style="green")
 
     for label in labels:
         times = results[label]
         row = [label]
         for key in keys:
             row.append(f"{times[key]:.4f}s")
-        speedup = times["uuid"] / times["uint64"] if times["uint64"] > 0 else float("inf")
-        row.append(f"{speedup:.2f}x")
+        v7_speedup = times["uuidv7"] / times["uint64"] if times["uint64"] > 0 else float("inf")
+        v4_speedup = times["uuidv4"] / times["uint64"] if times["uint64"] > 0 else float("inf")
+        row += [f"{v7_speedup:.2f}x", f"{v4_speedup:.2f}x"]
         table.add_row(*row)
 
     console.print()
@@ -180,7 +186,7 @@ def main():
         password=os.getenv("CLICKHOUSE_PASSWORD", ""),
     )
 
-    console.print("\n[bold]Snowflake ID Benchmark: Snowflake (UInt64) vs UUID[/bold]")
+    console.print("\n[bold]Snowflake ID Benchmark: Snowflake (UInt64) vs UUIDv7 vs UUIDv4[/bold]")
     results, storage = run_bench(client)
     print_summary(results, storage)
 
