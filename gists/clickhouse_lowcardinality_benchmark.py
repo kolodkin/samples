@@ -54,7 +54,7 @@ def main():
     r = client.query(f"""
         INSERT INTO events_string
         SELECT number,
-            ['active', 'inactive', 'pending', 'banned', 'deleted'][number % 5 + 1],
+            concat('status_', toString(number % 30)),
             now()
         FROM numbers({NUM_ROWS})
     """)
@@ -63,7 +63,7 @@ def main():
     r = client.query(f"""
         INSERT INTO events_lc
         SELECT number,
-            ['active', 'inactive', 'pending', 'banned', 'deleted'][number % 5 + 1],
+            concat('status_', toString(number % 30)),
             now()
         FROM numbers({NUM_ROWS})
     """)
@@ -86,7 +86,7 @@ def main():
     # --- Query performance ---
     console.print("Running queries...")
     bench_queries = [
-        ("COUNT with filter", "SELECT count() FROM {table} WHERE status = 'active'"),
+        ("COUNT with filter", "SELECT count() FROM {table} WHERE status = 'status_0'"),
         ("GROUP BY",          "SELECT status, count() FROM {table} GROUP BY status"),
         ("DISTINCT",          "SELECT DISTINCT status FROM {table}"),
     ]
