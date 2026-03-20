@@ -1,0 +1,21 @@
+**ClickHouse performance: two easy schema wins**
+**1. `LowCardinality(String)` for low-variance string columns**
+Dictionary-encodes repeated strings (status, country, event_type) — smaller storage, faster GROUP BY/WHERE. ([docs](https://clickhouse.com/docs/en/sql-reference/data-types/lowcardinality))
+```sql
+CREATE TABLE events (
+    id UInt64,
+    status LowCardinality(String),
+    created_at DateTime
+) ENGINE = MergeTree() ORDER BY created_at;
+```
+---
+**2. Store Snowflake IDs as `UInt64`, not `String` or `UUID`**
+[Snowflake IDs](https://en.wikipedia.org/wiki/Snowflake_ID) are 64-bit integers — no need for 128-bit UUIDs. Smaller, faster joins, and time-ordered so they double as a natural ORDER BY key. ([docs](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint))
+```sql
+CREATE TABLE events (
+    id UInt64,
+    user_id UInt64,
+    ...
+) ENGINE = MergeTree() ORDER BY id;
+```
+Small schema decisions, real impact. Happy to discuss in the comments!
