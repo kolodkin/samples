@@ -89,6 +89,10 @@ def main():
         ("COUNT with filter", "SELECT count() FROM {table} WHERE status = 'status_0'"),
         ("GROUP BY",          "SELECT status, count() FROM {table} GROUP BY status"),
         ("DISTINCT",          "SELECT DISTINCT status FROM {table}"),
+        ("COUNT DISTINCT",    "SELECT count(DISTINCT status) FROM {table}"),
+        ("IN (5 values)",     "SELECT count() FROM {table} WHERE status IN ('status_0','status_5','status_10','status_15','status_20')"),
+        ("ORDER BY LIMIT",   "SELECT status FROM {table} ORDER BY status LIMIT 100"),
+        ("LIKE pattern",      "SELECT count() FROM {table} WHERE status LIKE 'status_1%'"),
     ]
 
     # Build results table
