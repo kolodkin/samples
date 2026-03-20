@@ -29,13 +29,13 @@ _ACTIONS = [
 ALL_EVENTS = [f"{comp}_{action}" for comp in _COMPONENTS for action in _ACTIONS]
 
 BENCH_QUERIES = [
-    ("COUNT with filter", "SELECT count() FROM {table} WHERE event_type = 'button_click'"),
-    ("GROUP BY",          "SELECT event_type, count() FROM {table} GROUP BY event_type"),
-    ("DISTINCT",          "SELECT DISTINCT event_type FROM {table}"),
-    ("COUNT DISTINCT",    "SELECT count(DISTINCT event_type) FROM {table}"),
-    ("IN (5 values)",     "SELECT count() FROM {table} WHERE event_type IN ('button_click','link_hover','form_submit','modal_open','grid_resize')"),
-    ("ORDER BY LIMIT",    "SELECT event_type FROM {table} ORDER BY event_type LIMIT 100"),
-    ("LIKE pattern",      "SELECT count() FROM {table} WHERE event_type LIKE '%_click'"),
+    ("COUNT+filter",   "SELECT count() FROM {table} WHERE event_type = 'button_click'"),
+    ("GROUP BY",       "SELECT event_type, count() FROM {table} GROUP BY event_type"),
+    ("DISTINCT",       "SELECT DISTINCT event_type FROM {table}"),
+    ("COUNT DISTINCT", "SELECT count(DISTINCT event_type) FROM {table}"),
+    ("IN (5 vals)",    "SELECT count() FROM {table} WHERE event_type IN ('button_click','link_hover','form_submit','modal_open','grid_resize')"),
+    ("ORDER BY",       "SELECT event_type FROM {table} ORDER BY event_type LIMIT 100"),
+    ("LIKE",           "SELECT count() FROM {table} WHERE event_type LIKE '%_click'"),
 ]
 
 COL_TYPES = {"string": "String", "lc": "LowCardinality(String)"}
@@ -126,7 +126,7 @@ def print_summary(all_results, all_storage):
     labels = ["INSERT"] + [label for label, _ in BENCH_QUERIES]
 
     table = Table(title=f"String vs LowCardinality(String) — {NUM_ROWS:,} rows")
-    table.add_column("Query", style="bold")
+    table.add_column("Query", style="bold", no_wrap=True)
     for card in CARDINALITIES:
         table.add_column(f"String ({card})", justify="right")
         table.add_column(f"LC ({card})", justify="right")

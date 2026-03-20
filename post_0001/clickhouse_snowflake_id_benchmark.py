@@ -10,13 +10,13 @@ NUM_ROWS = 10_000_000
 NUM_RUNS = 10
 
 BENCH_QUERIES = [
-    ("Point lookup",    "SELECT * FROM {table} WHERE id = {id_expr}"),
-    ("Range scan",      "SELECT count() FROM {table} WHERE id > {range_start} AND id < {range_end}"),
-    ("JOIN",            "SELECT count() FROM {table} a JOIN {table} b ON a.user_id = b.user_id WHERE a.id != b.id LIMIT 1000"),
-    ("GROUP BY id",     "SELECT user_id, count() FROM {table} GROUP BY user_id"),
-    ("ORDER BY LIMIT",  "SELECT id FROM {table} ORDER BY id DESC LIMIT 100"),
-    ("IN (5 values)",   "SELECT * FROM {table} WHERE id IN ({in_list})"),
-    ("COUNT with filter", "SELECT count() FROM {table} WHERE user_id = {user_id_expr}"),
+    ("Point lookup", "SELECT * FROM {table} WHERE id = {id_expr}"),
+    ("Range scan",   "SELECT count() FROM {table} WHERE id > {range_start} AND id < {range_end}"),
+    ("JOIN",         "SELECT count() FROM {table} a JOIN {table} b ON a.user_id = b.user_id WHERE a.id != b.id LIMIT 1000"),
+    ("GROUP BY",     "SELECT user_id, count() FROM {table} GROUP BY user_id"),
+    ("ORDER BY",     "SELECT id FROM {table} ORDER BY id DESC LIMIT 100"),
+    ("IN (5 vals)",  "SELECT * FROM {table} WHERE id IN ({in_list})"),
+    ("COUNT+filter", "SELECT count() FROM {table} WHERE user_id = {user_id_expr}"),
 ]
 
 COL_DEFS = {
@@ -145,7 +145,7 @@ def print_summary(results, storage_by_table):
     keys = list(COL_DEFS.keys())
 
     table = Table(title=f"Snowflake (UInt64) vs UUID vs String — {NUM_ROWS:,} rows")
-    table.add_column("Query", style="bold")
+    table.add_column("Query", style="bold", no_wrap=True)
     for key in keys:
         table.add_column(key, justify="right")
     table.add_column("UUID / Snowflake", justify="right", style="green")
