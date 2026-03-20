@@ -9,6 +9,15 @@ from rich.table import Table
 
 NUM_ROWS = 10_000_000
 
+STATUSES = [
+    "active", "inactive", "pending", "banned", "deleted",
+    "suspended", "verified", "unverified", "archived", "locked",
+    "expired", "cancelled", "processing", "completed", "failed",
+    "reviewing", "approved", "rejected", "draft", "published",
+    "deactivated", "migrating", "maintenance", "trial", "premium",
+    "blocked", "quarantined", "onboarding", "closing", "closed",
+]
+
 console = Console()
 
 
@@ -50,11 +59,13 @@ def main():
 
     # --- Insert rows ---
     console.print(f"Inserting {NUM_ROWS:,} rows...")
+    status_array = "[" + ",".join(f"'{s}'" for s in STATUSES) + "]"
+    n = len(STATUSES)
 
     r = client.query(f"""
         INSERT INTO events_string
         SELECT number,
-            concat('status_', toString(number % 30)),
+            {status_array}[number % {n} + 1],
             now()
         FROM numbers({NUM_ROWS})
     """)
@@ -63,7 +74,7 @@ def main():
     r = client.query(f"""
         INSERT INTO events_lc
         SELECT number,
-            concat('status_', toString(number % 30)),
+            {status_array}[number % {n} + 1],
             now()
         FROM numbers({NUM_ROWS})
     """)
@@ -86,13 +97,13 @@ def main():
     # --- Query performance ---
     console.print("Running queries...")
     bench_queries = [
-        ("COUNT with filter", "SELECT count() FROM {table} WHERE status = 'status_0'"),
+        ("COUNT with filter", "SELECT count() FROM {table} WHERE status = 'active'"),
         ("GROUP BY",          "SELECT status, count() FROM {table} GROUP BY status"),
         ("DISTINCT",          "SELECT DISTINCT status FROM {table}"),
         ("COUNT DISTINCT",    "SELECT count(DISTINCT status) FROM {table}"),
-        ("IN (5 values)",     "SELECT count() FROM {table} WHERE status IN ('status_0','status_5','status_10','status_15','status_20')"),
-        ("ORDER BY LIMIT",   "SELECT status FROM {table} ORDER BY status LIMIT 100"),
-        ("LIKE pattern",      "SELECT count() FROM {table} WHERE status LIKE 'status_1%'"),
+        ("IN (5 values)",     "SELECT count() FROM {table} WHERE status IN ('active','pending','failed','locked','trial')"),
+        ("ORDER BY LIMIT",    "SELECT status FROM {table} ORDER BY status LIMIT 100"),
+        ("LIKE pattern",      "SELECT count() FROM {table} WHERE status LIKE '%ed'"),
     ]
 
     # Build results table
