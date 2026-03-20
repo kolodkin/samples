@@ -10,6 +10,17 @@ on:
 jobs:
   benchmark:
     runs-on: ubuntu-latest
+    services:
+      clickhouse:
+        image: clickhouse/clickhouse-server:latest
+        ports:
+          - 8123:8123
+          - 9000:9000
+        options: >-
+          --health-cmd "clickhouse-client --query 'SELECT 1'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
 
@@ -17,9 +28,6 @@ jobs:
 
       - name: Install dependencies
         run: uv sync
-
-      - name: Start ClickHouse
-        run: bash infra/setup-ch
 
       - name: Run LowCardinality benchmark
         run: |
