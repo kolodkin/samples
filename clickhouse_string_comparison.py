@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Compare ClickHouse String vs LowCardinality(String) storage and query performance."""
 
+import os
 import time
 import clickhouse_connect
 
@@ -15,7 +16,12 @@ def timed(client, query, label):
 
 
 def main():
-    client = clickhouse_connect.get_client(host="localhost")
+    client = clickhouse_connect.get_client(
+        host=os.getenv("CLICKHOUSE_HOST", "localhost"),
+        port=int(os.getenv("CLICKHOUSE_PORT", "8123")),
+        username=os.getenv("CLICKHOUSE_USER", "default"),
+        password=os.getenv("CLICKHOUSE_PASSWORD", ""),
+    )
 
     # Cleanup
     client.command("DROP TABLE IF EXISTS events_string")
