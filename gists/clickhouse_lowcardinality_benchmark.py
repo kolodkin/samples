@@ -9,13 +9,38 @@ from rich.table import Table
 
 NUM_ROWS = 10_000_000
 
-STATUSES = [
-    "active", "inactive", "pending", "banned", "deleted",
-    "suspended", "verified", "unverified", "archived", "locked",
-    "expired", "cancelled", "processing", "completed", "failed",
-    "reviewing", "approved", "rejected", "draft", "published",
-    "deactivated", "migrating", "maintenance", "trial", "premium",
-    "blocked", "quarantined", "onboarding", "closing", "closed",
+UI_EVENTS = [
+    # Navigation
+    "page_view", "page_leave", "tab_switch", "back_button", "forward_button",
+    "breadcrumb_click", "sidebar_toggle", "menu_open", "menu_close", "deep_link",
+    # Clicks
+    "button_click", "link_click", "icon_click", "card_click", "row_click",
+    "cell_click", "chip_click", "tag_click", "avatar_click", "logo_click",
+    # Forms
+    "form_submit", "form_reset", "form_abandon", "input_focus", "input_blur",
+    "input_change", "checkbox_toggle", "radio_select", "dropdown_open", "dropdown_select",
+    "datepicker_open", "datepicker_select", "slider_change", "switch_toggle", "textarea_resize",
+    # Scroll & viewport
+    "scroll_start", "scroll_end", "scroll_to_top", "scroll_to_bottom", "infinite_scroll_load",
+    "viewport_resize", "orientation_change", "zoom_in", "zoom_out", "pinch_zoom",
+    # Drag & drop
+    "drag_start", "drag_move", "drag_end", "drop_accept", "drop_reject",
+    # Modal & overlay
+    "modal_open", "modal_close", "dialog_confirm", "dialog_cancel", "tooltip_show",
+    "tooltip_hide", "popover_open", "popover_close", "toast_show", "toast_dismiss",
+    # Media
+    "video_play", "video_pause", "video_seek", "video_complete", "audio_play",
+    "audio_pause", "image_load", "image_zoom", "carousel_next", "carousel_prev",
+    # Search & filter
+    "search_focus", "search_submit", "search_clear", "filter_apply", "filter_remove",
+    "sort_change", "pagination_next", "pagination_prev", "page_size_change", "results_load",
+    # Clipboard & selection
+    "text_select", "text_copy", "text_paste", "text_cut", "clipboard_write",
+    # Auth & session
+    "login_attempt", "login_success", "login_fail", "logout", "session_timeout",
+    "password_reset", "mfa_prompt", "mfa_verify", "token_refresh", "permission_denied",
+    # File & upload
+    "file_select", "file_upload_start", "file_upload_complete", "file_download", "file_preview",
 ]
 
 console = Console()
@@ -44,7 +69,7 @@ def main():
     client.command("""
         CREATE TABLE events_string (
             id UInt64,
-            status String,
+            event_type String,
             created_at DateTime
         ) ENGINE = MergeTree() ORDER BY id
     """)
@@ -52,15 +77,15 @@ def main():
     client.command("""
         CREATE TABLE events_lc (
             id UInt64,
-            status LowCardinality(String),
+            event_type LowCardinality(String),
             created_at DateTime
         ) ENGINE = MergeTree() ORDER BY id
     """)
 
     # --- Insert rows ---
     console.print(f"Inserting {NUM_ROWS:,} rows...")
-    status_array = "[" + ",".join(f"'{s}'" for s in STATUSES) + "]"
-    n = len(STATUSES)
+    status_array = "[" + ",".join(f"'{s}'" for s in UI_EVENTS) + "]"
+    n = len(UI_EVENTS)
 
     r = client.query(f"""
         INSERT INTO events_string
@@ -97,13 +122,13 @@ def main():
     # --- Query performance ---
     console.print("Running queries...")
     bench_queries = [
-        ("COUNT with filter", "SELECT count() FROM {table} WHERE status = 'active'"),
-        ("GROUP BY",          "SELECT status, count() FROM {table} GROUP BY status"),
-        ("DISTINCT",          "SELECT DISTINCT status FROM {table}"),
-        ("COUNT DISTINCT",    "SELECT count(DISTINCT status) FROM {table}"),
-        ("IN (5 values)",     "SELECT count() FROM {table} WHERE status IN ('active','pending','failed','locked','trial')"),
-        ("ORDER BY LIMIT",    "SELECT status FROM {table} ORDER BY status LIMIT 100"),
-        ("LIKE pattern",      "SELECT count() FROM {table} WHERE status LIKE '%ed'"),
+        ("COUNT with filter", "SELECT count() FROM {table} WHERE event_type = 'button_click'"),
+        ("GROUP BY",          "SELECT event_type, count() FROM {table} GROUP BY event_type"),
+        ("DISTINCT",          "SELECT DISTINCT event_type FROM {table}"),
+        ("COUNT DISTINCT",    "SELECT count(DISTINCT event_type) FROM {table}"),
+        ("IN (5 values)",     "SELECT count() FROM {table} WHERE event_type IN ('button_click','page_view','form_submit','modal_open','file_download')"),
+        ("ORDER BY LIMIT",    "SELECT event_type FROM {table} ORDER BY event_type LIMIT 100"),
+        ("LIKE pattern",      "SELECT count() FROM {table} WHERE event_type LIKE '%_click'"),
     ]
 
     # Build results table
