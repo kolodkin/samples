@@ -46,6 +46,7 @@ def run_bench(client):
         client.command(f"""
             CREATE TABLE {tbl} (
                 id {defs['id_type']} DEFAULT {defs['id_default']},
+                seq UInt64,
                 value UInt64
             ) ENGINE = MergeTree() ORDER BY id
         """)
@@ -55,22 +56,19 @@ def run_bench(client):
     insert_times = {}
     for key, tbl in tables.items():
         r = client.query(f"""
-            INSERT INTO {tbl} (value)
-            SELECT rand64()
+            INSERT INTO {tbl} (seq, value)
+            SELECT number, rand64()
             FROM numbers({NUM_ROWS})
         """)
         insert_times[key] = elapsed_s(r)
 
-    # Grab sample IDs at the same logical row positions across all tables
-    # so that point lookups, range scans, and IN queries are comparable.
-    sample_offsets = [1000, 250_000, 500_000, 750_000, 999_000]
+    # Grab IDs at the same logical positions using the shared seq column
+    sample_seqs = [1000, 250_000, 500_000, 750_000, 999_000]
+    seq_list = ",".join(str(s) for s in sample_seqs)
     samples = {}
     for key, tbl in tables.items():
-        ids = []
-        for offset in sample_offsets:
-            s = client.query(f"SELECT id FROM {tbl} ORDER BY id LIMIT 1 OFFSET {offset}")
-            ids.append(s.result_rows[0][0])
-        samples[key] = ids
+        s = client.query(f"SELECT id FROM {tbl} WHERE seq IN ({seq_list}) ORDER BY seq")
+        samples[key] = [row[0] for row in s.result_rows]
 
     # Storage
     storage = client.query(f"""
