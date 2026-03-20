@@ -61,11 +61,16 @@ def run_bench(client):
         """)
         insert_times[key] = elapsed_s(r)
 
-    # Grab sample IDs per table for parameterised queries
+    # Grab sample IDs at the same logical row positions across all tables
+    # so that point lookups, range scans, and IN queries are comparable.
+    sample_offsets = [1000, 250_000, 500_000, 750_000, 999_000]
     samples = {}
     for key, tbl in tables.items():
-        s = client.query(f"SELECT id FROM {tbl} ORDER BY id LIMIT 5")
-        samples[key] = [row[0] for row in s.result_rows]
+        ids = []
+        for offset in sample_offsets:
+            s = client.query(f"SELECT id FROM {tbl} ORDER BY id LIMIT 1 OFFSET {offset}")
+            ids.append(s.result_rows[0][0])
+        samples[key] = ids
 
     # Storage
     storage = client.query(f"""
