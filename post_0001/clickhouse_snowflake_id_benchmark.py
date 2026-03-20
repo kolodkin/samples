@@ -12,17 +12,15 @@ NUM_RUNS = 10
 BENCH_QUERIES = [
     ("Point lookup", "SELECT * FROM {table} WHERE id = {id_expr}"),
     ("Range scan",   "SELECT count() FROM {table} WHERE id > {range_start} AND id < {range_end}"),
-    ("JOIN",         "SELECT count() FROM {table} a JOIN {table} b ON a.user_id = b.user_id WHERE a.id != b.id LIMIT 1000"),
-    ("GROUP BY",     "SELECT user_id, count() FROM {table} GROUP BY user_id"),
     ("ORDER BY",     "SELECT id FROM {table} ORDER BY id DESC LIMIT 100"),
     ("IN (5 vals)",  "SELECT * FROM {table} WHERE id IN ({in_list})"),
-    ("COUNT+filter", "SELECT count() FROM {table} WHERE user_id = {user_id_expr}"),
+    ("GROUP BY val", "SELECT value, count() FROM {table} GROUP BY value"),
 ]
 
 COL_DEFS = {
-    "uint64": {"id": "UInt64", "user_id": "UInt64"},
-    "uuid":   {"id": "UUID",   "user_id": "UUID"},
-    "string": {"id": "String", "user_id": "String"},
+    "uint64": {"id_type": "UInt64", "id_default": "generateSnowflakeID()"},
+    "uuid":   {"id_type": "UUID",   "id_default": "generateUUIDv7()"},
+    "string": {"id_type": "String", "id_default": "toString(generateUUIDv7())"},
 }
 
 console = Console()
@@ -38,7 +36,7 @@ def table_name(col_type):
 
 
 def run_bench(client):
-    """Run the full benchmark across both column types."""
+    """Run the full benchmark across all column types."""
     tables = {key: table_name(key) for key in COL_DEFS}
 
     # Create tables
@@ -47,10 +45,8 @@ def run_bench(client):
         client.command(f"DROP TABLE IF EXISTS {tbl}")
         client.command(f"""
             CREATE TABLE {tbl} (
-                id {defs['id']},
-                user_id {defs['user_id']},
-                payload String,
-                created_at DateTime
+                id {defs['id_type']} DEFAULT {defs['id_default']},
+                value UInt64
             ) ENGINE = MergeTree() ORDER BY id
         """)
 
@@ -58,23 +54,9 @@ def run_bench(client):
     console.print(f"  Inserting {NUM_ROWS:,} rows...")
     insert_times = {}
     for key, tbl in tables.items():
-        if key == "uint64":
-            id_expr = "generateSnowflakeID()"
-            user_id_expr = "generateSnowflakeID()"
-        elif key == "uuid":
-            id_expr = "generateUUIDv7()"
-            user_id_expr = "generateUUIDv7()"
-        else:  # string
-            id_expr = "toString(generateUUIDv7())"
-            user_id_expr = "toString(generateUUIDv7())"
-
         r = client.query(f"""
-            INSERT INTO {tbl}
-            SELECT
-                {id_expr},
-                {user_id_expr},
-                randomString(32),
-                now() - INTERVAL number SECOND
+            INSERT INTO {tbl} (value)
+            SELECT rand64()
             FROM numbers({NUM_ROWS})
         """)
         insert_times[key] = elapsed_s(r)
@@ -82,11 +64,8 @@ def run_bench(client):
     # Grab sample IDs per table for parameterised queries
     samples = {}
     for key, tbl in tables.items():
-        s = client.query(f"SELECT id, user_id FROM {tbl} ORDER BY id LIMIT 5")
-        samples[key] = {
-            "ids": [row[0] for row in s.result_rows],
-            "user_id": s.result_rows[0][1],
-        }
+        s = client.query(f"SELECT id FROM {tbl} ORDER BY id LIMIT 5")
+        samples[key] = [row[0] for row in s.result_rows]
 
     # Storage
     storage = client.query(f"""
@@ -109,21 +88,17 @@ def run_bench(client):
     for label, query_tpl in BENCH_QUERIES:
         results[label] = {}
         for key, tbl in tables.items():
-            ids = samples[key]["ids"]
-            user_id = samples[key]["user_id"]
+            ids = samples[key]
 
             def q(v):
                 return str(v) if key == "uint64" else f"'{v}'"
 
-            id_val = q(ids[0])
-            range_s = q(ids[0])
-            range_e = q(ids[-1])
-            in_list = ",".join(q(i) for i in ids)
-            user_val = q(user_id)
-
             query = query_tpl.format(
-                table=tbl, id_expr=id_val, range_start=range_s,
-                range_end=range_e, in_list=in_list, user_id_expr=user_val,
+                table=tbl,
+                id_expr=q(ids[0]),
+                range_start=q(ids[0]),
+                range_end=q(ids[-1]),
+                in_list=",".join(q(i) for i in ids),
             )
             times = []
             for i in range(NUM_RUNS + 1):
