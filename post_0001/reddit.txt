@@ -1,8 +1,8 @@
 **ClickHouse performance: two easy schema wins**
 **1. `LowCardinality(String)` for low-variance string columns**
 Dictionary-encodes repeated strings (status, country, event_type).
-In our benchmark, filters, DISTINCT, LIKE, and GROUP BY all got noticeably faster.
-Compressed storage also shrank — and the savings grew with cardinality: at 10 unique values plain String already compresses well, but at 1000 the LC dictionary keeps things tight while plain String balloons.
+In our benchmark (10M rows), filters, DISTINCT, and LIKE were ~x4–x6 faster; GROUP BY ~x2 faster at higher cardinality.
+Uncompressed storage dropped ~x2.5, and at 1000 unique values compressed size nearly halved while plain String bloated.
 ([docs](https://clickhouse.com/docs/en/sql-reference/data-types/lowcardinality))
 ```sql
 CREATE TABLE events (
@@ -15,10 +15,9 @@ CREATE TABLE events (
 **2. Store Snowflake IDs as `UInt64`, not `String` or `UUID`**
 [Snowflake IDs](https://en.wikipedia.org/wiki/Snowflake_ID) are 64-bit integers — no need for 128-bit UUIDs. We benchmarked all three on 10M rows:
 
-UInt64 wins decisively on **INSERT** and **storage** — faster writes and significantly smaller on disk.
-But UUID actually edges out UInt64 on **range scans** and **GROUP BY**.
-Point lookups, JOINs, ORDER BY, and IN queries are a wash between UInt64 and UUID.
-String is the clear loser across the board: slowest writes, largest storage, and worst JOINs and ORDER BY.
+UInt64 wins on **INSERT** (~x2 vs UUID, ~x4 vs String) and **storage** (~x3 smaller uncompressed vs String).
+For read queries (point lookup, range scan, ORDER BY, OFFSET LIMIT, IN, GROUP BY) UInt64 and UUID are ~x1 — no meaningful difference.
+**JOIN** is where String stands out as ~x2 slower. String is the worst choice overall: slowest writes, largest storage, slowest JOINs.
 If your IDs are already 64-bit integers, UInt64 is still the best overall choice. ([docs](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint))
 ```sql
 CREATE TABLE events (
