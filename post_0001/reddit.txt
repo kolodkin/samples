@@ -1,7 +1,7 @@
 **ClickHouse performance: two easy schema wins**
 **1. `LowCardinality(String)` for low-variance string columns**
 Dictionary-encodes repeated strings (status, country, event_type).
-In our benchmark, filters, DISTINCT, and LIKE were several times faster; GROUP BY improved at higher cardinality.
+In the benchmark, filters, DISTINCT, and LIKE were several times faster; GROUP BY improved at higher cardinality.
 Storage shrank significantly — especially as the number of unique values grows, where plain String bloats but LC stays compact.
 ([docs](https://clickhouse.com/docs/en/sql-reference/data-types/lowcardinality))
 ```sql
@@ -13,7 +13,7 @@ CREATE TABLE events (
 ```
 ---
 **2. Store Snowflake IDs as `UInt64`, not `String` or `UUID`**
-[Snowflake IDs](https://en.wikipedia.org/wiki/Snowflake_ID) are 64-bit integers — no need for 128-bit UUIDs. We benchmarked all three:
+[Snowflake IDs](https://en.wikipedia.org/wiki/Snowflake_ID) are 64-bit integers — no need for 128-bit UUIDs. The benchmark compared all three:
 
 UInt64 wins on **INSERT** and **storage** — writes are noticeably faster and disk footprint much smaller.
 For read queries (point lookup, range scan, ORDER BY, OFFSET LIMIT, IN, GROUP BY) UInt64 and UUID perform about the same.
