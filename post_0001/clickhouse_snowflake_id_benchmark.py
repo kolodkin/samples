@@ -13,6 +13,7 @@ BENCH_QUERIES = [
     ("Point lookup", "SELECT * FROM {table} WHERE id = {id_expr}"),
     ("Range scan",   "SELECT count() FROM {table} WHERE id > {range_start} AND id < {range_end}"),
     ("ORDER BY",     "SELECT id FROM {table} ORDER BY id DESC LIMIT 100"),
+    ("OFFSET LIMIT", "SELECT id FROM {table} ORDER BY id LIMIT 100 OFFSET 10000"),
     ("IN (5 vals)",  "SELECT * FROM {table} WHERE id IN ({in_list})"),
     ("GROUP BY val", "SELECT value, count() FROM {table} GROUP BY value"),
     ("JOIN",         "SELECT count() FROM {table} a JOIN {lookup} b ON a.id = b.id"),
