@@ -6,7 +6,6 @@ Storage shrank significantly — especially as the number of unique values grows
 ([docs](https://clickhouse.com/docs/en/sql-reference/data-types/lowcardinality))
 ```sql
 CREATE TABLE events (
-    id UInt64,
     status LowCardinality(String),
     created_at DateTime
 ) ENGINE = MergeTree() ORDER BY created_at;
