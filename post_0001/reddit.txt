@@ -1,8 +1,8 @@
 **ClickHouse performance: two easy schema wins**
 **1. `LowCardinality(String)` for low-variance string columns**
 Dictionary-encodes repeated strings (status, country, event_type).
-In our benchmark (10M rows), filters, DISTINCT, and LIKE were ~x4–x6 faster; GROUP BY ~x2 faster at higher cardinality.
-Uncompressed storage dropped ~x2.5, and at 1000 unique values compressed size nearly halved while plain String bloated.
+In our benchmark, filters, DISTINCT, and LIKE were several times faster; GROUP BY improved at higher cardinality.
+Storage shrank significantly — especially as the number of unique values grows, where plain String bloats but LC stays compact.
 ([docs](https://clickhouse.com/docs/en/sql-reference/data-types/lowcardinality))
 ```sql
 CREATE TABLE events (
@@ -13,11 +13,11 @@ CREATE TABLE events (
 ```
 ---
 **2. Store Snowflake IDs as `UInt64`, not `String` or `UUID`**
-[Snowflake IDs](https://en.wikipedia.org/wiki/Snowflake_ID) are 64-bit integers — no need for 128-bit UUIDs. We benchmarked all three on 10M rows:
+[Snowflake IDs](https://en.wikipedia.org/wiki/Snowflake_ID) are 64-bit integers — no need for 128-bit UUIDs. We benchmarked all three:
 
-UInt64 wins on **INSERT** (~x2 vs UUID, ~x4 vs String) and **storage** (~x3 smaller uncompressed vs String).
-For read queries (point lookup, range scan, ORDER BY, OFFSET LIMIT, IN, GROUP BY) UInt64 and UUID are ~x1 — no meaningful difference.
-**JOIN** is where String stands out as ~x2 slower. String is the worst choice overall: slowest writes, largest storage, slowest JOINs.
+UInt64 wins on **INSERT** and **storage** — writes are noticeably faster and disk footprint much smaller.
+For read queries (point lookup, range scan, ORDER BY, OFFSET LIMIT, IN, GROUP BY) UInt64 and UUID perform about the same.
+**JOIN** is where String hurts most. String is the worst choice overall: slowest writes, largest storage, slowest JOINs.
 If your IDs are already 64-bit integers, UInt64 is still the best overall choice. ([docs](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint))
 ```sql
 CREATE TABLE events (
