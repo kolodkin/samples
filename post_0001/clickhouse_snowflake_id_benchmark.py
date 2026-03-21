@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Compare ClickHouse UInt64 (Snowflake) vs UUID vs String for ID storage and query performance."""
+"""Compare ClickHouse UInt64 (Snowflake) vs UUID vs String for ID storage and query performance.
+
+Speedup ratios are rounded to 1 decimal place to highlight order-of-magnitude
+differences and avoid over-interpreting run-to-run variance.
+"""
 
 import os
 import clickhouse_connect
@@ -157,7 +161,7 @@ def print_summary(results, storage_by_table):
             row.append(f"{times[key]:.4f}s")
         uuid_ratio = times["uuid"] / times["uint64"] if times["uint64"] > 0 else float("inf")
         str_ratio = times["string"] / times["uint64"] if times["uint64"] > 0 else float("inf")
-        row += [f"{uuid_ratio:.2f}x", f"{str_ratio:.2f}x"]
+        row += [f"{uuid_ratio:.1f}x", f"{str_ratio:.1f}x"]
         table.add_row(*row)
 
     console.print()

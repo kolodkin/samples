@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Compare ClickHouse String vs LowCardinality(String) storage and query performance."""
+"""Compare ClickHouse String vs LowCardinality(String) storage and query performance.
+
+Speedup ratios are rounded to 1 decimal place to highlight order-of-magnitude
+differences and avoid over-interpreting run-to-run variance.
+"""
 
 import os
 import clickhouse_connect
@@ -137,7 +141,7 @@ def print_summary(all_results, all_storage):
         for card in CARDINALITIES:
             t_str, t_lc = all_results[card][label]
             speedup = t_str / t_lc if t_lc > 0 else float("inf")
-            row += [f"{t_str:.4f}s", f"{t_lc:.4f}s", f"{speedup:.2f}x"]
+            row += [f"{t_str:.4f}s", f"{t_lc:.4f}s", f"{speedup:.1f}x"]
         table.add_row(*row)
 
     console.print()
