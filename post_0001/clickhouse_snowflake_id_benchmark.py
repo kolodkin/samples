@@ -85,7 +85,7 @@ def run_bench(client):
     # Grab sample IDs for parameterised queries
     samples = {}
     for key, tbl in tables.items():
-        s = client.query(f"SELECT id FROM {tbl} ORDER BY id LIMIT 5")
+        s = client.query(f"SELECT id FROM {tbl} ORDER BY id LIMIT 5 OFFSET {NUM_ROWS // 2}")
         samples[key] = [row[0] for row in s.result_rows]
 
     # Storage
