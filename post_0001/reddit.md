@@ -11,6 +11,7 @@ CREATE TABLE events (
     created_at DateTime
 ) ENGINE = MergeTree() ORDER BY created_at;
 ```
+[Benchmark](https://gist.github.com/kolodkin/b7450a9c497e8ca6f7c8a66f9f91ee90)
 ---
 **2. Store Snowflake IDs as `UInt64`, not `String` or `UUID`**
 [Snowflake IDs](https://en.wikipedia.org/wiki/Snowflake_ID) are 64-bit integers — no need for 128-bit UUIDs. The benchmark compared all three:
@@ -26,4 +27,5 @@ CREATE TABLE events (
     ...
 ) ENGINE = MergeTree() ORDER BY id;
 ```
+[Benchmark](https://gist.github.com/kolodkin/9ca3c8991f327d8c3e8e68606dc9afc0)
 Small schema decisions, real impact. Happy to discuss in the comments!
