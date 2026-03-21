@@ -141,7 +141,7 @@ def print_summary(all_results, all_storage):
         for card in CARDINALITIES:
             t_str, t_lc = all_results[card][label]
             speedup = t_str / t_lc if t_lc > 0 else float("inf")
-            row += [f"{t_str:.4f}s", f"{t_lc:.4f}s", f"{speedup:.1f}x"]
+            row += [f"{t_str:.4f}s", f"{t_lc:.4f}s", f"{speedup:.0f}x"]
         table.add_row(*row)
 
     console.print()

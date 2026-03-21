@@ -161,7 +161,7 @@ def print_summary(results, storage_by_table):
             row.append(f"{times[key]:.4f}s")
         uuid_ratio = times["uuid"] / times["uint64"] if times["uint64"] > 0 else float("inf")
         str_ratio = times["string"] / times["uint64"] if times["uint64"] > 0 else float("inf")
-        row += [f"{uuid_ratio:.1f}x", f"{str_ratio:.1f}x"]
+        row += [f"{uuid_ratio:.0f}x", f"{str_ratio:.0f}x"]
         table.add_row(*row)
 
     console.print()
