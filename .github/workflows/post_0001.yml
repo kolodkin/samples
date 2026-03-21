@@ -1,8 +1,10 @@
-name: ClickHouse Benchmarks
+name: post_0001
 
 on:
   workflow_dispatch:
   push:
+    paths:
+      - 'post_0001/**'
 
 jobs:
   benchmark:

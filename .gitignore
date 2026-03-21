@@ -59,6 +59,7 @@ coverage.xml
 Thumbs.db
 
 # ClickHouse local data
+access/
 clickhouse
 cores/
 metadata/

@@ -1,24 +1,27 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Install and start ClickHouse server (data in default /var/lib/clickhouse or /tmp)
+CH_VERSION="${CH_VERSION:-latest}"
 
-echo "Installing ClickHouse..."
+echo "Installing ClickHouse (${CH_VERSION})..."
 if ! command -v clickhouse &>/dev/null; then
-    curl https://clickhouse.com/ | sh
-    ./clickhouse install --noninteractive 2>/dev/null || true
-    rm -f clickhouse
+    DEBIAN_FRONTEND=noninteractive
+    apt-get install -y -qq apt-transport-https ca-certificates gpg >/dev/null 2>&1
+    curl -fsSL 'https://packages.clickhouse.com/rpm/lts/repodata/repomd.xml.key' \
+        | gpg --dearmor -o /usr/share/keyrings/clickhouse-keyring.gpg
+    echo "deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb stable main" \
+        > /etc/apt/sources.list.d/clickhouse.list
+    apt-get update -qq >/dev/null 2>&1
+    apt-get install -y -qq clickhouse-server clickhouse-client >/dev/null 2>&1
 fi
 
-echo "Starting ClickHouse server in background..."
-# Run from /tmp so ClickHouse default data path doesn't pollute the repo
-(cd /tmp && clickhouse server --daemon)
+echo "Starting ClickHouse server..."
+clickhouse server &>/dev/null &
 
-# Wait for server to be ready
 echo "Waiting for ClickHouse to start..."
 for i in {1..30}; do
-    if clickhouse client --query "SELECT 1" &>/dev/null; then
-        echo "ClickHouse is ready!"
+    if curl -sf http://localhost:8123/ping &>/dev/null; then
+        echo "ClickHouse $(clickhouse client -q 'SELECT version()') is ready!"
         exit 0
     fi
     sleep 1

@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Compare ClickHouse UInt64 (Snowflake) vs UUID vs String for ID storage and query performance."""
+"""Compare ClickHouse UInt64 (Snowflake) vs UUID vs String for ID storage and query performance.
+
+Speedup ratios are rounded to 1 decimal place to highlight order-of-magnitude
+differences and avoid over-interpreting run-to-run variance.
+"""
 
 import os
 import clickhouse_connect
@@ -12,17 +16,19 @@ NUM_RUNS = 10
 BENCH_QUERIES = [
     ("Point lookup", "SELECT * FROM {table} WHERE id = {id_expr}"),
     ("Range scan",   "SELECT count() FROM {table} WHERE id > {range_start} AND id < {range_end}"),
-    ("JOIN",         "SELECT count() FROM {table} a JOIN {table} b ON a.user_id = b.user_id WHERE a.id != b.id LIMIT 1000"),
-    ("GROUP BY",     "SELECT user_id, count() FROM {table} GROUP BY user_id"),
     ("ORDER BY",     "SELECT id FROM {table} ORDER BY id DESC LIMIT 100"),
+    ("OFFSET LIMIT", "SELECT id FROM {table} ORDER BY id LIMIT 100 OFFSET 10000"),
     ("IN (5 vals)",  "SELECT * FROM {table} WHERE id IN ({in_list})"),
-    ("COUNT+filter", "SELECT count() FROM {table} WHERE user_id = {user_id_expr}"),
+    ("GROUP BY val", "SELECT value, count() FROM {table} GROUP BY value"),
+    ("JOIN",         "SELECT count() FROM {table} a JOIN {lookup} b ON a.id = b.id"),
 ]
 
+LOOKUP_SIZE = 100_000
+
 COL_DEFS = {
-    "uint64": {"id": "UInt64", "user_id": "UInt64"},
-    "uuid":   {"id": "UUID",   "user_id": "UUID"},
-    "string": {"id": "String", "user_id": "String"},
+    "uint64": {"id_type": "UInt64", "id_default": "generateSnowflakeID()"},
+    "uuid":   {"id_type": "UUID",   "id_default": "generateUUIDv7()"},
+    "string": {"id_type": "String", "id_default": "toString(generateUUIDv7())"},
 }
 
 console = Console()
@@ -38,7 +44,7 @@ def table_name(col_type):
 
 
 def run_bench(client):
-    """Run the full benchmark across both column types."""
+    """Run the full benchmark across all column types."""
     tables = {key: table_name(key) for key in COL_DEFS}
 
     # Create tables
@@ -47,10 +53,8 @@ def run_bench(client):
         client.command(f"DROP TABLE IF EXISTS {tbl}")
         client.command(f"""
             CREATE TABLE {tbl} (
-                id {defs['id']},
-                user_id {defs['id']},
-                payload String,
-                created_at DateTime
+                id {defs['id_type']} DEFAULT {defs['id_default']},
+                value UInt64
             ) ENGINE = MergeTree() ORDER BY id
         """)
 
@@ -58,35 +62,35 @@ def run_bench(client):
     console.print(f"  Inserting {NUM_ROWS:,} rows...")
     insert_times = {}
     for key, tbl in tables.items():
-        if key == "uint64":
-            id_expr = "generateSnowflakeID()"
-            user_id_expr = "generateSnowflakeID()"
-        elif key == "uuid":
-            id_expr = "generateUUIDv7()"
-            user_id_expr = "generateUUIDv7()"
-        else:  # string
-            id_expr = "toString(generateUUIDv7())"
-            user_id_expr = "toString(generateUUIDv7())"
-
         r = client.query(f"""
-            INSERT INTO {tbl}
-            SELECT
-                {id_expr},
-                {user_id_expr},
-                randomString(32),
-                now() - INTERVAL number SECOND
+            INSERT INTO {tbl} (value)
+            SELECT rand64()
             FROM numbers({NUM_ROWS})
         """)
         insert_times[key] = elapsed_s(r)
 
-    # Grab sample IDs per table for parameterised queries
+    # Create lookup tables for JOIN benchmark
+    lookups = {}
+    for key, tbl in tables.items():
+        lookup = f"{tbl}_lookup"
+        lookups[key] = lookup
+        defs = COL_DEFS[key]
+        client.command(f"DROP TABLE IF EXISTS {lookup}")
+        client.command(f"""
+            CREATE TABLE {lookup} (
+                id {defs['id_type']}
+            ) ENGINE = MergeTree() ORDER BY id
+        """)
+        client.command(f"""
+            INSERT INTO {lookup}
+            SELECT id FROM {tbl} ORDER BY rand() LIMIT {LOOKUP_SIZE}
+        """)
+
+    # Grab sample IDs for parameterised queries
     samples = {}
     for key, tbl in tables.items():
-        s = client.query(f"SELECT id, user_id FROM {tbl} ORDER BY id LIMIT 5")
-        samples[key] = {
-            "ids": [row[0] for row in s.result_rows],
-            "user_id": s.result_rows[0][1],
-        }
+        s = client.query(f"SELECT id FROM {tbl} ORDER BY id LIMIT 5 OFFSET {NUM_ROWS // 2}")
+        samples[key] = [row[0] for row in s.result_rows]
 
     # Storage
     storage = client.query(f"""
@@ -109,21 +113,18 @@ def run_bench(client):
     for label, query_tpl in BENCH_QUERIES:
         results[label] = {}
         for key, tbl in tables.items():
-            ids = samples[key]["ids"]
-            user_id = samples[key]["user_id"]
+            ids = samples[key]
 
             def q(v):
                 return str(v) if key == "uint64" else f"'{v}'"
 
-            id_val = q(ids[0])
-            range_s = q(ids[0])
-            range_e = q(ids[-1])
-            in_list = ",".join(q(i) for i in ids)
-            user_val = q(user_id)
-
             query = query_tpl.format(
-                table=tbl, id_expr=id_val, range_start=range_s,
-                range_end=range_e, in_list=in_list, user_id_expr=user_val,
+                table=tbl,
+                lookup=lookups[key],
+                id_expr=q(ids[0]),
+                range_start=q(ids[0]),
+                range_end=q(ids[-1]),
+                in_list=",".join(q(i) for i in ids),
             )
             times = []
             for i in range(NUM_RUNS + 1):
@@ -135,6 +136,8 @@ def run_bench(client):
     # Cleanup
     for tbl in tables.values():
         client.command(f"DROP TABLE IF EXISTS {tbl}")
+    for lookup in lookups.values():
+        client.command(f"DROP TABLE IF EXISTS {lookup}")
 
     return results, storage_by_table
 
@@ -158,7 +161,7 @@ def print_summary(results, storage_by_table):
             row.append(f"{times[key]:.4f}s")
         uuid_ratio = times["uuid"] / times["uint64"] if times["uint64"] > 0 else float("inf")
         str_ratio = times["string"] / times["uint64"] if times["uint64"] > 0 else float("inf")
-        row += [f"{uuid_ratio:.2f}x", f"{str_ratio:.2f}x"]
+        row += [f"~x{uuid_ratio:.0f}", f"~x{str_ratio:.0f}"]
         table.add_row(*row)
 
     console.print()
@@ -186,7 +189,9 @@ def main():
         password=os.getenv("CLICKHOUSE_PASSWORD", ""),
     )
 
-    console.print("\n[bold]ID Benchmark: Snowflake (UInt64) vs UUID vs String[/bold]")
+    version = client.command("SELECT version()")
+    console.print(f"\n[bold]ID Benchmark: Snowflake (UInt64) vs UUID vs String[/bold]")
+    console.print(f"  ClickHouse {version}")
     results, storage = run_bench(client)
     print_summary(results, storage)
 
