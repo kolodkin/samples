@@ -7,7 +7,7 @@ over plain Python?
 
 ## Dataset
 
-- 10M rows, generated in-memory
+- 1000 rows, generated in-memory
 - Columns:
   - `id` — int
   - `category` — string, ~10 distinct values (low cardinality)
@@ -19,7 +19,7 @@ over plain Python?
 
 | Library        | Data structure                |
 | -------------- | ----------------------------- |
-| Native Python  | `list[dict]`                  |
+| Native Python  | `dict[str, list]` (columnar)  |
 | NumPy          | dict of ndarrays              |
 | Pandas         | DataFrame                     |
 | PyArrow        | Table                         |
@@ -56,14 +56,12 @@ NumPy and native Python group-by code will be ugly — that's the point.
 - Speedup ratio vs native Python baseline
 - Output as rich tables (same style as post_0001)
 
-## Open decisions
+## Decisions
 
-- [ ] Native Python: `list[dict]` (row-oriented, realistic) vs
-      `dict[str, list]` (columnar, fairer) vs both?
-- [ ] 10M rows for all libraries, or smaller dataset for native Python
-      to keep CI runtime reasonable?
-- [ ] NumPy group-by: include with manual approach, or mark N/A?
-- [ ] Add joins / string ops, or keep scope to column ops + group-by?
+- [x] Native Python: columnar `dict[str, list]`
+- [x] 1000 rows for all libraries
+- [x] NumPy group-by: include with manual `np.unique` + loop approach
+- [x] Scope: column ops + group-by only (no joins, no string ops)
 
 ## File structure
 
