@@ -1,4 +1,4 @@
-**Two schema changes that sped up our ClickHouse queries — what's worked for you?**
+**Two schema changes that sped up our ClickHouse queries**
 
 We've been running ClickHouse for our analytics pipeline and recently made two small schema changes that had a surprisingly big impact. Wanted to share in case it helps anyone else.
 
@@ -27,4 +27,4 @@ CREATE TABLE events (
 
 I put together a benchmark if anyone wants to dig into the numbers: https://gist.github.com/kolodkin/b7450a9c497e8ca6f7c8a66f9f91ee90
 
-Has anyone else found small schema tweaks that made a big difference in ClickHouse? Curious what others have run into.
+Has anyone else found small schema tweaks that made a big difference in ClickHouse? What's worked for you?
