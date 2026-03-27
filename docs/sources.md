@@ -1,29 +1,29 @@
 # Posting Mediums
 
-Recommended platforms for publishing content, ranked by activity level for ClickHouse topics (as of March 2026).
+Recommended platforms for publishing data engineering content, ranked by activity level (as of March 2026).
 
 ## Recommended
 
 | Medium | Activity | Notes |
 |--------|----------|-------|
-| [Medium](https://medium.com) | High | Most active for ClickHouse content. Multiple articles per week. Good for benchmark-style posts. |
-| [DEV.to](https://dev.to/t/clickhouse) | High | Active `#clickhouse` tag. Strong peer engagement, comments, and reactions. |
-| [Hacker News](https://news.ycombinator.com) | High | ClickHouse topics regularly trending. Benchmark posts with reproducible code do well. |
-| [GitHub Discussions](https://github.com/ClickHouse/ClickHouse/discussions) | Medium | Direct access to ClickHouse maintainers and power users. |
-| [ClickHouse Slack](https://clickhouse.com/slack) | Medium | Primary real-time community channel. Content shared here may get featured in the monthly newsletter. |
+| [r/dataengineering](https://reddit.com/r/dataengineering) | High | 174K+ members. Acts as the unofficial newsroom for data engineering. Very active in 2026. |
+| [Medium](https://medium.com) | High | Multiple data engineering articles per week. Key publications: [Towards Data Engineering](https://medium.com/towards-data-engineering), [Art of Data Engineering](https://medium.com/art-of-data-engineering). |
+| [DEV.to](https://dev.to/t/dataengineering) | High | Active `#dataengineering` tag with weekly series, tool reviews, and benchmarks. Engagement trending slightly down per article but volume growing. |
+| [Hacker News](https://news.ycombinator.com) | High | Benchmark posts with reproducible code do well. Data engineering topics regularly hit front page. |
+| [LinkedIn](https://linkedin.com) | High | Large professional data engineering audience. Good for distribution alongside a primary post. |
 
 ## Consider
 
 | Medium | Activity | Notes |
 |--------|----------|-------|
-| [LinkedIn](https://linkedin.com) | Medium | Professional reach, good for data engineering audience. |
-| [Bluesky](https://bsky.app) / X | Medium | Short-form news. ClickHouse community active on both. |
-| [Telegram](https://t.me/clickhouse_en) | Medium | Largest legacy ClickHouse forum. Direct access to devs. |
-| [ClickHouse Newsletter](https://clickhouse.com/blog) | N/A | Monthly newsletter features community articles. Reach out to get included. |
+| [GitHub Discussions](https://github.com/ClickHouse/ClickHouse/discussions) | Medium | Direct access to ClickHouse maintainers and power users. |
+| [ClickHouse Slack](https://clickhouse.com/slack) | Medium | Primary real-time community channel. Content may get featured in the monthly newsletter. |
+| [Bluesky](https://bsky.app) / X | Medium | Short-form news and links. |
+| [Telegram](https://t.me/clickhouse_en) | Medium | Large ClickHouse-specific chat community. |
 
 ## Skip
 
 | Medium | Reason |
 |--------|--------|
-| Hashnode | No ClickHouse content in 2026. |
-| r/Clickhouse | Too small (~2k members), low activity. |
+| Hashnode | Low data engineering activity in 2026. |
+| r/Clickhouse | Too small (~2k members). Post to r/dataengineering instead. |
