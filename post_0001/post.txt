@@ -15,6 +15,7 @@ CREATE TABLE events (
     user_id UInt64,
     ...
 ) ENGINE = MergeTree() ORDER BY id;
+```
 
 
 
