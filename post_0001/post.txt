@@ -2,12 +2,19 @@ As we scaled out our cyber enterprise solution on ClickHouse, we found some quic
 
 Code examples:
 
-```sql
+```
 CREATE TABLE events (
     status LowCardinality(String),
     created_at DateTime
 ) ENGINE = MergeTree() ORDER BY created_at;
 ```
+
+```
+CREATE TABLE events (
+    id UInt64 DEFAULT generateSnowflakeID(),
+    user_id UInt64,
+    ...
+) ENGINE = MergeTree() ORDER BY id;
 
 
 
