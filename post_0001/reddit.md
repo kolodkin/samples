@@ -18,7 +18,7 @@ CREATE TABLE events (
 UInt64 wins on **INSERT** and **storage** — writes are noticeably faster and disk footprint much smaller.
 For read queries (point lookup, range scan, ORDER BY, OFFSET LIMIT, IN, GROUP BY) UInt64 and UUID perform about the same.
 **JOIN** is where String hurts most. String is the worst choice overall: slowest writes, largest storage, slowest JOINs.
-If your IDs are already 64-bit integers, UInt64 is still the best overall choice. ([UUID docs](https://clickhouse.com/docs/sql-reference/functions/uuid-functions#snowflake-id-generation))
+If your IDs are already 64-bit integers, UInt64 is still the best overall choice. ([UUID docs](https://clickhouse.com/docs/en/sql-reference/data-types/uuid), [Snowflake generate doc](https://clickhouse.com/docs/sql-reference/functions/uuid-functions#snowflake-id-generation))
 ```sql
 CREATE TABLE events (
     id UInt64 DEFAULT generateSnowflakeID(),
