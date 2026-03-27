@@ -1,4 +1,5 @@
-As we scaled out our cyber enterprise solution on ClickHouse, we found some quick performance wins using LowCardinality for repetitive string columns and UInt64 for Snowflake IDs instead of String or UUID.
+As we scaled out our cyber enterprise solution on ClickHouse,
+we found some quick performance wins using LowCardinality for repetitive string columns and UInt64 with Snowflake IDs instead of String. UUID also great alternative l, just avoid Strings for IDs. 
 
 Code examples:
 
