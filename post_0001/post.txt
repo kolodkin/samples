@@ -1,5 +1,16 @@
 As we scaled out our cyber enterprise solution on ClickHouse, we found some quick performance wins using LowCardinality for repetitive string columns and UInt64 for Snowflake IDs instead of String or UUID.
 
+Code examples:
+
+```sql
+CREATE TABLE events (
+    status LowCardinality(String),
+    created_at DateTime
+) ENGINE = MergeTree() ORDER BY created_at;
+```
+
+
+
 Some benchmarks for demonstrating the point:
 
 Benchmark: https://gist.github.com/kolodkin/b7450a9c497e8ca6f7c8a66f9f91ee90
