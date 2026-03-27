@@ -1,26 +1,4 @@
-As we scaled out our cyber enterprise solution on ClickHouse, we hit the usual growing pains — queries slowing down, storage ballooning, JOINs dragging. Before reaching for bigger hardware we looked at the schema itself and found two quick wins that made a real difference.
-
-1. LowCardinality(String) for repetitive string columns
-
-Columns like status codes, country names, and event types repeat the same handful of values millions of times. Wrapping them in LowCardinality dictionary-encodes those strings under the hood. In our benchmarks, filters, DISTINCT, and GROUP BY all got noticeably faster, and storage shrank significantly — especially as row counts grew, where plain String bloated but LowCardinality stayed compact.
-
-CREATE TABLE events (
-    status LowCardinality(String),
-    created_at DateTime
-) ENGINE = MergeTree() ORDER BY created_at;
+As we scaled out our cyber enterprise solution on ClickHouse, we found some quick performance wins using LowCardinality for repetitive string columns and UInt64 for Snowflake IDs instead of String or UUID.
 
 Benchmark: https://gist.github.com/kolodkin/b7450a9c497e8ca6f7c8a66f9f91ee90
-
-2. Store IDs as UInt64, not String or UUID
-
-Our platform generates Snowflake IDs — 64-bit integers. We were storing them as String in some tables and UUID in others. Neither made sense. When we benchmarked all three types side by side, UInt64 won on inserts and storage by a clear margin. Writes were faster and the disk footprint was much smaller. For reads — point lookups, range scans, ORDER BY — UInt64 and UUID performed about the same. But JOINs are where String really hurt. String was the worst choice across the board: slowest writes, largest storage, slowest JOINs. If your IDs fit in 64 bits, just use UInt64.
-
-CREATE TABLE events (
-    id UInt64 DEFAULT generateSnowflakeID(),
-    user_id UInt64,
-    ...
-) ENGINE = MergeTree() ORDER BY id;
-
 Benchmark: https://gist.github.com/kolodkin/9ca3c8991f327d8c3e8e68606dc9afc0
-
-These are small schema decisions but they had real impact on our production workloads. Happy to answer questions if anyone is running into similar scaling issues.
