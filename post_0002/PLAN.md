@@ -7,7 +7,7 @@ over plain Python?
 
 ## Dataset
 
-- 1000 rows, generated in-memory
+- 100K rows, generated in-memory
 - Columns:
   - `id` — int
   - `category` — string, ~10 distinct values (low cardinality)
@@ -59,7 +59,7 @@ NumPy and native Python group-by code will be ugly — that's the point.
 ## Decisions
 
 - [x] Native Python: columnar `dict[str, list]`
-- [x] 1000 rows for all libraries
+- [x] 100K rows for all libraries
 - [x] NumPy group-by: include with manual `np.unique` + loop approach
 - [x] Scope: column ops + group-by only (no joins, no string ops)
 

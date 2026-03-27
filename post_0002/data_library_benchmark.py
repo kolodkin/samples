@@ -2,7 +2,7 @@
 """Benchmark column operations and group-by across Python data libraries.
 
 Compares Native Python, NumPy, Pandas, PyArrow, and Polars on a synthetic
-1000-row dataset. Speedup ratios are relative to the native Python baseline.
+100K-row dataset. Speedup ratios are relative to the native Python baseline.
 """
 
 import random
@@ -19,7 +19,7 @@ import pyarrow.compute as pc
 from rich.console import Console
 from rich.table import Table
 
-NUM_ROWS = 1000
+NUM_ROWS = 100_000
 NUM_RUNS = 10
 FILTER_THRESHOLD = 500.0
 
@@ -266,17 +266,16 @@ def groupby_multi_numpy(data):
     cats = data["category"]
     amounts = data["amount"]
     uniq, inverse = np.unique(cats, return_inverse=True)
-    result = {}
-    for i, cat in enumerate(uniq):
-        mask = inverse == i
-        vals = amounts[mask]
-        result[cat] = {
-            "sum": vals.sum(),
-            "mean": vals.mean(),
-            "min": vals.min(),
-            "max": vals.max(),
-        }
-    return result
+    n = len(uniq)
+    sums = np.zeros(n)
+    np.add.at(sums, inverse, amounts)
+    counts = np.bincount(inverse, minlength=n).astype(float)
+    means = sums / counts
+    mins = np.full(n, np.inf)
+    np.minimum.at(mins, inverse, amounts)
+    maxs = np.full(n, -np.inf)
+    np.maximum.at(maxs, inverse, amounts)
+    return dict(zip(uniq, zip(sums, means, mins, maxs)))
 
 
 def groupby_multi_pandas(df):
