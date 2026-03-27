@@ -10,6 +10,7 @@ CREATE TABLE events (
 ) ENGINE = MergeTree() ORDER BY created_at;
 
 Docs: https://clickhouse.com/docs/en/sql-reference/data-types/lowcardinality
+Benchmark: https://gist.github.com/kolodkin/b7450a9c497e8ca6f7c8a66f9f91ee90
 
 2. Store IDs as UInt64, not String or UUID
 
@@ -23,5 +24,6 @@ CREATE TABLE events (
 
 Docs: https://clickhouse.com/docs/en/sql-reference/data-types/uuid
 Snowflake generation: https://clickhouse.com/docs/sql-reference/functions/uuid-functions#snowflake-id-generation
+Benchmark: https://gist.github.com/kolodkin/9ca3c8991f327d8c3e8e68606dc9afc0
 
 These are small schema decisions but they had real impact on our production workloads. Happy to answer questions if anyone is running into similar scaling issues.
