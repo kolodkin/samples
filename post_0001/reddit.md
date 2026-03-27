@@ -25,6 +25,8 @@ CREATE TABLE events (
 ) ENGINE = MergeTree() ORDER BY id;
 ```
 
-I put together a benchmark if anyone wants to dig into the numbers: https://gist.github.com/kolodkin/b7450a9c497e8ca6f7c8a66f9f91ee90
+I put together benchmarks if anyone wants to dig into the numbers:
+- LowCardinality: https://gist.github.com/kolodkin/b7450a9c497e8ca6f7c8a66f9f91ee90
+- Snowflake ID: https://gist.github.com/kolodkin/9ca3c8991f327d8c3e8e68606dc9afc0
 
 Has anyone else found small schema tweaks that made a big difference in ClickHouse? What's worked for you?
