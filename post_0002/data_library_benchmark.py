@@ -478,6 +478,17 @@ def run_benchmarks(raw_data):
     return results
 
 
+def fmt_time(seconds):
+    """Format time with appropriate unit: s >= 2s, ms >= 2ms, us >= 2us, ns otherwise."""
+    if seconds >= 2:
+        return f"{seconds:.1f}s"
+    if seconds >= 2e-3:
+        return f"{seconds * 1e3:.1f}ms"
+    if seconds >= 2e-6:
+        return f"{seconds * 1e6:.1f}us"
+    return f"{seconds * 1e9:.1f}ns"
+
+
 def print_results(results):
     table = Table(title=f"Data Library Benchmark — {NUM_ROWS:,} rows, {NUM_RUNS} runs")
     table.add_column("Operation", style="bold", no_wrap=True)
@@ -491,7 +502,7 @@ def print_results(results):
         for lib in LIBRARIES:
             t = lib_results[lib]["time"]
             times[lib] = t
-            row.append(f"{t * 1e6:.1f}us")
+            row.append(fmt_time(t))
 
         fastest_lib = min(times, key=times.get)
         python_time = times["python"]
