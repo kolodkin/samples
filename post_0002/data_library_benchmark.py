@@ -103,8 +103,7 @@ def col_sum_polars(df):
 
 
 async def col_sum_aaiclick(obj):
-    result = await obj["amount"].sum()
-    return await result.data()
+    return await obj["amount"].sum()
 
 
 # -- Column multiply --
@@ -130,8 +129,7 @@ def col_mul_polars(df):
 
 
 async def col_mul_aaiclick(obj):
-    result = await (obj["amount"] * obj["quantity"])
-    return await result.data()
+    return await (obj["amount"] * obj["quantity"])
 
 
 # -- Filter rows --
@@ -161,8 +159,7 @@ def filter_polars(df):
 
 
 async def filter_aaiclick(obj):
-    result = obj.where(f"amount > {FILTER_THRESHOLD}")
-    return await result.data()
+    return obj.where(f"amount > {FILTER_THRESHOLD}")
 
 
 # -- Sort --
@@ -190,8 +187,7 @@ def sort_polars(df):
 
 
 async def sort_aaiclick(obj):
-    result = obj.view(order_by="amount DESC")
-    return await result.data()
+    return obj.view(order_by="amount DESC")
 
 
 # -- Count distinct --
@@ -218,8 +214,7 @@ def count_distinct_polars(df):
 
 async def count_distinct_aaiclick(obj):
     uniq = await obj["category"].unique()
-    result = await uniq.count()
-    return await result.data()
+    return await uniq.count()
 
 
 # ---------------------------------------------------------------------------
@@ -257,8 +252,7 @@ def groupby_sum_polars(df):
 
 
 async def groupby_sum_aaiclick(obj):
-    result = await obj.group_by("category").sum("amount")
-    return await result.data()
+    return await obj.group_by("category").sum("amount")
 
 
 # -- Group-by + count --
@@ -285,8 +279,7 @@ def groupby_count_polars(df):
 
 
 async def groupby_count_aaiclick(obj):
-    result = await obj.group_by("category").count()
-    return await result.data()
+    return await obj.group_by("category").count()
 
 
 # -- Group-by + multi-agg --
@@ -349,7 +342,7 @@ async def groupby_multi_aaiclick(obj):
     m = await obj.group_by("category").mean("amount")
     mn = await obj.group_by("category").min("amount")
     mx = await obj.group_by("category").max("amount")
-    return (await s.data(), await m.data(), await mn.data(), await mx.data())
+    return (s, m, mn, mx)
 
 
 # -- Multi-key group-by --
@@ -383,8 +376,7 @@ def groupby_multikey_polars(df):
 
 
 async def groupby_multikey_aaiclick(obj):
-    result = await obj.group_by("category", "subcategory").sum("amount")
-    return await result.data()
+    return await obj.group_by("category", "subcategory").sum("amount")
 
 
 # -- High cardinality group-by (subcategory, ~1000 groups) --
@@ -418,8 +410,7 @@ def groupby_highcard_polars(df):
 
 
 async def groupby_highcard_aaiclick(obj):
-    result = await obj.group_by("subcategory").sum("amount")
-    return await result.data()
+    return await obj.group_by("subcategory").sum("amount")
 
 
 # ---------------------------------------------------------------------------
