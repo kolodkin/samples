@@ -59,7 +59,7 @@ NumPy and native Python group-by code will be ugly — that's the point.
 ## Decisions
 
 - [x] Native Python: columnar `dict[str, list]`
-- [x] 100K rows for all libraries
+- [x] Round 1: 100K rows, Round 2: 1M rows — all libraries including native Python
 - [x] NumPy group-by: include with manual `np.unique` + loop approach
 - [x] Scope: column ops + group-by only (no joins, no string ops)
 
