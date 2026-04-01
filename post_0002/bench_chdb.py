@@ -1,4 +1,8 @@
-"""chdb benchmark — embedded ClickHouse, SQL queries, in-memory."""
+"""chdb benchmark — embedded ClickHouse, SQL queries, in-memory.
+
+Data is loaded from the same Python dict as all other libraries,
+serialized via CSV (chdb has no direct Python insert API).
+"""
 
 from contextlib import contextmanager
 
@@ -10,22 +14,25 @@ from .config import FILTER_THRESHOLD
 NAME = "chdb"
 VERSION = chdb.__version__
 
+_session = None
+
 
 @contextmanager
 def context():
-    session = Session()
+    global _session
+    _session = Session()
     try:
-        yield session
+        yield
     finally:
-        session.cleanup()
-        session.close()
+        _session.cleanup()
+        _session.close()
+        _session = None
 
 
 def convert(data):
-    session = Session()
-    session.query("CREATE DATABASE IF NOT EXISTS bench ENGINE = Atomic")
-    session.query("DROP TABLE IF EXISTS bench.data")
-    session.query("""
+    _session.query("CREATE DATABASE IF NOT EXISTS bench ENGINE = Atomic")
+    _session.query("DROP TABLE IF EXISTS bench.data")
+    _session.query("""
         CREATE TABLE bench.data (
             id Int64,
             category LowCardinality(String),
@@ -34,18 +41,15 @@ def convert(data):
             quantity Int64
         ) ENGINE = MergeTree() ORDER BY id
     """)
-    num_rows = len(data["id"])
-    session.query(f"""
-        INSERT INTO bench.data
-        SELECT
-            number AS id,
-            concat('cat_', toString(number % 10)) AS category,
-            concat('sub_', toString(number % 1000)) AS subcategory,
-            rand64() % 1000000 / 1000.0 AS amount,
-            rand64() % 100 + 1 AS quantity
-        FROM numbers({num_rows})
-    """)
-    return session
+    csv = "\n".join(
+        f'{i},"{c}","{s}",{a},{q}'
+        for i, c, s, a, q in zip(
+            data["id"], data["category"], data["subcategory"],
+            data["amount"], data["quantity"],
+        )
+    )
+    _session.query(f"INSERT INTO bench.data FORMAT CSV\n{csv}")
+    return _session
 
 
 BENCHMARKS = {
