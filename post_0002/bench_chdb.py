@@ -1,10 +1,4 @@
-"""chdb benchmark — embedded ClickHouse, SQL queries, in-memory.
-
-Shares the same embedded chdb engine as aaiclick. Both must use
-the same path since only one engine instance is allowed per process.
-"""
-
-import os
+"""chdb benchmark — embedded ClickHouse, SQL queries, in-memory."""
 
 import chdb
 from chdb.session import Session
@@ -16,8 +10,7 @@ VERSION = chdb.__version__
 
 
 def convert(data):
-    chdb_path = os.path.expanduser("~/.aaiclick/chdb_data")
-    session = Session(chdb_path)
+    session = Session()
     session.query("CREATE DATABASE IF NOT EXISTS bench ENGINE = Atomic")
     session.query("DROP TABLE IF EXISTS bench.data")
     session.query("""
