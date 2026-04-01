@@ -5,26 +5,30 @@ from rich.table import Table
 
 from .config import NUM_RUNS
 
-console = Console()
+console = Console(width=200)
 
 
 def fmt_time(seconds):
-    """Format time: s >= 2s, ms >= 2ms, us >= 2us, ns otherwise."""
-    if seconds >= 2:
-        return f"{seconds:.1f}s"
-    if seconds >= 2e-3:
-        return f"{seconds * 1e3:.1f}ms"
-    if seconds >= 2e-6:
-        return f"{seconds * 1e6:.1f}us"
-    return f"{seconds * 1e9:.1f}ns"
+    """Format time with full unit name and .2 precision."""
+    if seconds >= 3600:
+        return f"{seconds / 3600:.2f} hour"
+    if seconds >= 60:
+        return f"{seconds / 60:.2f} min"
+    if seconds >= 1:
+        return f"{seconds:.2f} sec"
+    if seconds >= 1e-3:
+        return f"{seconds * 1e3:.2f} ms"
+    if seconds >= 1e-6:
+        return f"{seconds * 1e6:.2f} us"
+    return f"{seconds * 1e9:.2f} ns"
 
 
 def print_results(results, lib_names, num_rows):
     table = Table(title=f"Data Library Benchmark — {num_rows:,} rows, {NUM_RUNS} runs")
     table.add_column("Operation", style="bold", no_wrap=True)
     for lib in lib_names:
-        table.add_column(lib, justify="right")
-    table.add_column("Fastest", justify="right", style="green")
+        table.add_column(lib, justify="right", no_wrap=True)
+    table.add_column("Fastest", justify="right", style="green", no_wrap=True)
 
     for bench_name, lib_results in results.items():
         row = [bench_name]
@@ -54,7 +58,7 @@ def print_results(results, lib_names, num_rows):
     mem_table = Table(title="Peak Memory")
     mem_table.add_column("Operation", style="bold", no_wrap=True)
     for lib in lib_names:
-        mem_table.add_column(lib, justify="right")
+        mem_table.add_column(lib, justify="right", no_wrap=True)
 
     for bench_name, lib_results in results.items():
         row = [bench_name]
