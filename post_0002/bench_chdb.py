@@ -1,12 +1,13 @@
 """chdb benchmark — embedded ClickHouse, SQL queries, in-memory.
 
-Data is loaded from the same Python dict as all other libraries,
-serialized via CSV (chdb has no direct Python insert API).
+Data is loaded from the same Python dict as all other libraries via
+PyArrow zero-copy: Python(arrow_table) table function.
 """
 
 from contextlib import contextmanager
 
 import chdb
+import pyarrow as pa
 from chdb.session import Session
 
 from .config import FILTER_THRESHOLD
@@ -41,14 +42,8 @@ def convert(data):
             quantity Int64
         ) ENGINE = MergeTree() ORDER BY id
     """)
-    csv = "\n".join(
-        f'{i},"{c}","{s}",{a},{q}'
-        for i, c, s, a, q in zip(
-            data["id"], data["category"], data["subcategory"],
-            data["amount"], data["quantity"],
-        )
-    )
-    _session.query(f"INSERT INTO bench.data FORMAT CSV\n{csv}")
+    arrow_table = pa.table(data)  # noqa: F841 — referenced by SQL below
+    _session.query("INSERT INTO bench.data SELECT * FROM Python(arrow_table)")
     return _session
 
 
