@@ -29,11 +29,13 @@ async def _col_mul(obj):
 
 
 async def _filter(obj):
-    return obj.where(f"amount > {FILTER_THRESHOLD}")
+    view = obj.where(f"amount > {FILTER_THRESHOLD}")
+    return await view.copy()
 
 
 async def _sort(obj):
-    return obj.view(order_by="amount DESC")
+    view = obj.view(order_by="amount DESC")
+    return await view.copy()
 
 
 async def _count_distinct(obj):
