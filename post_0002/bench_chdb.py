@@ -1,5 +1,7 @@
 """chdb benchmark — embedded ClickHouse, SQL queries, in-memory."""
 
+from contextlib import contextmanager
+
 import chdb
 from chdb.session import Session
 
@@ -7,6 +9,16 @@ from .config import FILTER_THRESHOLD
 
 NAME = "chdb"
 VERSION = chdb.__version__
+
+
+@contextmanager
+def context():
+    session = Session()
+    try:
+        yield session
+    finally:
+        session.cleanup()
+        session.close()
 
 
 def convert(data):

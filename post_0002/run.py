@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 """Benchmark runner — generates data, measures all libraries, prints report.
 
-chdb runs first with :memory:, then its session is closed so aaiclick
-can initialize its own chdb engine with a disk path.
+Libraries may define a context() that wraps convert + benchmarks.
+This lets chdb release its :memory: engine before aaiclick claims its own.
 """
 
 import asyncio
+import contextlib
 import random
 import time
 import tracemalloc
 
 from . import (
+    bench_aaiclick,
     bench_chdb,
     bench_numpy,
     bench_pandas,
@@ -21,17 +23,15 @@ from . import (
 from .config import BENCH_NAMES, CATEGORIES, NUM_ROWS, NUM_RUNS, SUBCATEGORIES
 from .report import console, print_results
 
-# chdb runs first (before aaiclick claims the engine)
-PHASE1_MODULES = [
+MODULES = [
     bench_python,
     bench_numpy,
     bench_pandas,
     bench_pyarrow,
     bench_polars,
     bench_chdb,
+    bench_aaiclick,
 ]
-
-ALL_LIB_NAMES = ["python", "numpy", "pandas", "pyarrow", "polars", "chdb", "aaiclick"]
 
 
 def generate_raw_data(num_rows):
@@ -77,55 +77,52 @@ async def measure_async(fn, data, num_runs):
     return sum(times) / num_runs, peak_mem
 
 
-async def run():
-    import chdb
-    from . import bench_aaiclick
+async def bench_module(mod, raw_data, results):
+    """Run all benchmarks for one library, inside its context if defined."""
+    is_async = getattr(mod, "IS_ASYNC", False)
 
-    versions = [f"{m.NAME} {m.VERSION}" for m in PHASE1_MODULES]
-    versions.append(f"aaiclick {bench_aaiclick.VERSION}")
+    if is_async:
+        dataset = await mod.convert(raw_data)
+    else:
+        dataset = mod.convert(raw_data)
+
+    for bench_name in BENCH_NAMES:
+        if bench_name not in mod.BENCHMARKS:
+            continue
+        console.print(f"  {bench_name} [{mod.NAME}]...")
+        fn = mod.BENCHMARKS[bench_name]
+        if is_async:
+            avg_time, peak_mem = await measure_async(fn, dataset, NUM_RUNS)
+        else:
+            avg_time, peak_mem = measure_sync(fn, dataset, NUM_RUNS)
+        results[bench_name][mod.NAME] = {"time": avg_time, "memory": peak_mem}
+
+
+async def run():
+    versions = [f"{m.NAME} {m.VERSION}" for m in MODULES]
+    lib_names = [m.NAME for m in MODULES]
 
     console.print(f"\n[bold]Python Data Library Benchmark[/bold]")
     console.print(f"  {', '.join(versions)}\n")
     console.print(f"[bold]{NUM_ROWS:,} rows, {NUM_RUNS} runs per operation[/bold]")
 
     raw_data = generate_raw_data(NUM_ROWS)
+    results = {name: {} for name in BENCH_NAMES}
 
-    # Phase 1: all sync libraries including chdb (:memory:)
-    datasets = {}
-    for mod in PHASE1_MODULES:
-        datasets[mod.NAME] = mod.convert(raw_data)
+    for mod in MODULES:
+        ctx_fn = getattr(mod, "context", None)
+        if ctx_fn is None:
+            await bench_module(mod, raw_data, results)
+        else:
+            ctx = ctx_fn()
+            if hasattr(ctx, "__aenter__"):
+                async with ctx:
+                    await bench_module(mod, raw_data, results)
+            else:
+                with ctx:
+                    await bench_module(mod, raw_data, results)
 
-    results = {}
-    for bench_name in BENCH_NAMES:
-        console.print(f"  {bench_name}...")
-        results[bench_name] = {}
-        for mod in PHASE1_MODULES:
-            if bench_name not in mod.BENCHMARKS:
-                continue
-            fn = mod.BENCHMARKS[bench_name]
-            avg_time, peak_mem = measure_sync(fn, datasets[mod.NAME], NUM_RUNS)
-            results[bench_name][mod.NAME] = {"time": avg_time, "memory": peak_mem}
-
-    # Close chdb session to release the engine
-    chdb_session = datasets["chdb"]
-    chdb_session.cleanup()
-    chdb_session.close()
-    del datasets["chdb"]
-
-    # Phase 2: aaiclick (initializes its own chdb engine)
-    from aaiclick.data.data_context import data_context
-
-    async with data_context():
-        aaiclick_data = await bench_aaiclick.convert(raw_data)
-        for bench_name in BENCH_NAMES:
-            console.print(f"  {bench_name} [aaiclick]...")
-            if bench_name not in bench_aaiclick.BENCHMARKS:
-                continue
-            fn = bench_aaiclick.BENCHMARKS[bench_name]
-            avg_time, peak_mem = await measure_async(fn, aaiclick_data, NUM_RUNS)
-            results[bench_name]["aaiclick"] = {"time": avg_time, "memory": peak_mem}
-
-    print_results(results, ALL_LIB_NAMES, NUM_ROWS)
+    print_results(results, lib_names, NUM_ROWS)
 
 
 def main():

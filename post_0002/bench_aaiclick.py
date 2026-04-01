@@ -5,9 +5,15 @@ from aaiclick import create_object_from_value
 
 from .config import FILTER_THRESHOLD
 
+from aaiclick.data.data_context import data_context
+
 NAME = "aaiclick"
 VERSION = aaiclick.__version__
 IS_ASYNC = True
+
+
+def context():
+    return data_context()
 
 
 async def convert(data):
