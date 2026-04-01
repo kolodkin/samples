@@ -1,4 +1,8 @@
-"""chdb benchmark — embedded ClickHouse, SQL queries, in-memory."""
+"""chdb benchmark — embedded ClickHouse, SQL queries, in-memory.
+
+Shares the same embedded chdb engine as aaiclick. Both must use
+the same path since only one engine instance is allowed per process.
+"""
 
 import os
 
