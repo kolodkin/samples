@@ -5,6 +5,7 @@ CATEGORIES = [f"cat_{i}" for i in range(10)]
 SUBCATEGORIES = [f"sub_{i}" for i in range(1000)]
 
 BENCH_NAMES = [
+    "Ingest",
     "Column sum",
     "Column multiply",
     "Filter rows",

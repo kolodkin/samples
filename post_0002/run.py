@@ -87,6 +87,14 @@ async def bench_module(mod, raw_data, results):
         dataset = mod.convert(raw_data)
 
     for bench_name in BENCH_NAMES:
+        if bench_name == "Ingest":
+            console.print(f"  Ingest [{mod.NAME}]...")
+            if is_async:
+                avg_time, peak_mem = await measure_async(mod.convert, raw_data, NUM_RUNS)
+            else:
+                avg_time, peak_mem = measure_sync(mod.convert, raw_data, NUM_RUNS)
+            results["Ingest"][mod.NAME] = {"time": avg_time, "memory": peak_mem}
+            continue
         if bench_name not in mod.BENCHMARKS:
             continue
         console.print(f"  {bench_name} [{mod.NAME}]...")
