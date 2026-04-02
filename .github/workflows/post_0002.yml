@@ -1,0 +1,26 @@
+name: post_0002
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'post_0002/**'
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run data library benchmark
+        run: |
+          uv run python -m post_0002.run | tee /tmp/data_bench.txt
+          echo '## Data Library Benchmark' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat /tmp/data_bench.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
