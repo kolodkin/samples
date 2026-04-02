@@ -19,7 +19,9 @@ jobs:
 
       - name: Run data library benchmark
         run: |
+          set -o pipefail
           uv run python -m post_0002.run | tee /tmp/data_bench.txt
+          set +o pipefail
           echo '## Data Library Benchmark' >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           cat /tmp/data_bench.txt >> "$GITHUB_STEP_SUMMARY"
