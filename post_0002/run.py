@@ -19,6 +19,7 @@ from . import (
     bench_polars,
     bench_pyarrow,
     bench_python,
+    bench_sqlite,
 )
 from .config import BENCH_NAMES, CATEGORIES, NUM_ROWS, NUM_RUNS, SUBCATEGORIES
 from .report import console, print_results
@@ -29,6 +30,7 @@ MODULES = [
     bench_pandas,
     bench_pyarrow,
     bench_polars,
+    bench_sqlite,
     bench_chdb,
     bench_aaiclick,
 ]
