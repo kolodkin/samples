@@ -53,10 +53,7 @@ async def _groupby_count(obj):
 
 async def _groupby_multi(obj):
     return await obj.group_by("category").agg({
-        "amount_sum":  "sum",
-        "amount_mean": "mean",
-        "amount_min":  "min",
-        "amount_max":  "max",
+        "amount": ["sum", "mean", "min", "max"],
     })
 
 
