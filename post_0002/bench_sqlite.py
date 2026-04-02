@@ -9,7 +9,7 @@ NAME = "sqlite"
 VERSION = sqlite3.sqlite_version
 
 
-_BATCH = 100
+_BATCH = 50
 _PH_ROW = "(?,?,?,?,?)"
 
 
