@@ -9,6 +9,10 @@ NAME = "sqlite"
 VERSION = sqlite3.sqlite_version
 
 
+_BATCH = 100
+_PH_ROW = "(?,?,?,?,?)"
+
+
 def convert(data):
     conn = sqlite3.connect(":memory:")
     conn.execute("""
@@ -20,10 +24,12 @@ def convert(data):
             quantity INTEGER
         )
     """)
-    conn.executemany(
-        "INSERT INTO data VALUES (?, ?, ?, ?, ?)",
-        zip(data["id"], data["category"], data["subcategory"], data["amount"], data["quantity"]),
-    )
+    rows = list(zip(data["id"], data["category"], data["subcategory"], data["amount"], data["quantity"]))
+    for i in range(0, len(rows), _BATCH):
+        chunk = rows[i : i + _BATCH]
+        placeholders = ",".join([_PH_ROW] * len(chunk))
+        flat = [v for row in chunk for v in row]
+        conn.execute(f"INSERT INTO data VALUES {placeholders}", flat)
     return conn
 
 
