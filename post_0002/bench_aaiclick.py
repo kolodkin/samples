@@ -52,11 +52,12 @@ async def _groupby_count(obj):
 
 
 async def _groupby_multi(obj):
-    s = await obj.group_by("category").sum("amount")
-    m = await obj.group_by("category").mean("amount")
-    mn = await obj.group_by("category").min("amount")
-    mx = await obj.group_by("category").max("amount")
-    return (s, m, mn, mx)
+    return await obj.group_by("category").agg({
+        "amount_sum":  "sum",
+        "amount_mean": "mean",
+        "amount_min":  "min",
+        "amount_max":  "max",
+    })
 
 
 async def _groupby_multikey(obj):
