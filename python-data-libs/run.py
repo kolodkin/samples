@@ -11,18 +11,16 @@ import random
 import time
 import tracemalloc
 
-from . import (
-    bench_aaiclick,
-    bench_chdb,
-    bench_numpy,
-    bench_pandas,
-    bench_polars,
-    bench_pyarrow,
-    bench_python,
-    bench_sqlite,
-)
-from .config import BENCH_NAMES, CATEGORIES, NUM_ROWS, NUM_RUNS, SUBCATEGORIES
-from .report import console, print_results
+import bench_aaiclick
+import bench_chdb
+import bench_numpy
+import bench_pandas
+import bench_polars
+import bench_pyarrow
+import bench_python
+import bench_sqlite
+from config import BENCH_NAMES, CATEGORIES, NUM_ROWS, NUM_RUNS, SUBCATEGORIES
+from report import console, print_results
 
 MODULES = [
     bench_python,

@@ -1,0 +1,6 @@
+aaiclick
+numpy
+pandas
+polars
+pyarrow
+rich>=14.3.3
