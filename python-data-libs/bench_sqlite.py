@@ -3,7 +3,7 @@
 import sqlite3
 import sys
 
-from .config import FILTER_THRESHOLD
+from config import FILTER_THRESHOLD
 
 NAME = "sqlite"
 VERSION = sqlite3.sqlite_version

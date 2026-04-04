@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from .config import FILTER_THRESHOLD
+from config import FILTER_THRESHOLD
 
 NAME = "numpy"
 VERSION = np.__version__

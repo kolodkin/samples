@@ -3,7 +3,7 @@
 import aaiclick
 from aaiclick import create_object_from_value
 
-from .config import FILTER_THRESHOLD
+from config import FILTER_THRESHOLD
 
 from aaiclick.data.data_context import data_context
 

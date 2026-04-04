@@ -10,7 +10,7 @@ import chdb
 import pyarrow as pa
 from chdb.session import Session
 
-from .config import FILTER_THRESHOLD
+from config import FILTER_THRESHOLD
 
 NAME = "chdb"
 VERSION = chdb.__version__
