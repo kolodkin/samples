@@ -40,7 +40,7 @@ jobs:
 
       - name: Run LowCardinality benchmark
         run: |
-          .venv/bin/python clickhouse_lowcardinality_benchmark.py | tee /tmp/lc_bench.txt
+          uv run python clickhouse_lowcardinality_benchmark.py | tee /tmp/lc_bench.txt
           echo '## LowCardinality(String) Benchmark' >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           cat /tmp/lc_bench.txt >> "$GITHUB_STEP_SUMMARY"
@@ -48,7 +48,7 @@ jobs:
 
       - name: Run Snowflake ID benchmark
         run: |
-          .venv/bin/python clickhouse_snowflake_id_benchmark.py | tee /tmp/sf_bench.txt
+          uv run python clickhouse_snowflake_id_benchmark.py | tee /tmp/sf_bench.txt
           echo '## Snowflake ID Benchmark' >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           cat /tmp/sf_bench.txt >> "$GITHUB_STEP_SUMMARY"

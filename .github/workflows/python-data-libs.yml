@@ -24,7 +24,7 @@ jobs:
 
       - name: Run data library benchmark
         run: |
-          .venv/bin/python run.py | tee /tmp/data_bench.txt
+          uv run python run.py | tee /tmp/data_bench.txt
           echo '## Data Library Benchmark' >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           cat /tmp/data_bench.txt >> "$GITHUB_STEP_SUMMARY"
