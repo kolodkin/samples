@@ -18,11 +18,13 @@ jobs:
       - uses: astral-sh/setup-uv@v4
 
       - name: Install dependencies
-        run: uv pip install --system -r requirements.txt
+        run: |
+          uv venv
+          uv pip install -r requirements.txt
 
       - name: Run data library benchmark
         run: |
-          python run.py | tee /tmp/data_bench.txt
+          .venv/bin/python run.py | tee /tmp/data_bench.txt
           echo '## Data Library Benchmark' >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           cat /tmp/data_bench.txt >> "$GITHUB_STEP_SUMMARY"
