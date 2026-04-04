@@ -1,10 +1,10 @@
-name: post_0002
+name: python-data-libs
 
 on:
   workflow_dispatch:
   push:
     paths:
-      - 'post_0002/**'
+      - 'python-data-libs/**'
 
 jobs:
   benchmark:
@@ -19,7 +19,7 @@ jobs:
 
       - name: Run data library benchmark
         run: |
-          uv run python -m post_0002.run | tee /tmp/data_bench.txt
+          uv run python python-data-libs/run.py | tee /tmp/data_bench.txt
           echo '## Data Library Benchmark' >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           cat /tmp/data_bench.txt >> "$GITHUB_STEP_SUMMARY"
