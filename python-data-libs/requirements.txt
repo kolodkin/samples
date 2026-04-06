@@ -1,4 +1,4 @@
-aaiclick
+aaiclick>=0.0.9
 numpy
 pandas
 polars
