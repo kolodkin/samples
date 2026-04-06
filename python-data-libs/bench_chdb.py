@@ -42,16 +42,31 @@ def convert(data):
             quantity Int64
         ) ENGINE = MergeTree() ORDER BY (category, subcategory)
     """)
+    _session.query("DROP TABLE IF EXISTS bench.sink")
+    _session.query("""
+        CREATE TABLE bench.sink (
+            id Int64,
+            category LowCardinality(String),
+            subcategory LowCardinality(String),
+            amount Float64,
+            quantity Int64
+        ) ENGINE = MergeTree() ORDER BY tuple()
+    """)
     arrow_table = pa.table(data)  # noqa: F841 — referenced by SQL below
     _session.query("INSERT INTO bench.data SELECT * FROM Python(arrow_table)")
     return _session
 
 
+def _materialize(s, sql):
+    s.query("TRUNCATE TABLE bench.sink")
+    s.query(f"INSERT INTO bench.sink {sql}")
+
+
 BENCHMARKS = {
     "Column sum": lambda s: s.query("SELECT sum(amount) FROM bench.data"),
-    "Column multiply": lambda s: s.query("SELECT amount * quantity FROM bench.data FORMAT Null"),
-    "Filter rows": lambda s: s.query(f"SELECT * FROM bench.data WHERE amount > {FILTER_THRESHOLD} FORMAT Null"),
-    "Sort": lambda s: s.query("SELECT * FROM bench.data ORDER BY amount DESC FORMAT Null"),
+    "Column multiply": lambda s: _materialize(s, "SELECT id, category, subcategory, amount * quantity AS amount, quantity FROM bench.data"),
+    "Filter rows": lambda s: _materialize(s, f"SELECT * FROM bench.data WHERE amount > {FILTER_THRESHOLD}"),
+    "Sort": lambda s: _materialize(s, "SELECT * FROM bench.data ORDER BY amount DESC"),
     # GROUP BY + count is ~2.5x faster than count(DISTINCT) in ClickHouse
     "Count distinct": lambda s: s.query("SELECT count() FROM (SELECT category FROM bench.data GROUP BY category)"),
     # ORDER BY (category, subcategory) enables optimize_aggregation_in_order
