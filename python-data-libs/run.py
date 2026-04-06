@@ -7,9 +7,9 @@ This lets chdb release its :memory: engine before aaiclick claims its own.
 
 import asyncio
 import contextlib
+import os
 import random
 import time
-import tracemalloc
 
 import bench_aaiclick
 import bench_chdb
@@ -45,19 +45,25 @@ def generate_raw_data(num_rows):
     }
 
 
+def _get_rss():
+    """Return current RSS in bytes via /proc/self/statm (Linux)."""
+    with open("/proc/self/statm") as f:
+        pages = int(f.read().split()[1])
+    return pages * os.sysconf("SC_PAGE_SIZE")
+
+
 def measure_sync(fn, data, num_runs):
     fn(data)  # warmup
     times = []
     peak_mem = 0
     for _ in range(num_runs):
-        tracemalloc.start()
+        rss_before = _get_rss()
         t0 = time.perf_counter()
         fn(data)
         elapsed = time.perf_counter() - t0
-        _, peak = tracemalloc.get_traced_memory()
-        tracemalloc.stop()
+        rss_after = _get_rss()
         times.append(elapsed)
-        peak_mem = max(peak_mem, peak)
+        peak_mem = max(peak_mem, rss_after - rss_before)
     return sum(times) / num_runs, peak_mem
 
 
@@ -66,14 +72,13 @@ async def measure_async(fn, data, num_runs):
     times = []
     peak_mem = 0
     for _ in range(num_runs):
-        tracemalloc.start()
+        rss_before = _get_rss()
         t0 = time.perf_counter()
         await fn(data)
         elapsed = time.perf_counter() - t0
-        _, peak = tracemalloc.get_traced_memory()
-        tracemalloc.stop()
+        rss_after = _get_rss()
         times.append(elapsed)
-        peak_mem = max(peak_mem, peak)
+        peak_mem = max(peak_mem, rss_after - rss_before)
     return sum(times) / num_runs, peak_mem
 
 
