@@ -50,7 +50,7 @@ def convert(data):
             subcategory LowCardinality(String),
             amount Float64,
             quantity Int64
-        ) ENGINE = MergeTree() ORDER BY tuple()
+        ) ENGINE = Memory
     """)
     arrow_table = pa.table(data)  # noqa: F841 — referenced by SQL below
     _session.query("INSERT INTO bench.data SELECT * FROM Python(arrow_table)")

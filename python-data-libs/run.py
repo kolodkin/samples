@@ -77,32 +77,54 @@ async def measure_async(fn, data, num_runs):
     return sum(times) / num_runs, peak_mem
 
 
-async def bench_module(mod, raw_data, results):
-    """Run all benchmarks for one library, inside its context if defined."""
-    is_async = getattr(mod, "IS_ASYNC", False)
+@contextlib.contextmanager
+def _nullctx():
+    yield
 
-    if is_async:
-        dataset = await mod.convert(raw_data)
+
+async def _run_in_ctx(ctx_fn, coro_fn):
+    """Run a coroutine inside a sync or async context (fresh session each time)."""
+    if ctx_fn is None:
+        return await coro_fn()
+    ctx = ctx_fn()
+    if hasattr(ctx, "__aenter__"):
+        async with ctx:
+            return await coro_fn()
     else:
-        dataset = mod.convert(raw_data)
+        with ctx:
+            return await coro_fn()
+
+
+async def bench_module(mod, raw_data, results):
+    """Run all benchmarks for one library, fresh context per operation."""
+    is_async = getattr(mod, "IS_ASYNC", False)
+    ctx_fn = getattr(mod, "context", None)
 
     for bench_name in BENCH_NAMES:
         if bench_name == "Ingest":
             console.print(f"  Ingest [{mod.NAME}]...")
-            if is_async:
-                avg_time, peak_mem = await measure_async(mod.convert, raw_data, NUM_RUNS)
-            else:
-                avg_time, peak_mem = measure_sync(mod.convert, raw_data, NUM_RUNS)
+
+            async def _ingest():
+                if is_async:
+                    return await measure_async(mod.convert, raw_data, NUM_RUNS)
+                return measure_sync(mod.convert, raw_data, NUM_RUNS)
+
+            avg_time, peak_mem = await _run_in_ctx(ctx_fn, _ingest)
             results["Ingest"][mod.NAME] = {"time": avg_time, "memory": peak_mem}
             continue
         if bench_name not in mod.BENCHMARKS:
             continue
         console.print(f"  {bench_name} [{mod.NAME}]...")
         fn = mod.BENCHMARKS[bench_name]
-        if is_async:
-            avg_time, peak_mem = await measure_async(fn, dataset, NUM_RUNS)
-        else:
-            avg_time, peak_mem = measure_sync(fn, dataset, NUM_RUNS)
+
+        async def _bench(fn=fn):
+            if is_async:
+                dataset = await mod.convert(raw_data)
+                return await measure_async(fn, dataset, NUM_RUNS)
+            dataset = mod.convert(raw_data)
+            return measure_sync(fn, dataset, NUM_RUNS)
+
+        avg_time, peak_mem = await _run_in_ctx(ctx_fn, _bench)
         results[bench_name][mod.NAME] = {"time": avg_time, "memory": peak_mem}
 
 
@@ -118,17 +140,7 @@ async def run():
     results = {name: {} for name in BENCH_NAMES}
 
     for mod in MODULES:
-        ctx_fn = getattr(mod, "context", None)
-        if ctx_fn is None:
-            await bench_module(mod, raw_data, results)
-        else:
-            ctx = ctx_fn()
-            if hasattr(ctx, "__aenter__"):
-                async with ctx:
-                    await bench_module(mod, raw_data, results)
-            else:
-                with ctx:
-                    await bench_module(mod, raw_data, results)
+        await bench_module(mod, raw_data, results)
 
     print_results(results, lib_names, NUM_ROWS)
 
