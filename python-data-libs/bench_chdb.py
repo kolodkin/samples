@@ -40,7 +40,7 @@ def convert(data):
             subcategory LowCardinality(String),
             amount Float64,
             quantity Int64
-        ) ENGINE = MergeTree() ORDER BY (category, subcategory)
+        ) ENGINE = Memory
     """)
     _session.query("DROP TABLE IF EXISTS bench.sink")
     _session.query("""
@@ -67,24 +67,20 @@ BENCHMARKS = {
     "Column multiply": lambda s: _materialize(s, "SELECT id, category, subcategory, amount * quantity AS amount, quantity FROM bench.data"),
     "Filter rows": lambda s: _materialize(s, f"SELECT * FROM bench.data WHERE amount > {FILTER_THRESHOLD}"),
     "Sort": lambda s: _materialize(s, "SELECT * FROM bench.data ORDER BY amount DESC"),
-    # GROUP BY + count is ~2.5x faster than count(DISTINCT) in ClickHouse
     "Count distinct": lambda s: s.query("SELECT count() FROM (SELECT category FROM bench.data GROUP BY category)"),
-    # ORDER BY (category, subcategory) enables optimize_aggregation_in_order
     "Group-by sum": lambda s: s.query(
-        "SELECT category, sum(amount) FROM bench.data GROUP BY category SETTINGS optimize_aggregation_in_order=1"
+        "SELECT category, sum(amount) FROM bench.data GROUP BY category"
     ),
     "Group-by count": lambda s: s.query(
-        "SELECT category, count() FROM bench.data GROUP BY category SETTINGS optimize_aggregation_in_order=1"
+        "SELECT category, count() FROM bench.data GROUP BY category"
     ),
     "Group-by multi-agg": lambda s: s.query(
-        "SELECT category, sum(amount), avg(amount), min(amount), max(amount) FROM bench.data"
-        " GROUP BY category SETTINGS optimize_aggregation_in_order=1"
+        "SELECT category, sum(amount), avg(amount), min(amount), max(amount) FROM bench.data GROUP BY category"
     ),
     "Multi-key group-by": lambda s: s.query(
-        "SELECT category, subcategory, sum(amount) FROM bench.data"
-        " GROUP BY category, subcategory SETTINGS optimize_aggregation_in_order=1"
+        "SELECT category, subcategory, sum(amount) FROM bench.data GROUP BY category, subcategory"
     ),
     "High-card group-by": lambda s: s.query(
-        "SELECT subcategory, sum(amount) FROM bench.data GROUP BY subcategory SETTINGS optimize_aggregation_in_order=1"
+        "SELECT subcategory, sum(amount) FROM bench.data GROUP BY subcategory"
     ),
 }

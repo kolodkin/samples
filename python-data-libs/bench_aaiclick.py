@@ -2,6 +2,7 @@
 
 import aaiclick
 from aaiclick import create_object_from_value
+from aaiclick.data.object.operators import Agg
 
 from config import FILTER_THRESHOLD
 
@@ -52,11 +53,9 @@ async def _groupby_count(obj):
 
 
 async def _groupby_multi(obj):
-    s = await obj.group_by("category").sum("amount")
-    m = await obj.group_by("category").mean("amount")
-    mn = await obj.group_by("category").min("amount")
-    mx = await obj.group_by("category").max("amount")
-    return (s, m, mn, mx)
+    return await obj.group_by("category").agg({
+        "amount": [Agg("sum", "total"), Agg("mean", "average"), Agg("min", "minimum"), Agg("max", "maximum")],
+    })
 
 
 async def _groupby_multikey(obj):
