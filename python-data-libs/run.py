@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-"""Benchmark runner — generates data, measures all libraries, prints report.
+"""Benchmark orchestrator — claims tasks and runs each in a subprocess.
 
-Libraries may define a context() that wraps convert + benchmarks.
-This lets chdb release its :memory: engine before aaiclick claims its own.
+Each benchmark is executed via ``task_runner.py`` in a dedicated subprocess,
+accepting only a task ID (``module:bench_name``).  This gives every task a
+clean process with isolated memory, no import side-effects from other
+libraries, and accurate RSS measurement.
 """
 
 import asyncio
-import contextlib
+import json
 import os
-import random
-import time
+import subprocess
+import sys
 
 import bench_aaiclick
 import bench_chdb
@@ -19,7 +21,7 @@ import bench_polars
 import bench_pyarrow
 import bench_python
 import bench_sqlite
-from config import BENCH_NAMES, CATEGORIES, NUM_ROWS, NUM_RUNS, SUBCATEGORIES
+from config import BENCH_NAMES, NUM_ROWS, NUM_RUNS
 from report import console, print_results
 
 MODULES = [
@@ -33,104 +35,58 @@ MODULES = [
     bench_aaiclick,
 ]
 
+# Map module NAME back to the key used by task_runner.py
+_MODULE_KEY = {
+    "python": "python",
+    "numpy": "numpy",
+    "pandas": "pandas",
+    "pyarrow": "pyarrow",
+    "polars": "polars",
+    "sqlite": "sqlite",
+    "chdb": "chdb",
+    "aaiclick": "aaiclick",
+}
 
-def generate_raw_data(num_rows):
-    random.seed(42)
-    return {
-        "id": list(range(num_rows)),
-        "category": [random.choice(CATEGORIES) for _ in range(num_rows)],
-        "subcategory": [random.choice(SUBCATEGORIES) for _ in range(num_rows)],
-        "amount": [random.uniform(0, 1000) for _ in range(num_rows)],
-        "quantity": [random.randint(1, 100) for _ in range(num_rows)],
-    }
-
-
-def _get_rss():
-    """Return current RSS in bytes via /proc/self/statm (Linux)."""
-    with open("/proc/self/statm") as f:
-        pages = int(f.read().split()[1])
-    return pages * os.sysconf("SC_PAGE_SIZE")
+_TASK_RUNNER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "task_runner.py")
 
 
-def measure_sync(fn, data, num_runs):
-    fn(data)  # warmup
-    times = []
-    peak_mem = 0
-    for _ in range(num_runs):
-        rss_before = _get_rss()
-        t0 = time.perf_counter()
-        fn(data)
-        elapsed = time.perf_counter() - t0
-        rss_after = _get_rss()
-        times.append(elapsed)
-        peak_mem = max(peak_mem, rss_after - rss_before)
-    return sum(times) / num_runs, peak_mem
+def _run_task_subprocess(task_id: str) -> dict | None:
+    """Spawn task_runner.py in a subprocess and return the JSON result."""
+    result = subprocess.run(
+        [sys.executable, _TASK_RUNNER, task_id],
+        capture_output=True,
+        text=True,
+        cwd=os.path.dirname(os.path.abspath(__file__)),
+    )
+    if result.returncode != 0:
+        console.print(f"    [red]FAILED[/red] ({task_id})")
+        if result.stderr:
+            console.print(f"    {result.stderr.strip()}", style="dim")
+        return None
+
+    # The last non-empty line of stdout is the JSON result
+    lines = [l for l in result.stdout.strip().splitlines() if l.strip()]
+    if not lines:
+        return None
+    return json.loads(lines[-1])
 
 
-async def measure_async(fn, data, num_runs):
-    await fn(data)  # warmup
-    times = []
-    peak_mem = 0
-    for _ in range(num_runs):
-        rss_before = _get_rss()
-        t0 = time.perf_counter()
-        await fn(data)
-        elapsed = time.perf_counter() - t0
-        rss_after = _get_rss()
-        times.append(elapsed)
-        peak_mem = max(peak_mem, rss_after - rss_before)
-    return sum(times) / num_runs, peak_mem
-
-
-@contextlib.contextmanager
-def _nullctx():
-    yield
-
-
-async def _run_in_ctx(ctx_fn, coro_fn):
-    """Run a coroutine inside a sync or async context (fresh session each time)."""
-    if ctx_fn is None:
-        return await coro_fn()
-    ctx = ctx_fn()
-    if hasattr(ctx, "__aenter__"):
-        async with ctx:
-            return await coro_fn()
-    else:
-        with ctx:
-            return await coro_fn()
-
-
-async def bench_module(mod, raw_data, results):
-    """Run all benchmarks for one library, fresh context per operation."""
-    is_async = getattr(mod, "IS_ASYNC", False)
-    ctx_fn = getattr(mod, "context", None)
+async def bench_module(mod, results):
+    """Claim all benchmark tasks for one library and run each in a subprocess."""
+    mod_key = _MODULE_KEY[mod.NAME]
 
     for bench_name in BENCH_NAMES:
-        if bench_name == "Ingest":
-            console.print(f"  Ingest [{mod.NAME}]...")
-
-            async def _ingest():
-                if is_async:
-                    return await measure_async(mod.convert, raw_data, NUM_RUNS)
-                return measure_sync(mod.convert, raw_data, NUM_RUNS)
-
-            avg_time, peak_mem = await _run_in_ctx(ctx_fn, _ingest)
-            results["Ingest"][mod.NAME] = {"time": avg_time, "memory": peak_mem}
+        if bench_name != "Ingest" and bench_name not in mod.BENCHMARKS:
             continue
-        if bench_name not in mod.BENCHMARKS:
-            continue
+
+        # Task claimed — run in subprocess
+        task_id = f"{mod_key}:{bench_name}"
         console.print(f"  {bench_name} [{mod.NAME}]...")
-        fn = mod.BENCHMARKS[bench_name]
 
-        async def _bench(fn=fn):
-            if is_async:
-                dataset = await mod.convert(raw_data)
-                return await measure_async(fn, dataset, NUM_RUNS)
-            dataset = mod.convert(raw_data)
-            return measure_sync(fn, dataset, NUM_RUNS)
+        result = await asyncio.to_thread(_run_task_subprocess, task_id)
 
-        avg_time, peak_mem = await _run_in_ctx(ctx_fn, _bench)
-        results[bench_name][mod.NAME] = {"time": avg_time, "memory": peak_mem}
+        if result is not None:
+            results[bench_name][mod.NAME] = result
 
 
 async def run():
@@ -141,11 +97,10 @@ async def run():
     console.print(f"  {', '.join(versions)}\n")
     console.print(f"[bold]{NUM_ROWS:,} rows, {NUM_RUNS} runs per operation[/bold]")
 
-    raw_data = generate_raw_data(NUM_ROWS)
     results = {name: {} for name in BENCH_NAMES}
 
     for mod in MODULES:
-        await bench_module(mod, raw_data, results)
+        await bench_module(mod, results)
 
     print_results(results, lib_names, NUM_ROWS)
 
