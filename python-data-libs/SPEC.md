@@ -21,4 +21,4 @@ Python, NumPy, Pandas, PyArrow, Polars, SQLite, chdb, aaiclick — 1M rows, 10 r
 - **optimize_aggregation_in_order=1:** uses sorted order to avoid hash table, ~2x faster on group-by
 - **LowCardinality(String):** dictionary-encoded strings for category/subcategory columns
 - **COUNT DISTINCT:** rewritten as `SELECT count() FROM (... GROUP BY ...)` (~2.5x faster)
-- **FORMAT Null:** used for filter/sort/multiply to skip result serialization
+- **FORMAT Null:** used for filter/sort/multiply to skip result serialization and materialization
