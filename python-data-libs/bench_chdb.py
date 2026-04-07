@@ -42,29 +42,25 @@ def convert(data):
             quantity Int64
         ) ENGINE = Memory
     """)
-    _session.query("DROP TABLE IF EXISTS bench.sink")
-    _session.query("""
-        CREATE TABLE bench.sink (
-            id Int64,
-            category LowCardinality(String),
-            subcategory LowCardinality(String),
-            amount Float64,
-            quantity Int64
-        ) ENGINE = Memory
-    """)
     arrow_table = pa.table(data)  # noqa: F841 — referenced by SQL below
     _session.query("INSERT INTO bench.data SELECT * FROM Python(arrow_table)")
     return _session
 
 
+_sink_seq = 0
+
+
 def _materialize(s, sql):
-    s.query("TRUNCATE TABLE bench.sink")
-    s.query(f"INSERT INTO bench.sink {sql}")
+    global _sink_seq
+    name = f"bench.sink_{_sink_seq}"
+    _sink_seq += 1
+    s.query(f"CREATE TABLE {name} ENGINE = Memory AS {sql}")
+    s.query(f"DROP TABLE {name}")
 
 
 BENCHMARKS = {
     "Column sum": lambda s: s.query("SELECT sum(amount) FROM bench.data"),
-    "Column multiply": lambda s: s.query("SELECT id, category, subcategory, amount * quantity AS amount, quantity FROM bench.data FORMAT Null"),
+    "Column multiply": lambda s: _materialize(s, "SELECT id, category, subcategory, amount * quantity AS amount, quantity FROM bench.data"),
     "Filter rows": lambda s: _materialize(s, f"SELECT * FROM bench.data WHERE amount > {FILTER_THRESHOLD}"),
     "Sort": lambda s: _materialize(s, "SELECT * FROM bench.data ORDER BY amount DESC"),
     "Count distinct": lambda s: s.query("SELECT count() FROM (SELECT category FROM bench.data GROUP BY category)"),
