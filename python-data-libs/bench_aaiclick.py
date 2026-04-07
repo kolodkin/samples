@@ -1,12 +1,24 @@
 """aaiclick benchmark — Python-to-ClickHouse compiler. Compute only, no .data()."""
 
 import aaiclick
-from aaiclick import create_object_from_value
+from aaiclick import ColumnInfo, Schema, create_object
 from aaiclick.data.object.operators import Agg
 
 from config import FILTER_THRESHOLD
 
 from aaiclick.data.data_context import data_context
+
+_SCHEMA = Schema(
+    fieldtype="d",
+    columns={
+        "aai_id": ColumnInfo("UInt64"),
+        "id": ColumnInfo("Int64"),
+        "category": ColumnInfo("String", low_cardinality=True),
+        "subcategory": ColumnInfo("String", low_cardinality=True),
+        "amount": ColumnInfo("Float64"),
+        "quantity": ColumnInfo("Int64"),
+    },
+)
 
 NAME = "aaiclick"
 VERSION = aaiclick.__version__
@@ -18,7 +30,9 @@ def context():
 
 
 async def convert(data):
-    return await create_object_from_value(data)
+    obj = await create_object(_SCHEMA)
+    await obj.insert(data)
+    return obj
 
 
 async def _col_sum(obj):
@@ -40,8 +54,7 @@ async def _sort(obj):
 
 
 async def _count_distinct(obj):
-    uniq = await obj["category"].unique()
-    return await uniq.count()
+    return await obj["category"].nunique()
 
 
 async def _groupby_sum(obj):
