@@ -2,7 +2,7 @@
 
 import pandas as pd
 
-from config import FILTER_THRESHOLD
+from .config import FILTER_THRESHOLD
 
 NAME = "pandas"
 VERSION = pd.__version__

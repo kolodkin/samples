@@ -4,7 +4,7 @@ import sys
 from collections import Counter, defaultdict
 from statistics import mean
 
-from config import FILTER_THRESHOLD
+from .config import FILTER_THRESHOLD
 
 NAME = "python"
 VERSION = f"{sys.version_info.major}.{sys.version_info.minor}"

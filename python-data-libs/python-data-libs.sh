@@ -3,4 +3,4 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 PYTHON="${PYTHON:-uv run python}"
-$PYTHON run.py
+$PYTHON -m python_data_libs
