@@ -1,6 +1,10 @@
-"""DuckDB benchmark — embedded analytical database, SQL queries, in-memory."""
+"""DuckDB benchmark — embedded analytical database, SQL queries, in-memory.
+
+Data is loaded via PyArrow zero-copy: CREATE TABLE AS SELECT * FROM arrow_table.
+"""
 
 import duckdb
+import pyarrow as pa
 
 from config import FILTER_THRESHOLD
 
@@ -10,22 +14,8 @@ VERSION = duckdb.__version__
 
 def convert(data):
     conn = duckdb.connect(":memory:")
-    conn.execute("""
-        CREATE TABLE data (
-            id BIGINT,
-            category VARCHAR,
-            subcategory VARCHAR,
-            amount DOUBLE,
-            quantity BIGINT
-        )
-    """)
-    conn.execute(
-        "INSERT INTO data SELECT * FROM ("
-        "SELECT UNNEST($1) AS id, UNNEST($2) AS category, "
-        "UNNEST($3) AS subcategory, UNNEST($4) AS amount, UNNEST($5) AS quantity"
-        ")",
-        [data["id"], data["category"], data["subcategory"], data["amount"], data["quantity"]],
-    )
+    arrow_table = pa.table(data)  # noqa: F841 — referenced by SQL below
+    conn.execute("CREATE TABLE data AS SELECT * FROM arrow_table")
     return conn
 
 
