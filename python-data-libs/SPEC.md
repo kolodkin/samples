@@ -11,14 +11,17 @@ Python, NumPy, Pandas, PyArrow, Polars, SQLite, DuckDB, chdb, aaiclick — 1M ro
 ## Guidelines
 
 - No for-loops unless unavoidable (native Python exempt)
-- Measure compute only — no materialization for chdb/aaiclick
+- Measure compute only — materialize large results into temp tables (chdb/duckdb) instead of fetching
 - One file per library (`bench_<lib>.py`), shared runner (`run.py`)
 
 ## chdb optimizations
 
 - **Ingest:** PyArrow zero-copy via `INSERT INTO ... SELECT * FROM Python(arrow_table)`
-- **ORDER BY (category, subcategory):** table sorted by group-by keys enables streaming aggregation
-- **optimize_aggregation_in_order=1:** uses sorted order to avoid hash table, ~2x faster on group-by
 - **LowCardinality(String):** dictionary-encoded strings for category/subcategory columns
 - **COUNT DISTINCT:** rewritten as `SELECT count() FROM (... GROUP BY ...)` (~2.5x faster)
-- **CREATE TABLE AS SELECT:** materializes filter/sort/multiply into a new table (matches aaiclick `.copy()`), then drops it
+- **CREATE TABLE AS SELECT:** materializes filter/sort/multiply into a new table, then drops it
+
+## duckdb optimizations
+
+- **Ingest:** PyArrow zero-copy via `CREATE TABLE AS SELECT * FROM arrow_table`
+- **CREATE TABLE AS SELECT:** materializes filter/sort/multiply into a new table, then drops it
