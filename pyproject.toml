@@ -5,6 +5,7 @@ requires-python = ">=3.10"
 dependencies = [
     "aaiclick>=0.0.9",
     "clickhouse-connect",
+    "duckdb",
     "numpy",
     "pandas",
     "polars",
