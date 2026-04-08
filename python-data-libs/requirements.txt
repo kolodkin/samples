@@ -1,4 +1,5 @@
 aaiclick>=0.0.9
+duckdb
 numpy
 pandas
 polars
