@@ -13,6 +13,7 @@ import time
 
 import bench_aaiclick
 import bench_chdb
+import bench_duckdb
 import bench_numpy
 import bench_pandas
 import bench_polars
@@ -29,6 +30,7 @@ MODULES = [
     bench_pyarrow,
     bench_polars,
     bench_sqlite,
+    bench_duckdb,
     bench_chdb,
     bench_aaiclick,
 ]

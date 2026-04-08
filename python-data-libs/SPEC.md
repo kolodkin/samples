@@ -1,6 +1,6 @@
 # python-data-libs: Python Data Library Benchmark
 
-Python, NumPy, Pandas, PyArrow, Polars, SQLite, chdb, aaiclick — 1M rows, 10 runs averaged.
+Python, NumPy, Pandas, PyArrow, Polars, SQLite, DuckDB, chdb, aaiclick — 1M rows, 10 runs averaged.
 
 ## Operations
 
