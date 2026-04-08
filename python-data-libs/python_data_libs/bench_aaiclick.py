@@ -4,7 +4,7 @@ import aaiclick
 from aaiclick import ColumnInfo, Schema, create_object
 from aaiclick.data.object.operators import Agg
 
-from config import FILTER_THRESHOLD
+from .config import FILTER_THRESHOLD
 
 from aaiclick.data.data_context import data_context
 

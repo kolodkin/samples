@@ -6,7 +6,7 @@ Data is loaded via PyArrow zero-copy: CREATE TABLE AS SELECT * FROM arrow_table.
 import duckdb
 import pyarrow as pa
 
-from config import FILTER_THRESHOLD
+from .config import FILTER_THRESHOLD
 
 NAME = "duckdb"
 VERSION = duckdb.__version__

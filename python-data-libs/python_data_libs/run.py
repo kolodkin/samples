@@ -11,17 +11,17 @@ import os
 import random
 import time
 
-import bench_aaiclick
-import bench_chdb
-import bench_duckdb
-import bench_numpy
-import bench_pandas
-import bench_polars
-import bench_pyarrow
-import bench_python
-import bench_sqlite
-from config import BENCH_NAMES, CATEGORIES, NUM_ROWS, NUM_RUNS, SUBCATEGORIES
-from report import console, print_results
+from . import bench_aaiclick
+from . import bench_chdb
+from . import bench_duckdb
+from . import bench_numpy
+from . import bench_pandas
+from . import bench_polars
+from . import bench_pyarrow
+from . import bench_python
+from . import bench_sqlite
+from .config import BENCH_NAMES, CATEGORIES, NUM_ROWS, NUM_RUNS, SUBCATEGORIES
+from .report import console, print_results
 
 MODULES = [
     bench_python,

@@ -3,7 +3,7 @@
 import pyarrow as pa
 import pyarrow.compute as pc
 
-from config import FILTER_THRESHOLD
+from .config import FILTER_THRESHOLD
 
 NAME = "pyarrow"
 VERSION = pa.__version__

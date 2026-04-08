@@ -2,7 +2,7 @@
 
 import polars as pl
 
-from config import FILTER_THRESHOLD
+from .config import FILTER_THRESHOLD
 
 NAME = "polars"
 VERSION = pl.__version__

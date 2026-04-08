@@ -3,7 +3,7 @@
 from rich.console import Console
 from rich.table import Table
 
-from config import NUM_RUNS
+from .config import NUM_RUNS
 
 console = Console(width=200)
 
