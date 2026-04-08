@@ -1,0 +1,8 @@
+[project]
+name = "clickhouse-low-card-snow-id"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "clickhouse-connect",
+    "rich>=14.3.3",
+]
