@@ -44,7 +44,7 @@ example_projects/<name>/
 │   ├── __init__.py      # Main logic: @job/@task definitions or standalone async workflow
 │   ├── __main__.py      # Entry point for `python -m <name>`
 │   ├── report.py        # Report rendering (rich tables, Object.markdown(), or print)
-│   └── requirements.txt # Extra dependencies not in aaiclick core (optional)
+│   └── pyproject.toml   # Extra dependencies not in aaiclick core (optional)
 ├── <name>.sh            # Shell runner: sets env vars, calls python -m, manages workers
 └── README.md            # Title, description, how to run (see README Convention above)
 ```
