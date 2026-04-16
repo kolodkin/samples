@@ -3,7 +3,7 @@ name = "python-data-libs"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
-    "aaiclick>=0.0.9",
+    "aaiclick>=0.0.10",
     "duckdb",
     "numpy",
     "pandas",
