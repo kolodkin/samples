@@ -1,0 +1,27 @@
+site_name: databear
+site_description: Data engineering samples and benchmarks
+
+theme:
+  name: material
+  palette:
+    scheme: slate
+    primary: deep orange
+
+nav:
+  - Home: index.md
+  - Example Projects: example_projects.md
+  - Lineage: lineage.md
+  - Posting Sources: sources.md
+
+markdown_extensions:
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
+  - tables

@@ -13,5 +13,8 @@ dependencies = [
     "rich>=14.3.3",
 ]
 
+[project.optional-dependencies]
+docs = ["mkdocs-material", "pymdown-extensions"]
+
 [project.scripts]
 clickhouse-string-comparison = "clickhouse_string_comparison:main"

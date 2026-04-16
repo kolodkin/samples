@@ -54,6 +54,9 @@ coverage.xml
 # mypy
 .mypy_cache/
 
+# mkdocs
+site/
+
 # OS
 .DS_Store
 Thumbs.db
