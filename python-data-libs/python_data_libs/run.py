@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from concurrent.futures import ProcessPoolExecutor
 
 import psutil
@@ -110,58 +111,83 @@ def _generate_raw_data():
     }
 
 
+def _pick_sync_target(mod, bench_name, data):
+    if bench_name == "Ingest":
+        return mod.convert, (data,)
+    if bench_name in mod.BENCHMARKS:
+        return mod.BENCHMARKS[bench_name], (mod.convert(data),)
+    return None
+
+
+def _time_sync(target, args):
+    baseline = _ru_maxrss_bytes()
+    target(*args)  # warmup
+    times = []
+    for _ in range(NUM_RUNS):
+        t0 = time.perf_counter()
+        target(*args)
+        times.append(time.perf_counter() - t0)
+    return sum(times) / NUM_RUNS, max(0, _ru_maxrss_bytes() - baseline)
+
+
+async def _time_async(target, args):
+    baseline = _ru_maxrss_bytes()
+    await target(*args)  # warmup
+    times = []
+    for _ in range(NUM_RUNS):
+        t0 = time.perf_counter()
+        await target(*args)
+        times.append(time.perf_counter() - t0)
+    return sum(times) / NUM_RUNS, max(0, _ru_maxrss_bytes() - baseline)
+
+
+def _sync_flow(mod, bench_name, data):
+    picked = _pick_sync_target(mod, bench_name, data)
+    return _time_sync(*picked) if picked else None
+
+
+def _sync_ctx_flow(mod, bench_name, data):
+    with mod.context():
+        return _sync_flow(mod, bench_name, data)
+
+
+async def _async_flow(mod, bench_name, data):
+    if bench_name == "Ingest":
+        target, args = mod.convert, (data,)
+    elif bench_name in mod.BENCHMARKS:
+        dataset = await mod.convert(data)
+        target, args = mod.BENCHMARKS[bench_name], (dataset,)
+    else:
+        return None
+    return await _time_async(target, args)
+
+
+async def _async_ctx_flow(mod, bench_name, data):
+    async with mod.context():
+        return await _async_flow(mod, bench_name, data)
+
+
 def _child_measure(mod_name, bench_name, data_path):
-    """Returns (avg_time, peak_bytes, version) or None if op unsupported."""
+    """Spawn child entry point. Returns (avg_time, peak_bytes, version) or None."""
     import asyncio
     import importlib
-    import time
 
     with open(data_path, "rb") as f:
         data = pickle.load(f)
 
     mod = importlib.import_module(f"python_data_libs.{mod_name}")
     is_async = getattr(mod, "IS_ASYNC", False)
-    ctx_fn = getattr(mod, "context", None)
+    has_ctx = hasattr(mod, "context")
 
-    async def call_fn(fn, *args):
-        return await fn(*args) if is_async else fn(*args)
+    if is_async and has_ctx:
+        result = asyncio.run(_async_ctx_flow(mod, bench_name, data))
+    elif is_async:
+        result = asyncio.run(_async_flow(mod, bench_name, data))
+    elif has_ctx:
+        result = _sync_ctx_flow(mod, bench_name, data)
+    else:
+        result = _sync_flow(mod, bench_name, data)
 
-    async def time_loop(call):
-        await call()  # warmup — not timed; ru_maxrss still captures its allocations
-        times = []
-        for _ in range(NUM_RUNS):
-            t0 = time.perf_counter()
-            await call()
-            times.append(time.perf_counter() - t0)
-        return sum(times) / NUM_RUNS
-
-    async def run_bench():
-        if bench_name == "Ingest":
-            target, args = mod.convert, (data,)
-        elif bench_name in mod.BENCHMARKS:
-            dataset = await call_fn(mod.convert, data)
-            target, args = mod.BENCHMARKS[bench_name], (dataset,)
-        else:
-            return None
-
-        async def call():
-            await call_fn(target, *args)
-
-        baseline = _ru_maxrss_bytes()
-        avg = await time_loop(call)
-        return avg, max(0, _ru_maxrss_bytes() - baseline)
-
-    async def with_ctx():
-        if ctx_fn is None:
-            return await run_bench()
-        ctx = ctx_fn()
-        if hasattr(ctx, "__aenter__"):
-            async with ctx:
-                return await run_bench()
-        with ctx:
-            return await run_bench()
-
-    result = asyncio.run(with_ctx())
     if result is None:
         return None
     avg, peak = result
