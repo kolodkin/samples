@@ -23,6 +23,15 @@ def fmt_time(seconds):
     return f"{seconds * 1e9:.2f} ns"
 
 
+def fmt_bytes(n):
+    size = float(n)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if size < 1024:
+            return f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} PB"
+
+
 def print_results(results, lib_names, num_rows):
     table = Table(title=f"Data Library Benchmark — {num_rows:,} rows, {NUM_RUNS} runs")
     table.add_column("Operation", style="bold", no_wrap=True)
@@ -64,13 +73,7 @@ def print_results(results, lib_names, num_rows):
         row = [bench_name]
         for lib in lib_names:
             if lib in lib_results:
-                mem = lib_results[lib]["memory"]
-                if mem < 1024:
-                    row.append(f"{mem}B")
-                elif mem < 1024 * 1024:
-                    row.append(f"{mem / 1024:.1f}KB")
-                else:
-                    row.append(f"{mem / (1024 * 1024):.1f}MB")
+                row.append(fmt_bytes(lib_results[lib]["memory"]))
             else:
                 row.append("—")
         mem_table.add_row(*row)

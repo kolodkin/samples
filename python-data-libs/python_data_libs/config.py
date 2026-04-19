@@ -4,8 +4,10 @@ FILTER_THRESHOLD = 500.0
 CATEGORIES = [f"cat_{i}" for i in range(10)]
 SUBCATEGORIES = [f"sub_{i}" for i in range(1000)]
 
+INGEST = "Ingest"
+
 BENCH_NAMES = [
-    "Ingest",
+    INGEST,
     "Column sum",
     "Column multiply",
     "Filter rows",

@@ -16,11 +16,10 @@ import tempfile
 import time
 from concurrent.futures import ProcessPoolExecutor
 
-import psutil
 from rich.markup import escape
 
-from .config import BENCH_NAMES, CATEGORIES, NUM_ROWS, NUM_RUNS, SUBCATEGORIES
-from .report import console, print_results
+from .config import BENCH_NAMES, CATEGORIES, INGEST, NUM_ROWS, NUM_RUNS, SUBCATEGORIES
+from .report import console, fmt_bytes, print_results
 
 # Hardcoded so the parent never imports any bench module — otherwise every
 # heavy library would load in the parent too.
@@ -78,22 +77,14 @@ def _cpu_model():
     return platform.processor() or "unknown"
 
 
-def _fmt_bytes(n):
-    size = float(n)
-    for unit in ("B", "KB", "MB", "GB", "TB"):
-        if size < 1024:
-            return f"{size:.1f} {unit}"
-        size /= 1024
-    return f"{size:.1f} PB"
-
-
 def _print_machine_info():
+    import psutil  # parent-only; keep out of spawn-child import cost
     disk = shutil.disk_usage(".")
     rows = [
         ("OS",   f"{platform.system()} {platform.release()}"),
         ("CPU",  f"{_cpu_model()} ({psutil.cpu_count(logical=True)} cores)"),
-        ("RAM",  _fmt_bytes(psutil.virtual_memory().total)),
-        ("Disk", f"{_fmt_bytes(disk.free)} free / {_fmt_bytes(disk.total)} total"),
+        ("RAM",  fmt_bytes(psutil.virtual_memory().total)),
+        ("Disk", f"{fmt_bytes(disk.free)} free / {fmt_bytes(disk.total)} total"),
     ]
     console.print("[bold]Machine[/bold]")
     for label, value in rows:
@@ -111,17 +102,9 @@ def _generate_raw_data():
     }
 
 
-def _pick_sync_target(mod, bench_name, data):
-    if bench_name == "Ingest":
-        return mod.convert, (data,)
-    if bench_name in mod.BENCHMARKS:
-        return mod.BENCHMARKS[bench_name], (mod.convert(data),)
-    return None
-
-
 def _time_sync(target, args):
     baseline = _ru_maxrss_bytes()
-    target(*args)  # warmup
+    target(*args)
     times = []
     for _ in range(NUM_RUNS):
         t0 = time.perf_counter()
@@ -132,7 +115,7 @@ def _time_sync(target, args):
 
 async def _time_async(target, args):
     baseline = _ru_maxrss_bytes()
-    await target(*args)  # warmup
+    await target(*args)
     times = []
     for _ in range(NUM_RUNS):
         t0 = time.perf_counter()
@@ -142,8 +125,13 @@ async def _time_async(target, args):
 
 
 def _sync_flow(mod, bench_name, data):
-    picked = _pick_sync_target(mod, bench_name, data)
-    return _time_sync(*picked) if picked else None
+    if bench_name == INGEST:
+        target, args = mod.convert, (data,)
+    elif bench_name in mod.BENCHMARKS:
+        target, args = mod.BENCHMARKS[bench_name], (mod.convert(data),)
+    else:
+        return None
+    return _time_sync(target, args)
 
 
 def _sync_ctx_flow(mod, bench_name, data):
@@ -152,7 +140,7 @@ def _sync_ctx_flow(mod, bench_name, data):
 
 
 async def _async_flow(mod, bench_name, data):
-    if bench_name == "Ingest":
+    if bench_name == INGEST:
         target, args = mod.convert, (data,)
     elif bench_name in mod.BENCHMARKS:
         dataset = await mod.convert(data)
