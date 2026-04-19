@@ -8,6 +8,7 @@ from .config import FILTER_THRESHOLD
 
 NAME = "python"
 VERSION = f"{sys.version_info.major}.{sys.version_info.minor}"
+SKIP_INGEST = True
 
 
 def convert(data):

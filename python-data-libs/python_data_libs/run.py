@@ -111,6 +111,8 @@ async def bench_module(mod, raw_data, results):
 
     for bench_name in BENCH_NAMES:
         if bench_name == "Ingest":
+            if getattr(mod, "SKIP_INGEST", False):
+                continue
             console.print(f"  Ingest [{mod.NAME}]...")
 
             async def _ingest():
