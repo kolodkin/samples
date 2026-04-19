@@ -1,7 +1,7 @@
 Python Data Library Benchmark
 ---
 
-Benchmarks 8 Python data libraries (native Python, NumPy, Pandas, PyArrow, Polars, SQLite, chdb, aaiclick) across 11 common operations on 1M rows and 10 runs per operation, measuring average time and peak memory for each.
+Benchmarks 8 Python data libraries (native Python, NumPy, Pandas, PyArrow, Polars, SQLite, chdb, aaiclick) across 11 common operations on 1M rows and 10 runs per operation, measuring average time and peak memory for each. SQLite is benchmarked in two flavors — plain (`sqlite`) and with covering indexes (`sqlite+idx`) — because indexes change the profile drastically: group-by/count-distinct speeds up ~4–13×, but Ingest becomes ~4.5× slower.
 
 ```bash
 ./python-data-libs.sh
@@ -21,13 +21,17 @@ Benchmarks 8 Python data libraries (native Python, NumPy, Pandas, PyArrow, Polar
 
 ## Per-library optimizations
 
-### sqlite
+### sqlite (both flavors)
 
 - **Ingest** — 50-row batched `INSERT ... VALUES (...),(...),...` with a single parameter bind; fewer round trips than row-at-a-time inserts.
+
+### sqlite+idx (only)
+
 - **Count distinct**, **Group-by sum**, **Group-by count**, **Group-by multi-agg**, **Multi-key group-by** — covering index `(category, subcategory, amount)` built after bulk insert; planner does an index-only scan, skipping the main table.
 - **High-card group-by** — covering index `(subcategory, amount)` for index-only scan over the 1000-group aggregation.
 - **ANALYZE** runs after index creation so the planner has stats to pick the right covering index per query.
 - Indexes are created *after* bulk insert rather than before — one-shot B-tree build is much faster than incremental maintenance across 1M inserts.
+- Trade-off: Ingest costs ~4.5× more (index build) but group-by/count-distinct queries get 4–13× faster.
 
 ### duckdb
 
