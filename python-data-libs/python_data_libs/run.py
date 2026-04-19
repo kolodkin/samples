@@ -6,8 +6,11 @@ incremental high-water mark."""
 import multiprocessing as mp
 import os
 import pickle
+import platform
 import random
 import resource
+import shutil
+import subprocess
 import sys
 import tempfile
 from concurrent.futures import ProcessPoolExecutor
@@ -36,6 +39,66 @@ LIBRARIES = [
 def _ru_maxrss_bytes():
     rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     return rss if sys.platform == "darwin" else rss * 1024
+
+
+def _cpu_model():
+    if sys.platform == "linux":
+        try:
+            with open("/proc/cpuinfo") as f:
+                for line in f:
+                    if line.startswith("model name"):
+                        return line.split(":", 1)[1].strip()
+        except OSError:
+            pass
+    elif sys.platform == "darwin":
+        r = subprocess.run(
+            ["sysctl", "-n", "machdep.cpu.brand_string"],
+            capture_output=True, text=True, check=False,
+        )
+        if r.returncode == 0:
+            return r.stdout.strip()
+    return platform.processor() or "unknown"
+
+
+def _total_ram_bytes():
+    if sys.platform == "linux":
+        try:
+            with open("/proc/meminfo") as f:
+                for line in f:
+                    if line.startswith("MemTotal:"):
+                        return int(line.split()[1]) * 1024
+        except OSError:
+            pass
+    elif sys.platform == "darwin":
+        r = subprocess.run(
+            ["sysctl", "-n", "hw.memsize"],
+            capture_output=True, text=True, check=False,
+        )
+        if r.returncode == 0:
+            return int(r.stdout.strip())
+    return 0
+
+
+def _fmt_bytes(n):
+    size = float(n)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if size < 1024:
+            return f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} PB"
+
+
+def _print_machine_info():
+    disk = shutil.disk_usage(".")
+    rows = [
+        ("OS",   f"{platform.system()} {platform.release()}"),
+        ("CPU",  f"{_cpu_model()} ({os.cpu_count()} cores)"),
+        ("RAM",  _fmt_bytes(_total_ram_bytes())),
+        ("Disk", f"{_fmt_bytes(disk.free)} free / {_fmt_bytes(disk.total)} total"),
+    ]
+    console.print("[bold]Machine[/bold]")
+    for label, value in rows:
+        console.print(f"  {label:4s}  {value}")
 
 
 def _generate_raw_data():
@@ -109,7 +172,8 @@ def _child_measure(mod_name, bench_name, data_path):
 
 def main():
     console.print("\n[bold]Python Data Library Benchmark[/bold]")
-    console.print(f"[bold]{NUM_ROWS:,} rows, {NUM_RUNS} runs per operation[/bold]")
+    _print_machine_info()
+    console.print(f"\n[bold]{NUM_ROWS:,} rows, {NUM_RUNS} runs per operation[/bold]")
     console.print("[dim]peak memory = ru_maxrss delta after setup (raw_data + import + convert)[/dim]\n")
 
     results = {b: {} for b in BENCH_NAMES}
