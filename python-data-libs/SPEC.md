@@ -25,3 +25,5 @@ Python, NumPy, Pandas, PyArrow, Polars, SQLite, DuckDB, chdb, aaiclick — 1M ro
 
 - **Ingest:** PyArrow zero-copy via `CREATE TABLE AS SELECT * FROM arrow_table`
 - **CREATE TABLE AS SELECT:** materializes filter/sort/multiply into a new table, then drops it
+- **`PRAGMA preserve_insertion_order=false`:** lets DuckDB reorder rows freely, speeding up filter/sort/CTAS and group-by
+- **COUNT DISTINCT:** rewritten as `SELECT count() FROM (... GROUP BY ...)` (matches chdb)
