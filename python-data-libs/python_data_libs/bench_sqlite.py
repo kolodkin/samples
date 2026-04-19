@@ -30,6 +30,9 @@ def convert(data):
         placeholders = ",".join([_PH_ROW] * len(chunk))
         flat = [v for row in chunk for v in row]
         conn.execute(f"INSERT INTO data VALUES {placeholders}", flat)
+    conn.execute("CREATE INDEX idx_cat_subcat_amount ON data(category, subcategory, amount)")
+    conn.execute("CREATE INDEX idx_subcat_amount ON data(subcategory, amount)")
+    conn.execute("ANALYZE")
     return conn
 
 
