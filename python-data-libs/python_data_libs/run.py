@@ -167,7 +167,7 @@ def main():
     try:
         for mod_name, lib in LIBRARIES:
             for bench_name in BENCH_NAMES:
-                console.print(f"  {bench_name} [{lib}]...")
+                console.print(f"  {bench_name} \\[{lib}]...")
                 r = _spawn_measure(mod_name, bench_name, data_path)
                 if r["error"]:
                     console.print(f"    [red]skipped:[/red] {r['error'].strip().splitlines()[-1]}")
