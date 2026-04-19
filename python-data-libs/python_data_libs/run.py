@@ -20,6 +20,7 @@ from . import bench_polars
 from . import bench_pyarrow
 from . import bench_python
 from . import bench_sqlite
+from . import bench_sqlite_indexed
 from .config import BENCH_NAMES, CATEGORIES, NUM_ROWS, NUM_RUNS, SUBCATEGORIES
 from .report import console, print_results
 
@@ -30,6 +31,7 @@ MODULES = [
     bench_pyarrow,
     bench_polars,
     bench_sqlite,
+    bench_sqlite_indexed,
     bench_duckdb,
     bench_chdb,
     bench_aaiclick,
