@@ -4,10 +4,19 @@ Each (library, operation) pair runs in a fresh `spawn` child process so that:
   - allocator state is isolated between libraries (no fragmentation bleed);
   - peak memory is `getrusage(RUSAGE_SELF).ru_maxrss` of the child — a kernel-
     maintained high-water mark, no sampling, no missed spikes.
+
+Reported memory is a *delta*: ru_maxrss at end minus baseline sampled after the
+setup cost (raw_data load, library import, and for non-Ingest ops also the
+one-shot convert()). ru_maxrss is monotonic, so the delta cleanly isolates
+the op's incremental memory.
 """
 
 import multiprocessing as mp
+import os
+import pickle
+import random
 import sys
+import tempfile
 import traceback
 from queue import Empty
 
@@ -36,21 +45,25 @@ def _ru_maxrss_bytes():
     return rss if sys.platform == "darwin" else rss * 1024
 
 
-def _child_measure(mod_name, bench_name, queue):
+def _generate_raw_data():
+    random.seed(42)
+    return {
+        "id": list(range(NUM_ROWS)),
+        "category": [random.choice(CATEGORIES) for _ in range(NUM_ROWS)],
+        "subcategory": [random.choice(SUBCATEGORIES) for _ in range(NUM_ROWS)],
+        "amount": [random.uniform(0, 1000) for _ in range(NUM_ROWS)],
+        "quantity": [random.randint(1, 100) for _ in range(NUM_ROWS)],
+    }
+
+
+def _child_measure(mod_name, bench_name, data_path, queue):
     import asyncio
     import importlib
-    import random
     import time
 
     try:
-        random.seed(42)
-        data = {
-            "id": list(range(NUM_ROWS)),
-            "category": [random.choice(CATEGORIES) for _ in range(NUM_ROWS)],
-            "subcategory": [random.choice(SUBCATEGORIES) for _ in range(NUM_ROWS)],
-            "amount": [random.uniform(0, 1000) for _ in range(NUM_ROWS)],
-            "quantity": [random.randint(1, 100) for _ in range(NUM_ROWS)],
-        }
+        with open(data_path, "rb") as f:
+            data = pickle.load(f)
 
         mod = importlib.import_module(f"python_data_libs.{mod_name}")
         is_async = getattr(mod, "IS_ASYNC", False)
@@ -72,7 +85,9 @@ def _child_measure(mod_name, bench_name, queue):
                         await mod.convert(data)
                     else:
                         mod.convert(data)
-                return await time_loop(call)
+                baseline = _ru_maxrss_bytes()
+                avg = await time_loop(call)
+                return avg, max(0, _ru_maxrss_bytes() - baseline)
 
             if bench_name not in mod.BENCHMARKS:
                 return None
@@ -85,7 +100,9 @@ def _child_measure(mod_name, bench_name, queue):
                     await fn(dataset)
                 else:
                     fn(dataset)
-            return await time_loop(call)
+            baseline = _ru_maxrss_bytes()
+            avg = await time_loop(call)
+            return avg, max(0, _ru_maxrss_bytes() - baseline)
 
         async def with_ctx():
             if ctx_fn is None:
@@ -97,8 +114,11 @@ def _child_measure(mod_name, bench_name, queue):
             with ctx:
                 return await run_bench()
 
-        avg_time = asyncio.run(with_ctx())
-        peak = _ru_maxrss_bytes() if avg_time is not None else None
+        result = asyncio.run(with_ctx())
+        if result is None:
+            queue.put({"time": None, "memory": None, "version": "", "error": None})
+            return
+        avg_time, peak = result
         queue.put({
             "time": avg_time,
             "memory": peak,
@@ -114,10 +134,10 @@ def _child_measure(mod_name, bench_name, queue):
         })
 
 
-def _spawn_measure(mod_name, bench_name):
+def _spawn_measure(mod_name, bench_name, data_path):
     ctx = mp.get_context("spawn")
     queue = ctx.Queue()
-    proc = ctx.Process(target=_child_measure, args=(mod_name, bench_name, queue))
+    proc = ctx.Process(target=_child_measure, args=(mod_name, bench_name, data_path, queue))
     proc.start()
     proc.join()
     try:
@@ -134,24 +154,34 @@ def _spawn_measure(mod_name, bench_name):
 def main():
     console.print("\n[bold]Python Data Library Benchmark[/bold]")
     console.print(f"[bold]{NUM_ROWS:,} rows, {NUM_RUNS} runs per operation[/bold]")
-    console.print("[dim]peak memory = getrusage(RUSAGE_SELF).ru_maxrss of a fresh spawn child[/dim]\n")
+    console.print("[dim]peak memory = ru_maxrss delta after setup (raw_data + import + convert)[/dim]\n")
 
     lib_names = [name for _, name in LIBRARIES]
     results = {b: {} for b in BENCH_NAMES}
     versions = {}
 
-    for mod_name, lib in LIBRARIES:
-        for bench_name in BENCH_NAMES:
-            console.print(f"  {bench_name} [{lib}]...")
-            r = _spawn_measure(mod_name, bench_name)
-            if r["error"]:
-                console.print(f"    [red]skipped:[/red] {r['error'].strip().splitlines()[-1]}")
-                continue
-            if r["time"] is None:
-                continue
-            results[bench_name][lib] = {"time": r["time"], "memory": r["memory"]}
-            if r["version"] and lib not in versions:
-                versions[lib] = r["version"]
+    with tempfile.NamedTemporaryFile(prefix="pdl_raw_", suffix=".pkl", delete=False) as f:
+        data_path = f.name
+        pickle.dump(_generate_raw_data(), f, protocol=pickle.HIGHEST_PROTOCOL)
+
+    try:
+        for mod_name, lib in LIBRARIES:
+            for bench_name in BENCH_NAMES:
+                console.print(f"  {bench_name} [{lib}]...")
+                r = _spawn_measure(mod_name, bench_name, data_path)
+                if r["error"]:
+                    console.print(f"    [red]skipped:[/red] {r['error'].strip().splitlines()[-1]}")
+                    continue
+                if r["time"] is None:
+                    continue
+                results[bench_name][lib] = {"time": r["time"], "memory": r["memory"]}
+                if r["version"] and lib not in versions:
+                    versions[lib] = r["version"]
+    finally:
+        try:
+            os.unlink(data_path)
+        except OSError:
+            pass
 
     if versions:
         console.print(

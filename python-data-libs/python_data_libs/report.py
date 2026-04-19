@@ -55,7 +55,7 @@ def print_results(results, lib_names, num_rows):
     console.print()
     console.print(table)
 
-    mem_table = Table(title="Peak RSS (ru_maxrss, fresh process per op)")
+    mem_table = Table(title="Per-op Peak RSS (ru_maxrss delta, fresh process per op)")
     mem_table.add_column("Operation", style="bold", no_wrap=True)
     for lib in lib_names:
         mem_table.add_column(lib, justify="right", no_wrap=True)
