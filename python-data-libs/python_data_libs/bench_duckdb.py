@@ -14,7 +14,6 @@ VERSION = duckdb.__version__
 
 def convert(data):
     conn = duckdb.connect(":memory:")
-    conn.execute("PRAGMA preserve_insertion_order=false")
     arrow_table = pa.table(data)  # noqa: F841 — referenced by SQL below
     conn.execute("CREATE TABLE data AS SELECT * FROM arrow_table")
     return conn
@@ -36,7 +35,7 @@ BENCHMARKS = {
     "Column multiply": lambda c: _materialize(c, "SELECT id, category, subcategory, amount * quantity AS amount, quantity FROM data"),
     "Filter rows": lambda c: _materialize(c, f"SELECT * FROM data WHERE amount > {FILTER_THRESHOLD}"),
     "Sort": lambda c: _materialize(c, "SELECT * FROM data ORDER BY amount DESC"),
-    "Count distinct": lambda c: c.execute("SELECT count() FROM (SELECT category FROM data GROUP BY category)").fetchone(),
+    "Count distinct": lambda c: c.execute("SELECT count(DISTINCT category) FROM data").fetchone(),
     "Group-by sum": lambda c: c.execute("SELECT category, sum(amount) FROM data GROUP BY category").fetchall(),
     "Group-by count": lambda c: c.execute("SELECT category, count(*) FROM data GROUP BY category").fetchall(),
     "Group-by multi-agg": lambda c: c.execute(
