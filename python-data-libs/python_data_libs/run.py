@@ -167,6 +167,9 @@ def _child_measure(mod_name, bench_name, data_path):
     is_async = getattr(mod, "IS_ASYNC", False)
     has_ctx = hasattr(mod, "context")
 
+    if bench_name == INGEST and getattr(mod, "SKIP_INGEST", False):
+        return None
+
     if is_async and has_ctx:
         result = asyncio.run(_async_ctx_flow(mod, bench_name, data))
     elif is_async:
