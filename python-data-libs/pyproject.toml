@@ -8,6 +8,7 @@ dependencies = [
     "numpy",
     "pandas",
     "polars",
+    "psutil",
     "pyarrow",
     "rich>=14.3.3",
 ]

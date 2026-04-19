@@ -15,6 +15,7 @@ import sys
 import tempfile
 from concurrent.futures import ProcessPoolExecutor
 
+import psutil
 from rich.markup import escape
 
 from .config import BENCH_NAMES, CATEGORIES, NUM_ROWS, NUM_RUNS, SUBCATEGORIES
@@ -45,38 +46,35 @@ def _cpu_model():
     if sys.platform == "linux":
         try:
             with open("/proc/cpuinfo") as f:
+                fields = {}
                 for line in f:
-                    if line.startswith("model name"):
-                        return line.split(":", 1)[1].strip()
+                    if ":" not in line:
+                        if fields:
+                            break
+                        continue
+                    key, _, val = line.partition(":")
+                    fields[key.strip()] = val.strip()
         except OSError:
-            pass
+            fields = {}
+        name = fields.get("model name", "")
+        if name and name.lower() != "unknown":
+            return name
+        vendor = fields.get("vendor_id", "")
+        family = fields.get("cpu family", "")
+        model = fields.get("model", "")
+        parts = [p for p in (vendor,
+                             f"family {family}" if family else "",
+                             f"model {model}" if model else "") if p]
+        if parts:
+            return " ".join(parts)
     elif sys.platform == "darwin":
         r = subprocess.run(
             ["sysctl", "-n", "machdep.cpu.brand_string"],
             capture_output=True, text=True, check=False,
         )
-        if r.returncode == 0:
+        if r.returncode == 0 and r.stdout.strip():
             return r.stdout.strip()
     return platform.processor() or "unknown"
-
-
-def _total_ram_bytes():
-    if sys.platform == "linux":
-        try:
-            with open("/proc/meminfo") as f:
-                for line in f:
-                    if line.startswith("MemTotal:"):
-                        return int(line.split()[1]) * 1024
-        except OSError:
-            pass
-    elif sys.platform == "darwin":
-        r = subprocess.run(
-            ["sysctl", "-n", "hw.memsize"],
-            capture_output=True, text=True, check=False,
-        )
-        if r.returncode == 0:
-            return int(r.stdout.strip())
-    return 0
 
 
 def _fmt_bytes(n):
@@ -92,8 +90,8 @@ def _print_machine_info():
     disk = shutil.disk_usage(".")
     rows = [
         ("OS",   f"{platform.system()} {platform.release()}"),
-        ("CPU",  f"{_cpu_model()} ({os.cpu_count()} cores)"),
-        ("RAM",  _fmt_bytes(_total_ram_bytes())),
+        ("CPU",  f"{_cpu_model()} ({psutil.cpu_count(logical=True)} cores)"),
+        ("RAM",  _fmt_bytes(psutil.virtual_memory().total)),
         ("Disk", f"{_fmt_bytes(disk.free)} free / {_fmt_bytes(disk.total)} total"),
     ]
     console.print("[bold]Machine[/bold]")
