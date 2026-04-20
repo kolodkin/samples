@@ -10,7 +10,8 @@ example_projects/<name>/
 │   ├── report.py        # Report rendering (rich tables, Object.markdown(), or print)
 │   └── pyproject.toml   # Extra dependencies not in aaiclick core (optional)
 ├── <name>.sh            # Shell runner: sets env vars, calls python -m, manages workers
-└── README.md            # Title, description, how to run (see README Convention below)
+├── README.md            # Title, description, how to run (see README Convention below)
+└── SPEC.md              # Optional — technical details, tradeoffs, per-library optimizations
 ```
 
 - The nested `<name>/` folder is the Python package — the outer folder is the project directory
@@ -43,3 +44,7 @@ One-paragraph description of what the project does and which aaiclick features i
 - No additional sections or headings — keep it minimal
 
 READMEs are included in the docs site via `docs/example_projects.md` using `pymdownx.snippets`.
+
+## SPEC.md (optional)
+
+Add a `SPEC.md` next to `README.md` when a project has technical details worth recording but that don't fit the minimal README convention — e.g. operations catalog, measurement methodology, per-library optimizations, schema choices, performance tradeoffs. Keep README minimal; let SPEC.md carry depth.

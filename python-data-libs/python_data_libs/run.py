@@ -1,163 +1,239 @@
-#!/usr/bin/env python3
-"""Benchmark runner — generates data, measures all libraries, prints report.
+"""Each (library, op) pair runs in a fresh spawn child so memory measurements
+don't bleed between libraries. Peak memory is `getrusage(RUSAGE_SELF).ru_maxrss`
+delta sampled after setup (raw_data load + import + convert), giving the op's
+incremental high-water mark."""
 
-Libraries may define a context() that wraps convert + benchmarks.
-This lets chdb release its :memory: engine before aaiclick claims its own.
-"""
-
-import asyncio
-import contextlib
+import multiprocessing as mp
 import os
+import pickle
+import platform
 import random
+import resource
+import shutil
+import subprocess
+import sys
+import tempfile
 import time
+from concurrent.futures import ProcessPoolExecutor
 
-from . import bench_aaiclick
-from . import bench_chdb
-from . import bench_duckdb
-from . import bench_numpy
-from . import bench_pandas
-from . import bench_polars
-from . import bench_pyarrow
-from . import bench_python
-from . import bench_sqlite
-from . import bench_sqlite_indexed
-from .config import BENCH_NAMES, CATEGORIES, NUM_ROWS, NUM_RUNS, SUBCATEGORIES
-from .report import console, print_results
+from rich.markup import escape
 
-MODULES = [
-    bench_python,
-    bench_numpy,
-    bench_pandas,
-    bench_pyarrow,
-    bench_polars,
-    bench_sqlite,
-    bench_sqlite_indexed,
-    bench_duckdb,
-    bench_chdb,
-    bench_aaiclick,
+from .config import BENCH_NAMES, CATEGORIES, INGEST, NUM_ROWS, NUM_RUNS, SUBCATEGORIES
+from .report import console, fmt_bytes, print_results
+
+# (module filename, display name, flow). Flow keys correspond to the
+# _sync/_sync_ctx/_async/_async_ctx functions below. Parent never imports
+# a bench module — otherwise every heavy library would load in the parent.
+LIBRARIES = [
+    ("bench_python",         "python",     "sync"),
+    ("bench_numpy",          "numpy",      "sync"),
+    ("bench_pandas",         "pandas",     "sync"),
+    ("bench_pyarrow",        "pyarrow",    "sync"),
+    ("bench_polars",         "polars",     "sync"),
+    ("bench_sqlite",         "sqlite",     "sync"),
+    ("bench_sqlite_indexed", "sqlite+idx", "sync"),
+    ("bench_duckdb",         "duckdb",     "sync"),
+    ("bench_chdb",           "chdb",       "sync_ctx"),
+    ("bench_aaiclick",       "aaiclick",   "async_ctx"),
 ]
 
 
-def generate_raw_data(num_rows):
+def _ru_maxrss_bytes():
+    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return rss if sys.platform == "darwin" else rss * 1024
+
+
+def _cpu_model():
+    if sys.platform == "linux":
+        try:
+            with open("/proc/cpuinfo") as f:
+                fields = {}
+                for line in f:
+                    if ":" not in line:
+                        if fields:
+                            break
+                        continue
+                    key, _, val = line.partition(":")
+                    fields[key.strip()] = val.strip()
+        except OSError:
+            fields = {}
+        name = fields.get("model name", "")
+        if name and name.lower() != "unknown":
+            return name
+        vendor = fields.get("vendor_id", "")
+        family = fields.get("cpu family", "")
+        model = fields.get("model", "")
+        parts = [p for p in (vendor,
+                             f"family {family}" if family else "",
+                             f"model {model}" if model else "") if p]
+        if parts:
+            return " ".join(parts)
+    elif sys.platform == "darwin":
+        r = subprocess.run(
+            ["sysctl", "-n", "machdep.cpu.brand_string"],
+            capture_output=True, text=True, check=False,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            return r.stdout.strip()
+    return platform.processor() or "unknown"
+
+
+def _print_machine_info():
+    import psutil  # parent-only; keep out of spawn-child import cost
+    disk = shutil.disk_usage(".")
+    rows = [
+        ("OS",   f"{platform.system()} {platform.release()}"),
+        ("CPU",  f"{_cpu_model()} ({psutil.cpu_count(logical=True)} cores)"),
+        ("RAM",  fmt_bytes(psutil.virtual_memory().total)),
+        ("Disk", f"{fmt_bytes(disk.free)} free / {fmt_bytes(disk.total)} total"),
+    ]
+    console.print("[bold]Machine[/bold]")
+    for label, value in rows:
+        console.print(f"  {label:4s}  {value}")
+
+
+def _generate_raw_data():
     random.seed(42)
     return {
-        "id": list(range(num_rows)),
-        "category": [random.choice(CATEGORIES) for _ in range(num_rows)],
-        "subcategory": [random.choice(SUBCATEGORIES) for _ in range(num_rows)],
-        "amount": [random.uniform(0, 1000) for _ in range(num_rows)],
-        "quantity": [random.randint(1, 100) for _ in range(num_rows)],
+        "id": list(range(NUM_ROWS)),
+        "category": [random.choice(CATEGORIES) for _ in range(NUM_ROWS)],
+        "subcategory": [random.choice(SUBCATEGORIES) for _ in range(NUM_ROWS)],
+        "amount": [random.uniform(0, 1000) for _ in range(NUM_ROWS)],
+        "quantity": [random.randint(1, 100) for _ in range(NUM_ROWS)],
     }
 
 
-def _get_rss():
-    """Return current RSS in bytes via /proc/self/statm (Linux)."""
-    with open("/proc/self/statm") as f:
-        pages = int(f.read().split()[1])
-    return pages * os.sysconf("SC_PAGE_SIZE")
-
-
-def measure_sync(fn, data, num_runs):
-    fn(data)  # warmup
+def _time_sync(target, args):
+    baseline = _ru_maxrss_bytes()
+    target(*args)
     times = []
-    peak_mem = 0
-    for _ in range(num_runs):
-        rss_before = _get_rss()
+    for _ in range(NUM_RUNS):
         t0 = time.perf_counter()
-        fn(data)
-        elapsed = time.perf_counter() - t0
-        rss_after = _get_rss()
-        times.append(elapsed)
-        peak_mem = max(peak_mem, rss_after - rss_before)
-    return sum(times) / num_runs, peak_mem
+        target(*args)
+        times.append(time.perf_counter() - t0)
+    return sum(times) / NUM_RUNS, max(0, _ru_maxrss_bytes() - baseline)
 
 
-async def measure_async(fn, data, num_runs):
-    await fn(data)  # warmup
+async def _time_async(target, args):
+    baseline = _ru_maxrss_bytes()
+    await target(*args)
     times = []
-    peak_mem = 0
-    for _ in range(num_runs):
-        rss_before = _get_rss()
+    for _ in range(NUM_RUNS):
         t0 = time.perf_counter()
-        await fn(data)
-        elapsed = time.perf_counter() - t0
-        rss_after = _get_rss()
-        times.append(elapsed)
-        peak_mem = max(peak_mem, rss_after - rss_before)
-    return sum(times) / num_runs, peak_mem
+        await target(*args)
+        times.append(time.perf_counter() - t0)
+    return sum(times) / NUM_RUNS, max(0, _ru_maxrss_bytes() - baseline)
 
 
-@contextlib.contextmanager
-def _nullctx():
-    yield
-
-
-async def _run_in_ctx(ctx_fn, coro_fn):
-    """Run a coroutine inside a sync or async context (fresh session each time)."""
-    if ctx_fn is None:
-        return await coro_fn()
-    ctx = ctx_fn()
-    if hasattr(ctx, "__aenter__"):
-        async with ctx:
-            return await coro_fn()
+def _sync_flow(mod, bench_name, data):
+    if bench_name == INGEST:
+        target, args = mod.convert, (data,)
+    elif bench_name in mod.BENCHMARKS:
+        target, args = mod.BENCHMARKS[bench_name], (mod.convert(data),)
     else:
-        with ctx:
-            return await coro_fn()
+        return None
+    return _time_sync(target, args)
 
 
-async def bench_module(mod, raw_data, results):
-    """Run all benchmarks for one library, fresh context per operation."""
-    is_async = getattr(mod, "IS_ASYNC", False)
-    ctx_fn = getattr(mod, "context", None)
-
-    for bench_name in BENCH_NAMES:
-        if bench_name == "Ingest":
-            if getattr(mod, "SKIP_INGEST", False):
-                continue
-            console.print(f"  Ingest [{mod.NAME}]...")
-
-            async def _ingest():
-                if is_async:
-                    return await measure_async(mod.convert, raw_data, NUM_RUNS)
-                return measure_sync(mod.convert, raw_data, NUM_RUNS)
-
-            avg_time, peak_mem = await _run_in_ctx(ctx_fn, _ingest)
-            results["Ingest"][mod.NAME] = {"time": avg_time, "memory": peak_mem}
-            continue
-        if bench_name not in mod.BENCHMARKS:
-            continue
-        console.print(f"  {bench_name} [{mod.NAME}]...")
-        fn = mod.BENCHMARKS[bench_name]
-
-        async def _bench(fn=fn):
-            if is_async:
-                dataset = await mod.convert(raw_data)
-                return await measure_async(fn, dataset, NUM_RUNS)
-            dataset = mod.convert(raw_data)
-            return measure_sync(fn, dataset, NUM_RUNS)
-
-        avg_time, peak_mem = await _run_in_ctx(ctx_fn, _bench)
-        results[bench_name][mod.NAME] = {"time": avg_time, "memory": peak_mem}
+def _sync_ctx_flow(mod, bench_name, data):
+    with mod.context():
+        return _sync_flow(mod, bench_name, data)
 
 
-async def run():
-    versions = [f"{m.NAME} {m.VERSION}" for m in MODULES]
-    lib_names = [m.NAME for m in MODULES]
+async def _async_flow(mod, bench_name, data):
+    if bench_name == INGEST:
+        target, args = mod.convert, (data,)
+    elif bench_name in mod.BENCHMARKS:
+        dataset = await mod.convert(data)
+        target, args = mod.BENCHMARKS[bench_name], (dataset,)
+    else:
+        return None
+    return await _time_async(target, args)
 
-    console.print(f"\n[bold]Python Data Library Benchmark[/bold]")
-    console.print(f"  {', '.join(versions)}\n")
-    console.print(f"[bold]{NUM_ROWS:,} rows, {NUM_RUNS} runs per operation[/bold]")
 
-    raw_data = generate_raw_data(NUM_ROWS)
-    results = {name: {} for name in BENCH_NAMES}
+async def _async_ctx_flow(mod, bench_name, data):
+    async with mod.context():
+        return await _async_flow(mod, bench_name, data)
 
-    for mod in MODULES:
-        await bench_module(mod, raw_data, results)
 
-    print_results(results, lib_names, NUM_ROWS)
+FLOWS = {
+    "sync":      _sync_flow,
+    "sync_ctx":  _sync_ctx_flow,
+    "async":     _async_flow,
+    "async_ctx": _async_ctx_flow,
+}
+
+
+def _child_measure(mod_name, bench_name, data_path, flow):
+    """Spawn child entry point. Returns (avg_time, peak_bytes, version) or None."""
+    import asyncio
+    import importlib
+
+    with open(data_path, "rb") as f:
+        data = pickle.load(f)
+
+    mod = importlib.import_module(f"python_data_libs.{mod_name}")
+
+    if bench_name == INGEST and getattr(mod, "SKIP_INGEST", False):
+        return None
+
+    flow_fn = FLOWS[flow]
+    if asyncio.iscoroutinefunction(flow_fn):
+        result = asyncio.run(flow_fn(mod, bench_name, data))
+    else:
+        result = flow_fn(mod, bench_name, data)
+
+    if result is None:
+        return None
+    avg, peak = result
+    return avg, peak, getattr(mod, "VERSION", "")
 
 
 def main():
-    asyncio.run(run())
+    console.print("\n[bold]Python Data Library Benchmark[/bold]")
+    _print_machine_info()
+    console.print(f"\n[bold]{NUM_ROWS:,} rows, {NUM_RUNS} runs per operation[/bold]")
+    console.print("[dim]peak memory = ru_maxrss delta after setup (raw_data + import + convert)[/dim]\n")
+
+    results = {b: {} for b in BENCH_NAMES}
+    versions = {}
+
+    fd, data_path = tempfile.mkstemp(prefix="pdl_raw_", suffix=".pkl")
+    with os.fdopen(fd, "wb") as f:
+        pickle.dump(_generate_raw_data(), f, protocol=pickle.HIGHEST_PROTOCOL)
+
+    # max_tasks_per_child=1 forces a fresh worker per submit, so each
+    # measurement gets a clean process and ru_maxrss starts from scratch.
+    pool = ProcessPoolExecutor(
+        max_workers=1,
+        max_tasks_per_child=1,
+        mp_context=mp.get_context("spawn"),
+    )
+    try:
+        for mod_name, lib, flow in LIBRARIES:
+            for bench_name in BENCH_NAMES:
+                console.print(f"  {bench_name} {escape(f'[{lib}]')}...")
+                try:
+                    r = pool.submit(_child_measure, mod_name, bench_name, data_path, flow).result()
+                except Exception as e:
+                    console.print(f"    [red]skipped:[/red] {e}")
+                    continue
+                if r is None:
+                    continue
+                avg, peak, version = r
+                results[bench_name][lib] = {"time": avg, "memory": peak}
+                if version and lib not in versions:
+                    versions[lib] = version
+    finally:
+        pool.shutdown(wait=True)
+        os.unlink(data_path)
+
+    if versions:
+        console.print(
+            "\n[bold]Versions:[/bold] "
+            + ", ".join(f"{k} {v}" for k, v in versions.items())
+        )
+    print_results(results, [name for _, name, _ in LIBRARIES], NUM_ROWS)
 
 
 if __name__ == "__main__":
