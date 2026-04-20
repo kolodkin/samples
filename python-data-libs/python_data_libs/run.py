@@ -21,19 +21,20 @@ from rich.markup import escape
 from .config import BENCH_NAMES, CATEGORIES, INGEST, NUM_ROWS, NUM_RUNS, SUBCATEGORIES
 from .report import console, fmt_bytes, print_results
 
-# Hardcoded so the parent never imports any bench module — otherwise every
-# heavy library would load in the parent too.
+# (module filename, display name, flow). Flow keys correspond to the
+# _sync/_sync_ctx/_async/_async_ctx functions below. Parent never imports
+# a bench module — otherwise every heavy library would load in the parent.
 LIBRARIES = [
-    ("bench_python", "python"),
-    ("bench_numpy", "numpy"),
-    ("bench_pandas", "pandas"),
-    ("bench_pyarrow", "pyarrow"),
-    ("bench_polars", "polars"),
-    ("bench_sqlite", "sqlite"),
-    ("bench_sqlite_indexed", "sqlite+idx"),
-    ("bench_duckdb", "duckdb"),
-    ("bench_chdb", "chdb"),
-    ("bench_aaiclick", "aaiclick"),
+    ("bench_python",         "python",     "sync"),
+    ("bench_numpy",          "numpy",      "sync"),
+    ("bench_pandas",         "pandas",     "sync"),
+    ("bench_pyarrow",        "pyarrow",    "sync"),
+    ("bench_polars",         "polars",     "sync"),
+    ("bench_sqlite",         "sqlite",     "sync"),
+    ("bench_sqlite_indexed", "sqlite+idx", "sync"),
+    ("bench_duckdb",         "duckdb",     "sync"),
+    ("bench_chdb",           "chdb",       "sync_ctx"),
+    ("bench_aaiclick",       "aaiclick",   "async_ctx"),
 ]
 
 
@@ -155,7 +156,15 @@ async def _async_ctx_flow(mod, bench_name, data):
         return await _async_flow(mod, bench_name, data)
 
 
-def _child_measure(mod_name, bench_name, data_path):
+FLOWS = {
+    "sync":      _sync_flow,
+    "sync_ctx":  _sync_ctx_flow,
+    "async":     _async_flow,
+    "async_ctx": _async_ctx_flow,
+}
+
+
+def _child_measure(mod_name, bench_name, data_path, flow):
     """Spawn child entry point. Returns (avg_time, peak_bytes, version) or None."""
     import asyncio
     import importlib
@@ -164,20 +173,15 @@ def _child_measure(mod_name, bench_name, data_path):
         data = pickle.load(f)
 
     mod = importlib.import_module(f"python_data_libs.{mod_name}")
-    is_async = getattr(mod, "IS_ASYNC", False)
-    has_ctx = hasattr(mod, "context")
 
     if bench_name == INGEST and getattr(mod, "SKIP_INGEST", False):
         return None
 
-    if is_async and has_ctx:
-        result = asyncio.run(_async_ctx_flow(mod, bench_name, data))
-    elif is_async:
-        result = asyncio.run(_async_flow(mod, bench_name, data))
-    elif has_ctx:
-        result = _sync_ctx_flow(mod, bench_name, data)
+    flow_fn = FLOWS[flow]
+    if asyncio.iscoroutinefunction(flow_fn):
+        result = asyncio.run(flow_fn(mod, bench_name, data))
     else:
-        result = _sync_flow(mod, bench_name, data)
+        result = flow_fn(mod, bench_name, data)
 
     if result is None:
         return None
@@ -206,11 +210,11 @@ def main():
         mp_context=mp.get_context("spawn"),
     )
     try:
-        for mod_name, lib in LIBRARIES:
+        for mod_name, lib, flow in LIBRARIES:
             for bench_name in BENCH_NAMES:
                 console.print(f"  {bench_name} {escape(f'[{lib}]')}...")
                 try:
-                    r = pool.submit(_child_measure, mod_name, bench_name, data_path).result()
+                    r = pool.submit(_child_measure, mod_name, bench_name, data_path, flow).result()
                 except Exception as e:
                     console.print(f"    [red]skipped:[/red] {e}")
                     continue
@@ -229,7 +233,7 @@ def main():
             "\n[bold]Versions:[/bold] "
             + ", ".join(f"{k} {v}" for k, v in versions.items())
         )
-    print_results(results, [name for _, name in LIBRARIES], NUM_ROWS)
+    print_results(results, [name for _, name, _ in LIBRARIES], NUM_ROWS)
 
 
 if __name__ == "__main__":
