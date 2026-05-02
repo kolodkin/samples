@@ -12,7 +12,7 @@ resolution-markers = [
 
 [[package]]
 name = "aaiclick"
-version = "0.0.10"
+version = "0.0.14"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiosqlite" },
@@ -26,9 +26,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "sqlmodel" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b9/aa/6d43dd070aa1c374ac4349a0eaffa6e49015ae4e26541a76149a7d3e7ac0/aaiclick-0.0.10.tar.gz", hash = "sha256:32bb1fba4232fb8563f72678f58da0af8ef834740bddf58f63cba2806f650f6e", size = 1390452, upload-time = "2026-04-16T06:02:45.509Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/37/39/82fc71547c480bf2ff60fcf2e31efc7aa51759093c6567ed618b5cda7fc7/aaiclick-0.0.14.tar.gz", hash = "sha256:bac4c7fe1df386ea0a17873acd861e6d15444d6de41c1639546e802df087cf20", size = 1554907, upload-time = "2026-04-26T21:11:47.918Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/42/0f/3bb7cd0c01ee8bce2899f4f6ccdd3ddb2c79a36ecbb7d5833448cf5d807e/aaiclick-0.0.10-py3-none-any.whl", hash = "sha256:f318cca4a7b031d73561bbcb7ae2b5070f5012ff17b2f210b9b463096c11ae9a", size = 1170265, upload-time = "2026-04-16T06:02:43.765Z" },
+    { url = "https://files.pythonhosted.org/packages/b0/61/2e4df9fd5c35fe81bcc77b68c57ad4a784ddff0d925641ed1736a0d8c6b2/aaiclick-0.0.14-py3-none-any.whl", hash = "sha256:5edfd820a367a58c627136d03638df83016dbf08b4e71fbc5fb1b12e29594106", size = 1243731, upload-time = "2026-04-26T21:11:45.971Z" },
 ]
 
 [[package]]
@@ -686,7 +686,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aaiclick", specifier = ">=0.0.10" },
+    { name = "aaiclick", specifier = ">=0.0.14" },
     { name = "duckdb" },
     { name = "numpy" },
     { name = "pandas" },
