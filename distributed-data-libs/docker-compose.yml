@@ -1,0 +1,41 @@
+# One service per framework. The runner inside each container loops through
+# all 11 ops, resetting cgroup memory.peak between ops, and writes
+# /data/results-<framework>.json. The orchestrator generates raw.parquet
+# once, then brings each service up/down in sequence and renders the report.
+#
+# Cgroup v2 is required (memory.peak, cpu.stat usage_usec). All GitHub
+# Actions ubuntu-22.04+ runners and modern Linux distros default to v2.
+
+services:
+  orchestrator:
+    build: { context: ., dockerfile: Dockerfile.orchestrator }
+    volumes: [ "./data:/data" ]
+    profiles: [ "tools" ]
+
+  aaiclick:
+    build: { context: ., dockerfile: Dockerfile.aaiclick }
+    volumes: [ "./data:/data" ]
+    command: [ "python", "-m", "distributed_data_libs.runner" ]
+    profiles: [ "bench" ]
+
+  spark:
+    build: { context: ., dockerfile: Dockerfile.spark }
+    volumes: [ "./data:/data" ]
+    command: [ "python", "-m", "distributed_data_libs.runner" ]
+    mem_limit: 6g
+    profiles: [ "bench" ]
+
+  dask:
+    build: { context: ., dockerfile: Dockerfile.dask }
+    volumes: [ "./data:/data" ]
+    command: [ "python", "-m", "distributed_data_libs.runner" ]
+    mem_limit: 6g
+    profiles: [ "bench" ]
+
+  ray:
+    build: { context: ., dockerfile: Dockerfile.ray }
+    volumes: [ "./data:/data" ]
+    command: [ "python", "-m", "distributed_data_libs.runner" ]
+    mem_limit: 6g
+    shm_size: 1g
+    profiles: [ "bench" ]
