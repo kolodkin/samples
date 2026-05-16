@@ -47,16 +47,14 @@ services:
 
   # aaiclick's create_object_from_url uses ClickHouse's url() table
   # function, which requires HTTP. nginx serves /data/ so CH can pull
-  # raw.parquet directly (no Python dict round-trip).
+  # raw.parquet directly (no Python dict round-trip). No healthcheck:
+  # nginx:alpine has no curl/wget that accepts --spider, and nginx is
+  # ready the instant it binds port 80 — depends_on: service_started
+  # is sufficient.
   fileserver:
     image: nginx:alpine
     volumes:
       - "./data:/usr/share/nginx/html:ro"
-    healthcheck:
-      test: [ "CMD", "wget", "--spider", "-q", "http://localhost/" ]
-      interval: 3s
-      timeout: 3s
-      retries: 20
     profiles: [ "bench" ]
 
   # --- framework runners ---
@@ -68,7 +66,7 @@ services:
     depends_on:
       clickhouse: { condition: service_healthy }
       postgres:   { condition: service_healthy }
-      fileserver: { condition: service_healthy }
+      fileserver: { condition: service_started }
     environment:
       CLICKHOUSE_HOST: clickhouse
       CLICKHOUSE_PORT: 8123
