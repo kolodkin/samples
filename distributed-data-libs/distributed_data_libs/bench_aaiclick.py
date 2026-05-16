@@ -1,30 +1,40 @@
-"""aaiclick adapter — connects to a ClickHouse server sidecar (CLICKHOUSE_HOST
-env var) instead of running chdb embedded. Ingest uses create_from_url so the
-CH server reads parquet directly via its native vectorized reader, skipping
-the Python dict round-trip that dominated embedded-mode Ingest time."""
+"""aaiclick adapter — distributed mode against ClickHouse + Postgres sidecars.
+
+Ingest uses create_object_from_url, which makes ClickHouse pull the parquet
+itself via its url() table function and parse it natively (no Python dict
+round-trip — that was the 60s tax dominating embedded-chdb Ingest). url()
+requires HTTP, so a tiny nginx sidecar (`fileserver`) serves /data/.
+"""
+
+import os
 
 import aaiclick
-from aaiclick import ColumnInfo, Schema, create_from_url
+from aaiclick import ColumnInfo
 from aaiclick.data.data_context import data_context
+from aaiclick.data.object import create_object_from_url
 from aaiclick.data.object.operators import Agg
 
 from .config import FILTER_THRESHOLD
 
-_SCHEMA = Schema(
-    fieldtype="d",
-    columns={
-        "aai_id": ColumnInfo("UInt64"),
-        "id": ColumnInfo("Int64"),
-        "category": ColumnInfo("String", low_cardinality=True),
-        "subcategory": ColumnInfo("String", low_cardinality=True),
-        "amount": ColumnInfo("Float64"),
-        "quantity": ColumnInfo("Int64"),
-    },
-)
+# Columns to read from the parquet via CH's url() table function. We also
+# pin types so CH's DESCRIBE-based inference doesn't pick wider integers
+# (Int64 from parquet metadata is fine; explicit LowCardinality on the
+# string columns mirrors the python-data-libs adapter).
+COLUMNS = ["id", "category", "subcategory", "amount", "quantity"]
+COLUMN_TYPES = {
+    "id":          ColumnInfo("Int64"),
+    "category":    ColumnInfo("String", low_cardinality=True),
+    "subcategory": ColumnInfo("String", low_cardinality=True),
+    "amount":      ColumnInfo("Float64"),
+    "quantity":    ColumnInfo("Int64"),
+}
 
 VERSION = aaiclick.__version__
 IS_ASYNC = True
 ASYNC_CONTEXT = True
+
+# Fileserver sidecar that mounts /data on port 80 (see docker-compose.yml).
+_FILESERVER = os.environ.get("FILESERVER_URL", "http://fileserver")
 
 
 def context():
@@ -32,9 +42,10 @@ def context():
 
 
 async def convert(path):
-    # CH server reads the parquet file directly from the shared /data volume.
-    # The CH container mounts /data so file:// URLs resolve server-side.
-    return await create_from_url(f"file://{path}", schema=_SCHEMA)
+    url = f"{_FILESERVER}/{os.path.basename(path)}"
+    return await create_object_from_url(
+        url, columns=COLUMNS, column_types=COLUMN_TYPES,
+    )
 
 
 async def _col_sum(obj):

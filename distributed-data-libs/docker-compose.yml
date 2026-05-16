@@ -45,6 +45,20 @@ services:
       retries: 20
     profiles: [ "bench" ]
 
+  # aaiclick's create_object_from_url uses ClickHouse's url() table
+  # function, which requires HTTP. nginx serves /data/ so CH can pull
+  # raw.parquet directly (no Python dict round-trip).
+  fileserver:
+    image: nginx:alpine
+    volumes:
+      - "./data:/usr/share/nginx/html:ro"
+    healthcheck:
+      test: [ "CMD", "wget", "--spider", "-q", "http://localhost/" ]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    profiles: [ "bench" ]
+
   # --- framework runners ---
 
   aaiclick:
@@ -54,6 +68,7 @@ services:
     depends_on:
       clickhouse: { condition: service_healthy }
       postgres:   { condition: service_healthy }
+      fileserver: { condition: service_healthy }
     environment:
       CLICKHOUSE_HOST: clickhouse
       CLICKHOUSE_PORT: 8123
@@ -64,6 +79,7 @@ services:
       PGUSER: aaiclick
       PGPASSWORD: aaiclick
       PGDATABASE: aaiclick
+      FILESERVER_URL: http://fileserver
     profiles: [ "bench" ]
 
   spark:

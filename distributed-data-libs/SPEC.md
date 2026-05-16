@@ -12,7 +12,7 @@ Same 11 ops as `python-data-libs` so non-ingest results are directly comparable 
 
 ## Architecture
 
-One `docker-compose.yml` declares one service per framework plus two engine sidecars (`clickhouse`, `postgres`) that back aaiclick's distributed mode, and an orchestrator. The orchestrator generates `raw.parquet` once on a shared bind-mounted `./data/` volume. Then for each framework:
+One `docker-compose.yml` declares one service per framework plus three sidecars that back aaiclick's distributed mode — `clickhouse` (data engine), `postgres` (metadata catalog), and `fileserver` (nginx serving `/data/` over HTTP, required because `create_object_from_url` uses CH's `url()` table function which speaks HTTP only) — and an orchestrator. The orchestrator generates `raw.parquet` once on a shared bind-mounted `./data/` volume. Then for each framework:
 
 1. `docker compose up <framework>` starts the runner container — engine sidecars auto-start via `depends_on` + healthcheck (first iteration only)
 2. The runner inside the container loops through all 11 ops in a single long-lived process and writes `/data/results-<framework>.json`
@@ -23,7 +23,7 @@ Per-op measurement isolation comes from the kernel-tracked monotonic `memory.pea
 
 | Framework | Runner image | Engine sidecar(s) | Topology |
 |---|---|---|---|
-| aaiclick | `aaiclick` python client | `clickhouse-server:latest` (data) + `postgres:16` (metadata catalog) | client ↔ HTTP ↔ CH, client ↔ TCP ↔ Postgres |
+| aaiclick | `aaiclick` python client | `clickhouse-server:latest` (data) + `postgres:16` (metadata catalog) + `nginx:alpine` (fileserver) | client ↔ HTTP ↔ CH, client ↔ TCP ↔ Postgres, CH ↔ HTTP ↔ nginx (parquet pull) |
 | Spark | PySpark + JDK 17 | (in-process JVM) | driver + executors in one container |
 | Dask | `dask[complete]` | (in-process) | LocalCluster: 1 worker × 4 threads × 4 GiB |
 | Ray | `ray[data]` | (in-process) | `ray.init(num_cpus=4)` |
@@ -53,8 +53,9 @@ When comparing frameworks, the **Ingest** row (always first) is the most directl
 
 - **Data engine** — `clickhouse/clickhouse-server:latest` sidecar; runner connects via `CLICKHOUSE_HOST=clickhouse` env vars (standard aaiclick discovery path).
 - **Metadata catalog** — `postgres:16` sidecar holds aaiclick's object/schema metadata; runner connects via `PGHOST=postgres` + `PGUSER/PGPASSWORD/PGDATABASE=aaiclick`. Required for aaiclick's distributed mode (embedded chdb mode used the local SQLite catalog instead, but that doesn't scale across processes).
-- **Ingest** — `aaiclick.create_from_url(f"file://{path}")` — CH server reads the parquet from the shared `/data` volume via its native vectorized reader. No Python dict round-trip (which was the 60s tax that dominated embedded-chdb Ingest).
-- **Schema** — `LowCardinality(String)` on `category` and `subcategory`, mirroring the chdb adapter in `python-data-libs`.
+- **Ingest** — `aaiclick.create_object_from_url("http://fileserver/raw.parquet", columns=…, column_types=…)`. This is aaiclick's CH-native fast path: it emits a CH query backed by the `url()` table function, so CH itself does the HTTP fetch + parquet parse + insert in its server process. Zero Python memory footprint, no dict round-trip (which was the 60s tax dominating embedded-chdb Ingest in `python-data-libs`).
+- **Why HTTP and not file://** — CH's `url()` table function speaks HTTP only; `file()` is a different table function that aaiclick's `create_object_from_url` doesn't target. Hence the nginx sidecar.
+- **Types** — `column_types` pins `Int64` / `Float64` / `LowCardinality(String)` so CH's `DESCRIBE`-based inference doesn't widen the integer columns; mirrors the chdb adapter in `python-data-libs`.
 
 ### Spark (PySpark)
 
