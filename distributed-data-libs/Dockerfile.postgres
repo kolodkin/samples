@@ -2,9 +2,9 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir aaiclick clickhouse-connect pyarrow
+RUN pip install --no-cache-dir "psycopg[binary]" pyarrow pandas
 
 COPY distributed_data_libs ./distributed_data_libs
 
 ENV PYTHONPATH=/app
-ENV FRAMEWORK=aaiclick
+ENV FRAMEWORK=postgres

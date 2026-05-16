@@ -1,7 +1,10 @@
-"""aaiclick adapter — embedded chdb backend via data_context()."""
+"""aaiclick adapter — connects to a ClickHouse server sidecar (CLICKHOUSE_HOST
+env var) instead of running chdb embedded. Ingest uses create_from_url so the
+CH server reads parquet directly via its native vectorized reader, skipping
+the Python dict round-trip that dominated embedded-mode Ingest time."""
 
 import aaiclick
-from aaiclick import ColumnInfo, Schema, create_object
+from aaiclick import ColumnInfo, Schema, create_from_url
 from aaiclick.data.data_context import data_context
 from aaiclick.data.object.operators import Agg
 
@@ -29,12 +32,9 @@ def context():
 
 
 async def convert(path):
-    import pyarrow.parquet as pq
-    table = pq.read_table(path)
-    data = {col: table.column(col).to_pylist() for col in table.column_names}
-    obj = await create_object(_SCHEMA)
-    await obj.insert(data)
-    return obj
+    # CH server reads the parquet file directly from the shared /data volume.
+    # The CH container mounts /data so file:// URLs resolve server-side.
+    return await create_from_url(f"file://{path}", schema=_SCHEMA)
 
 
 async def _col_sum(obj):

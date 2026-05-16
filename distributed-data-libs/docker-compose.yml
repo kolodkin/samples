@@ -1,10 +1,8 @@
-# One service per framework. The runner inside each container loops through
-# all 11 ops, resetting cgroup memory.peak between ops, and writes
-# /data/results-<framework>.json. The orchestrator generates raw.parquet
-# once, then brings each service up/down in sequence and renders the report.
-#
-# Cgroup v2 is required (memory.peak, cpu.stat usage_usec). All GitHub
-# Actions ubuntu-22.04+ runners and modern Linux distros default to v2.
+# One service per framework. Sidecar engines (clickhouse, postgres) are
+# long-lived and shared with their framework runner via depends_on +
+# healthcheck. The runner inside each framework container loops through all
+# 11 ops; per-op wall-clock, peak memory (cgroup memory.peak delta), and
+# CPU (cgroup cpu.stat delta) are written to /data/results-<framework>.json.
 
 services:
   orchestrator:
@@ -12,10 +10,53 @@ services:
     volumes: [ "./data:/data" ]
     profiles: [ "tools" ]
 
+  # --- engines ---
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    # /data is mounted twice so both file:///data/... and CH's default
+    # user_files path resolve to the same shared parquet file. aaiclick may
+    # use either depending on which CH table function it picks under the hood.
+    volumes:
+      - "./data:/data"
+      - "./data:/var/lib/clickhouse/user_files"
+    environment:
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+    healthcheck:
+      test: [ "CMD", "wget", "--spider", "-q", "http://localhost:8123/ping" ]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    profiles: [ "bench" ]
+
+  postgres:
+    image: postgres:16
+    volumes: [ "./data:/data" ]
+    environment:
+      POSTGRES_PASSWORD: benchmark
+      POSTGRES_DB: bench
+    healthcheck:
+      test: [ "CMD", "pg_isready", "-U", "postgres" ]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    profiles: [ "bench" ]
+
+  # --- framework runners ---
+
   aaiclick:
     build: { context: ., dockerfile: Dockerfile.aaiclick }
     volumes: [ "./data:/data" ]
     command: [ "python", "-m", "distributed_data_libs.runner" ]
+    depends_on:
+      clickhouse: { condition: service_healthy }
+    environment:
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_PORT: 8123
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
     profiles: [ "bench" ]
 
   spark:
@@ -38,4 +79,19 @@ services:
     command: [ "python", "-m", "distributed_data_libs.runner" ]
     mem_limit: 6g
     shm_size: 1g
+    profiles: [ "bench" ]
+
+  postgres-runner:
+    build: { context: ., dockerfile: Dockerfile.postgres }
+    volumes: [ "./data:/data" ]
+    command: [ "python", "-m", "distributed_data_libs.runner" ]
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: benchmark
+      PGDATABASE: bench
+      FRAMEWORK: postgres
     profiles: [ "bench" ]
