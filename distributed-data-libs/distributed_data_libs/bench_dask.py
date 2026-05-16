@@ -15,10 +15,14 @@ IS_ASYNC = False
 
 @contextmanager
 def context():
+    # One worker with 4 threads fits in the 6 GB container: tasks share
+    # process memory (no inter-worker serialization), and Sort's shuffle
+    # has room to spill without deadlocking. Multi-worker setups OOM at 10M
+    # rows under a 6 GB container.
     cluster = LocalCluster(
-        n_workers=4,
-        threads_per_worker=1,
-        memory_limit="2GB",
+        n_workers=1,
+        threads_per_worker=4,
+        memory_limit="4GiB",
         dashboard_address=None,
     )
     client = Client(cluster)
