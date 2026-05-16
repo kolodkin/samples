@@ -4,9 +4,9 @@ aaiclick, PySpark, Dask, Ray Data — 10M rows, 3 runs averaged. Runs entirely i
 
 ## Operations
 
-Same 11 ops as `python-data-libs` so results are directly comparable at scale:
+Same 11 ops as `python-data-libs` so non-ingest results are directly comparable at scale. **Ingest semantics differ**: in `python-data-libs`, ingest converts a Python `dict[str, list]` into the library's native format; here, ingest reads `/data/raw.parquet` into the framework's native dataset. Distributed frameworks are designed to read from files, not from in-memory Python — going through `dict` → py4j / `from_pandas` / `from_items` is unrealistic and OOMs the Spark JVM at 10M rows.
 
-- **Ingest** — convert raw `dict[str, list]` to the framework's native dataset
+- **Ingest** — read `/data/raw.parquet` (Snappy-compressed) into the framework's native dataset
 - **Column** — sum, multiply, filter, sort, count distinct
 - **Group-by** — sum, count, multi-agg (sum/mean/min/max), multi-key, high cardinality (1000 groups)
 
@@ -49,21 +49,20 @@ When comparing frameworks, the **Ingest** row (always first) is the most directl
 ### Spark (PySpark)
 
 - **JVM warm across ops** — one SparkSession serves all 11 ops. The Dockerfile pre-warms Ivy/Maven caches at image build time so the first SparkSession boot inside the runner does not pay a download cost.
-- **Cache + localCheckpoint** — `convert()` materializes the dataset into a Spark RDD that ops reuse.
+- **Native Parquet read** — `spark.read.parquet(path).cache(); count()` materializes the dataset in executors via Arrow, no py4j marshaling.
 - **Noop sink** — large-result ops (`Column multiply`, `Filter rows`, `Sort`) use `df.write.format("noop")` to force execution without paying to collect rows to the driver.
 - **Aggregations** — small-result ops use `.collect()` since the result is bounded.
 
 ### Dask
 
 - **LocalCluster** — 4 workers, 1 thread each, 2 GB memory limit per worker.
-- **Persisted partitions** — `convert()` returns `.persist()`ed dataframe; subsequent ops read from in-memory partitions.
-- **Categorical columns** — `category` and `subcategory` cast to pandas `category` dtype before `from_pandas`; cuts group-by time substantially.
+- **Native Parquet read** — `dd.read_parquet(...).repartition(8).categorize(...).persist()`. Cast `category`/`subcategory` to dask categorical dtype before persisting; cuts group-by time substantially.
 - **Materialize without collect** — `_materialize` uses `map_partitions(len).compute().sum()` to force execution of large-result ops without pulling rows to the driver.
 
 ### Ray Data
 
 - **Local cluster** — `ray.init(num_cpus=4)` in the container.
-- **8 blocks** — `override_num_blocks=8` on `from_items` for parallelism.
+- **Native Parquet read** — `rd.read_parquet(path, override_num_blocks=8).materialize()` lands blocks in the object store via Arrow.
 - **`.materialize()`** — forces lazy ops to land in the object store; `.count()` triggers metadata fetch without pulling data.
 - **Group-by `.take_all()`** — bounded result, safe to collect.
 

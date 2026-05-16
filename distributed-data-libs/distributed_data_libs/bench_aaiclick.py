@@ -28,7 +28,10 @@ def context():
     return data_context()
 
 
-async def convert(data):
+async def convert(path):
+    import pyarrow.parquet as pq
+    table = pq.read_table(path)
+    data = {col: table.column(col).to_pylist() for col in table.column_names}
     obj = await create_object(_SCHEMA)
     await obj.insert(data)
     return obj

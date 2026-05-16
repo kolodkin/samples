@@ -36,15 +36,11 @@ def _spark():
     return SparkSession.getActiveSession()
 
 
-def convert(data):
+def convert(path):
     spark = _spark()
-    schema = "id long, category string, subcategory string, amount double, quantity long"
-    rows = list(zip(
-        data["id"], data["category"], data["subcategory"],
-        data["amount"], data["quantity"],
-    ))
-    df = spark.createDataFrame(rows, schema=schema)
-    return df.cache().localCheckpoint(eager=True)
+    df = spark.read.parquet(path).cache()
+    df.count()  # force materialization into the cache
+    return df
 
 
 def _materialize(df):

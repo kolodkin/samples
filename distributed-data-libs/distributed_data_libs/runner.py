@@ -22,12 +22,6 @@ from .stats import (
 )
 
 
-def _load_raw():
-    import pyarrow.parquet as pq
-    table = pq.read_table(RAW_DATA_PATH)
-    return {col: table.column(col).to_pylist() for col in table.column_names}
-
-
 def _measurement_envelope():
     """Returns (snapshot_before, snapshot_after) closures that bracket the op.
     Uses delta of monotonic memory.peak (see stats.py docstring for why we
@@ -52,15 +46,14 @@ def _measurement_envelope():
 
 def _run_sync(mod):
     before, after = _measurement_envelope()
-    raw = _load_raw()
     results = {}
 
     state = before()
     for _ in range(NUM_RUNS):
-        mod.convert(raw)
+        mod.convert(RAW_DATA_PATH)
     results[INGEST] = after(state)
 
-    dataset = mod.convert(raw)
+    dataset = mod.convert(RAW_DATA_PATH)
     for op_name in BENCH_NAMES:
         if op_name == INGEST or op_name not in mod.BENCHMARKS:
             continue
@@ -76,15 +69,14 @@ def _run_sync(mod):
 
 async def _run_async(mod):
     before, after = _measurement_envelope()
-    raw = _load_raw()
     results = {}
 
     state = before()
     for _ in range(NUM_RUNS):
-        await mod.convert(raw)
+        await mod.convert(RAW_DATA_PATH)
     results[INGEST] = after(state)
 
-    dataset = await mod.convert(raw)
+    dataset = await mod.convert(RAW_DATA_PATH)
     for op_name in BENCH_NAMES:
         if op_name == INGEST or op_name not in mod.BENCHMARKS:
             continue

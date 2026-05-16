@@ -22,15 +22,8 @@ def context():
         ray.shutdown()
 
 
-def convert(data):
-    rows = [
-        {"id": i, "category": c, "subcategory": s, "amount": a, "quantity": q}
-        for i, c, s, a, q in zip(
-            data["id"], data["category"], data["subcategory"],
-            data["amount"], data["quantity"],
-        )
-    ]
-    return rd.from_items(rows, override_num_blocks=8).materialize()
+def convert(path):
+    return rd.read_parquet(path, override_num_blocks=8).materialize()
 
 
 def _materialize(ds):

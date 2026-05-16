@@ -5,7 +5,6 @@ from contextlib import contextmanager
 
 import dask
 import dask.dataframe as dd
-import pandas as pd
 from dask.distributed import Client, LocalCluster
 
 from .config import FILTER_THRESHOLD
@@ -30,11 +29,9 @@ def context():
         cluster.close()
 
 
-def convert(data):
-    pdf = pd.DataFrame(data)
-    pdf["category"] = pdf["category"].astype("category")
-    pdf["subcategory"] = pdf["subcategory"].astype("category")
-    ddf = dd.from_pandas(pdf, npartitions=8)
+def convert(path):
+    ddf = dd.read_parquet(path, split_row_groups=False).repartition(npartitions=8)
+    ddf = ddf.categorize(columns=["category", "subcategory"])
     return ddf.persist()
 
 
