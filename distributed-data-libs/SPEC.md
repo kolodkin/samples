@@ -27,11 +27,17 @@ All measurements come from cgroup v2 pseudo-files that the kernel maintains for 
 | Metric | Source | Notes |
 |---|---|---|
 | Wall-clock | `time.perf_counter()` inside the container, averaged over `NUM_RUNS=3` | Excludes framework startup, raw-data load, and `convert()`. Measures compute only. |
-| Peak memory | `/sys/fs/cgroup/memory.peak`, written `0` before each op | Kernel-tracked high-water mark across the entire container (driver + workers + JVM). |
+| Peak memory | `/sys/fs/cgroup/memory.peak` delta (read before and after each op) | Kernel-tracked monotonic high-water across the entire container. Delta = *incremental* peak this op pushed above the running max. |
 | CPU time | `/sys/fs/cgroup/cpu.stat` (`usage_usec`), delta around each op | Sum across all cores. |
 | CPU utilization | `cpu_usec / wall_time / NUM_RUNS / 1e6` | Reported as cores-worth used on average. |
 
-`memory.peak` reset (`echo 0 > /sys/fs/cgroup/memory.peak`) requires that the container can write to its own cgroup — true by default when the container runs as root (which is the default for our images).
+`memory.peak` is read-only on most Docker hosts (including GitHub Actions runners) because `/sys/fs/cgroup` is bind-mounted RO. We can't reset it between ops. Instead the runner uses a delta-of-monotonic-peak model:
+
+- The first op's `peak_mem` is its true peak (running max was 0).
+- A later op that allocates more than any previous op reports the *new* high-water minus the previous max.
+- A later op that uses less memory than an earlier op reports **0** — semantically "this op did not push the running peak higher." This is accurate but coarser than per-op absolute peaks would be.
+
+When comparing frameworks, the **Ingest** row (always first) is the most directly comparable per-op memory number.
 
 ## Per-framework optimizations
 

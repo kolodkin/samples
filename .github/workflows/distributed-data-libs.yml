@@ -30,6 +30,9 @@ jobs:
         run: docker compose --profile tools --profile bench build
 
       - name: Run benchmark
+        # shell: bash enables pipefail so a failing benchmark script propagates
+        # through the tee pipe (default GH Actions bash runs without pipefail).
+        shell: bash
         run: ./distributed-data-libs.sh | tee /tmp/bench.txt
 
       - name: Publish summary

@@ -1,20 +1,21 @@
 """cgroup v2 readers for memory.peak and cpu.stat. Requires a cgroup-v2 host
 (GitHub Actions ubuntu-22.04+ and most modern distros). Inside the container,
-/sys/fs/cgroup is the container's own cgroup."""
+/sys/fs/cgroup is the container's own cgroup.
+
+Note: on GitHub Actions runners (and many other Docker hosts), /sys/fs/cgroup
+is bind-mounted read-only, so writing 0 to memory.peak to reset the peak
+between ops fails with EROFS. We therefore use a 'delta of monotonic peak'
+model: read memory.peak before and after each op. Since memory.peak only
+increases, the delta is the *incremental* high-water this op contributed.
+The first op's delta is its absolute peak; later ops that don't exceed the
+running peak report 0 — semantically 'this op did not push the kernel's peak
+higher than what an earlier op already reached.'"""
 
 import os
 
 CGROUP_ROOT = "/sys/fs/cgroup"
 MEMORY_PEAK = f"{CGROUP_ROOT}/memory.peak"
 CPU_STAT = f"{CGROUP_ROOT}/cpu.stat"
-
-
-def reset_memory_peak():
-    """Write 0 to memory.peak to reset the kernel's high-water mark. cgroup v2
-    feature. Requires the writer to own the cgroup (root in the container is
-    fine since the container is its own cgroup root)."""
-    with open(MEMORY_PEAK, "w") as f:
-        f.write("0")
 
 
 def read_memory_peak():

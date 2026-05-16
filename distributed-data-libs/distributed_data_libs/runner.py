@@ -19,7 +19,6 @@ from .stats import (
     cgroup_v2_available,
     read_cpu_usec,
     read_memory_peak,
-    reset_memory_peak,
 )
 
 
@@ -30,20 +29,21 @@ def _load_raw():
 
 
 def _measurement_envelope():
-    """Returns (snapshot_before, snapshot_after) closures that bracket the op."""
+    """Returns (snapshot_before, snapshot_after) closures that bracket the op.
+    Uses delta of monotonic memory.peak (see stats.py docstring for why we
+    can't reset)."""
     if not cgroup_v2_available():
         raise RuntimeError("cgroup v2 not available — run on cgroup-v2 host")
 
     def before():
-        reset_memory_peak()
-        return read_cpu_usec(), time.perf_counter()
+        return read_memory_peak(), read_cpu_usec(), time.perf_counter()
 
     def after(state):
-        cpu_before, t0 = state
+        peak_before, cpu_before, t0 = state
         elapsed = (time.perf_counter() - t0) / NUM_RUNS
         return {
             "time": elapsed,
-            "peak_mem": read_memory_peak(),
+            "peak_mem": max(0, read_memory_peak() - peak_before),
             "cpu_usec": read_cpu_usec() - cpu_before,
         }
 
