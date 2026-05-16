@@ -20,7 +20,7 @@ BENCH_NAMES = [
     "High-card group-by",
 ]
 
-FRAMEWORKS = ["aaiclick", "spark", "dask", "ray", "postgres"]
+FRAMEWORKS = ["aaiclick", "spark", "dask", "ray"]
 
 RAW_DATA_PATH = "/data/raw.parquet"
 RESULTS_DIR = "/data"

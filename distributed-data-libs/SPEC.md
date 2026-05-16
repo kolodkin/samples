@@ -1,6 +1,6 @@
 # distributed-data-libs: Distributed Data Library Benchmark
 
-aaiclick (→ ClickHouse server), PySpark, Dask, Ray Data, Postgres — 10M rows, 3 runs averaged. Runs entirely inside Docker; cgroup v2 provides exact resource attribution.
+aaiclick (→ ClickHouse + Postgres), PySpark, Dask, Ray Data — 10M rows, 3 runs averaged. Runs entirely inside Docker; cgroup v2 provides exact resource attribution.
 
 ## Operations
 
@@ -12,22 +12,21 @@ Same 11 ops as `python-data-libs` so non-ingest results are directly comparable 
 
 ## Architecture
 
-One `docker-compose.yml` declares one service per framework plus two engine sidecars (`clickhouse`, `postgres`) and an orchestrator. The orchestrator generates `raw.parquet` once on a shared bind-mounted `./data/` volume. Then for each framework:
+One `docker-compose.yml` declares one service per framework plus two engine sidecars (`clickhouse`, `postgres`) that back aaiclick's distributed mode, and an orchestrator. The orchestrator generates `raw.parquet` once on a shared bind-mounted `./data/` volume. Then for each framework:
 
-1. `docker compose up <runner-service>` starts the runner container — engine sidecars auto-start via `depends_on` + healthcheck (first iteration only)
+1. `docker compose up <framework>` starts the runner container — engine sidecars auto-start via `depends_on` + healthcheck (first iteration only)
 2. The runner inside the container loops through all 11 ops in a single long-lived process and writes `/data/results-<framework>.json`
 3. The runner container is stopped; engine sidecars stay up across framework iterations (cheap to leave running, expensive to restart per-framework)
-4. After all 5 frameworks finish, the orchestrator renders the report and the script tears down sidecars
+4. After all 4 frameworks finish, the orchestrator renders the report and the script tears down sidecars
 
 Per-op measurement isolation comes from the kernel-tracked monotonic `memory.peak` (see below) plus `cpu.stat` deltas.
 
-| Framework | Runner image | Engine sidecar | Topology |
+| Framework | Runner image | Engine sidecar(s) | Topology |
 |---|---|---|---|
-| aaiclick | `aaiclick` python client | `clickhouse-server:latest` | client ↔ HTTP ↔ engine |
+| aaiclick | `aaiclick` python client | `clickhouse-server:latest` (data) + `postgres:16` (metadata catalog) | client ↔ HTTP ↔ CH, client ↔ TCP ↔ Postgres |
 | Spark | PySpark + JDK 17 | (in-process JVM) | driver + executors in one container |
 | Dask | `dask[complete]` | (in-process) | LocalCluster: 1 worker × 4 threads × 4 GiB |
 | Ray | `ray[data]` | (in-process) | `ray.init(num_cpus=4)` |
-| Postgres | `psycopg[binary]` | `postgres:16` | client ↔ TCP ↔ engine |
 
 ## Measurement methodology
 
@@ -52,7 +51,8 @@ When comparing frameworks, the **Ingest** row (always first) is the most directl
 
 ### aaiclick
 
-- **Backend** — `clickhouse/clickhouse-server:latest` sidecar; runner connects via `CLICKHOUSE_HOST=clickhouse` env var (standard aaiclick discovery path).
+- **Data engine** — `clickhouse/clickhouse-server:latest` sidecar; runner connects via `CLICKHOUSE_HOST=clickhouse` env vars (standard aaiclick discovery path).
+- **Metadata catalog** — `postgres:16` sidecar holds aaiclick's object/schema metadata; runner connects via `PGHOST=postgres` + `PGUSER/PGPASSWORD/PGDATABASE=aaiclick`. Required for aaiclick's distributed mode (embedded chdb mode used the local SQLite catalog instead, but that doesn't scale across processes).
 - **Ingest** — `aaiclick.create_from_url(f"file://{path}")` — CH server reads the parquet from the shared `/data` volume via its native vectorized reader. No Python dict round-trip (which was the 60s tax that dominated embedded-chdb Ingest).
 - **Schema** — `LowCardinality(String)` on `category` and `subcategory`, mirroring the chdb adapter in `python-data-libs`.
 
@@ -75,13 +75,6 @@ When comparing frameworks, the **Ingest** row (always first) is the most directl
 - **Native Parquet read** — `rd.read_parquet(path, override_num_blocks=8).materialize()` lands blocks in the object store via Arrow.
 - **`.materialize()`** — forces lazy ops to land in the object store; `.count()` triggers metadata fetch without pulling data.
 - **Group-by `.take_all()`** — bounded result, safe to collect.
-
-### Postgres
-
-- **Backend** — `postgres:16` sidecar; runner connects via `PGHOST=postgres` env var (psycopg's standard discovery).
-- **Ingest** — parquet → pandas → CSV stream → `COPY FROM STDIN WITH (FORMAT CSV)`. This is the standard Postgres bulk-load path. `CREATE UNLOGGED TABLE` skips WAL for ingest; `ANALYZE` populates planner stats so subsequent group-by queries pick the right plan.
-- **No indexes** — vanilla Postgres without indexes for fair comparison with Spark/Dask/Ray (which also don't pre-index). An indexed variant could cut group-by/count-distinct time substantially; see `python-data-libs` for sqlite+idx pattern.
-- **Materialize via temp sink** — large-result ops use `CREATE TEMP TABLE sink AS …; DROP TABLE sink;` so we measure compute, not driver-side fetch.
 
 ## CI
 
