@@ -17,28 +17,33 @@ import time
 from .config import BENCH_NAMES, INGEST, NUM_RUNS, RAW_DATA_PATH, RESULTS_DIR
 from .stats import (
     cgroup_v2_available,
-    read_cpu_usec,
-    read_memory_peak,
+    resolve_measurement_targets,
+    sum_cpu_usec,
+    sum_memory_peak,
 )
 
 
 def _measurement_envelope():
     """Returns (snapshot_before, snapshot_after) closures that bracket the op.
-    Uses delta of monotonic memory.peak (see stats.py docstring for why we
-    can't reset)."""
+    Reads memory.peak/cpu.stat from one cgroup (self) or many (when
+    COMPUTE_CONTAINERS is set and we're measuring a client+sidecars
+    topology). Uses delta of monotonic memory.peak — see stats.py."""
     if not cgroup_v2_available():
         raise RuntimeError("cgroup v2 not available — run on cgroup-v2 host")
 
+    targets = resolve_measurement_targets()
+    print(f"[runner] measuring cgroups: {targets}", flush=True)
+
     def before():
-        return read_memory_peak(), read_cpu_usec(), time.perf_counter()
+        return sum_memory_peak(targets), sum_cpu_usec(targets), time.perf_counter()
 
     def after(state):
         peak_before, cpu_before, t0 = state
         elapsed = (time.perf_counter() - t0) / NUM_RUNS
         return {
             "time": elapsed,
-            "peak_mem": max(0, read_memory_peak() - peak_before),
-            "cpu_usec": read_cpu_usec() - cpu_before,
+            "peak_mem": max(0, sum_memory_peak(targets) - peak_before),
+            "cpu_usec": sum_cpu_usec(targets) - cpu_before,
         }
 
     return before, after

@@ -61,7 +61,14 @@ services:
 
   aaiclick:
     build: { context: ., dockerfile: Dockerfile.aaiclick }
-    volumes: [ "./data:/data" ]
+    # Mount host /sys/fs/cgroup + docker.sock so the runner can read
+    # sidecar cgroup files (memory.peak, cpu.stat) — without this the
+    # cgroup we measure only sees the thin client's HTTP wait, not the
+    # actual compute happening in the clickhouse sidecar.
+    volumes:
+      - "./data:/data"
+      - "/sys/fs/cgroup:/host/cgroup:ro"
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
     command: [ "python", "-m", "distributed_data_libs.runner" ]
     depends_on:
       clickhouse: { condition: service_healthy }
@@ -78,6 +85,7 @@ services:
       PGPASSWORD: aaiclick
       PGDATABASE: aaiclick
       FILESERVER_URL: http://fileserver
+      COMPUTE_CONTAINERS: "aaiclick,clickhouse,postgres,fileserver"
     profiles: [ "bench" ]
 
   spark:

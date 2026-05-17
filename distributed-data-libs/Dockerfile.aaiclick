@@ -2,7 +2,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir aaiclick clickhouse-connect pyarrow
+# `docker` SDK lets the runner resolve sidecar compose-service names to
+# host-side cgroup paths so it can sum memory.peak / cpu.stat across all
+# containers doing real work (aaiclick client + clickhouse + postgres +
+# fileserver). See distributed_data_libs/stats.py.
+RUN pip install --no-cache-dir aaiclick clickhouse-connect pyarrow docker
 
 COPY distributed_data_libs ./distributed_data_libs
 

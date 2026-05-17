@@ -35,9 +35,21 @@ All measurements come from cgroup v2 pseudo-files that the kernel maintains for 
 | Metric | Source | Notes |
 |---|---|---|
 | Wall-clock | `time.perf_counter()` inside the container, averaged over `NUM_RUNS=3` | Excludes framework startup, raw-data load, and `convert()`. Measures compute only. |
-| Peak memory | `/sys/fs/cgroup/memory.peak` delta (read before and after each op) | Kernel-tracked monotonic high-water across the entire container. Delta = *incremental* peak this op pushed above the running max. |
-| CPU time | `/sys/fs/cgroup/cpu.stat` (`usage_usec`), delta around each op | Sum across all cores. |
+| Peak memory | `/sys/fs/cgroup/memory.peak` delta (read before and after each op) | Kernel-tracked monotonic high-water across the entire container. Delta = *incremental* peak this op pushed above the running max. Summed across all containers in the framework's deployment — see "Cross-container measurement". |
+| CPU time | `/sys/fs/cgroup/cpu.stat` (`usage_usec`), delta around each op | Sum across all cores. Summed across containers (same as memory). |
 | CPU utilization | `cpu_usec / wall_time / NUM_RUNS / 1e6` | Reported as cores-worth used on average. |
+
+### Cross-container measurement
+
+aaiclick is a thin Python client; the actual compute runs in the `clickhouse` sidecar. Reading only the runner's own cgroup would catch HTTP-wait time, not real work. The runner therefore mounts the host's `/sys/fs/cgroup` at `/host/cgroup:ro` plus `/var/run/docker.sock:ro`, and when the env var `COMPUTE_CONTAINERS=svc1,svc2,...` is set it:
+
+1. Queries the docker socket for each compose service's container ID
+2. Resolves the host-side cgroup path (`/host/cgroup/system.slice/docker-<id>.scope/` for systemd driver, `/host/cgroup/docker/<id>/` for cgroupfs)
+3. Sums `memory.peak` and `cpu.stat:usage_usec` across all of them per snapshot
+
+For aaiclick: `COMPUTE_CONTAINERS=aaiclick,clickhouse,postgres,fileserver`. For frameworks running in-process (Spark/Dask/Ray today), the env is unset and the runner falls back to self-only measurement (`/sys/fs/cgroup`). Upcoming client-server topologies for those frameworks will populate `COMPUTE_CONTAINERS` to match.
+
+### memory.peak delta model
 
 `memory.peak` is read-only on most Docker hosts (including GitHub Actions runners) because `/sys/fs/cgroup` is bind-mounted RO. We can't reset it between ops. Instead the runner uses a delta-of-monotonic-peak model:
 
