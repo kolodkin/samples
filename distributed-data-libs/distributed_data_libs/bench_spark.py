@@ -1,7 +1,10 @@
-"""PySpark adapter — local[*] mode inside the container. JVM stays warm across
-all 11 ops because the runner runs them in one process. Lazy ops materialize
-into noop sinks so we measure compute, not fetch."""
+"""PySpark adapter — client-server topology via Spark Connect. The thin
+Python client (this container) sends DataFrame plans over gRPC to the
+spark-server sidecar (JVM); the server reads parquet, runs all compute,
+and streams results back as Arrow. Lazy ops materialize into noop sinks
+so we measure server-side compute, not driver-side fetch."""
 
+import os
 from contextlib import contextmanager
 
 import pyspark
@@ -13,19 +16,19 @@ from .config import FILTER_THRESHOLD
 VERSION = pyspark.__version__
 IS_ASYNC = False
 
+# Connect server endpoint. Defaults to the compose service name; override
+# with SPARK_REMOTE for standalone runs.
+_REMOTE = os.environ.get("SPARK_REMOTE", "sc://spark-server:15002")
+
 
 @contextmanager
 def context():
     spark = (
         SparkSession.builder
         .appName("distributed-data-libs")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "8")
-        .config("spark.ui.enabled", "false")
-        .config("spark.driver.memory", "4g")
+        .remote(_REMOTE)
         .getOrCreate()
     )
-    spark.sparkContext.setLogLevel("ERROR")
     try:
         yield spark
     finally:
@@ -39,7 +42,7 @@ def _spark():
 def convert(path):
     spark = _spark()
     df = spark.read.parquet(path).cache()
-    df.count()  # force materialization into the cache
+    df.count()  # force materialization into the server-side cache
     return df
 
 

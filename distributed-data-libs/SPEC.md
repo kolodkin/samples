@@ -24,9 +24,9 @@ Per-op measurement isolation comes from the kernel-tracked monotonic `memory.pea
 | Framework | Runner image | Engine sidecar(s) | Topology |
 |---|---|---|---|
 | aaiclick | `aaiclick` python client | `clickhouse-server:latest` (data) + `postgres:16` (metadata catalog) + `nginx:alpine` (fileserver) | client ↔ HTTP ↔ CH, client ↔ TCP ↔ Postgres, CH ↔ HTTP ↔ nginx (parquet pull) |
-| Spark | PySpark + JDK 17 | (in-process JVM) | driver + executors in one container |
-| Dask | `dask[complete]` | (in-process) | LocalCluster: 1 worker × 4 threads × 4 GiB |
-| Ray | `ray[data]` | (in-process) | `ray.init(num_cpus=4)` |
+| Spark | `pyspark[connect]` thin client | `apache/spark:3.5.3` running Spark Connect server (gRPC on 15002) | client ↔ gRPC ↔ JVM server |
+| Dask | `dask[complete]` | (in-process — phase 3 will convert to scheduler+worker) | LocalCluster: 1 worker × 4 threads × 4 GiB |
+| Ray | `ray[data]` | (in-process — phase 4 will convert to head+worker) | `ray.init(num_cpus=4)` |
 
 ## Measurement methodology
 
@@ -69,11 +69,12 @@ When comparing frameworks, the **Ingest** row (always first) is the most directl
 - **Why HTTP and not file://** — CH's `url()` table function speaks HTTP only; `file()` is a different table function that aaiclick's `create_object_from_url` doesn't target. Hence the nginx sidecar.
 - **Types** — `column_types` pins `Int64` / `Float64` / `LowCardinality(String)` so CH's `DESCRIBE`-based inference doesn't widen the integer columns; mirrors the chdb adapter in `python-data-libs`.
 
-### Spark (PySpark)
+### Spark (Spark Connect)
 
-- **JVM warm across ops** — one SparkSession serves all 11 ops. The Dockerfile pre-warms Ivy/Maven caches at image build time so the first SparkSession boot inside the runner does not pay a download cost.
-- **Native Parquet read** — `spark.read.parquet(path).cache(); count()` materializes the dataset in executors via Arrow, no py4j marshaling.
-- **Noop sink** — large-result ops (`Column multiply`, `Filter rows`, `Sort`) use `df.write.format("noop")` to force execution without paying to collect rows to the driver.
+- **Topology** — thin `pyspark[connect]` client in the `spark` runner container talks gRPC to the `spark-server` sidecar (the JVM). No JVM in the client container; no py4j. SparkSession opens once via `SparkSession.builder.remote("sc://spark-server:15002")` and serves all 11 ops.
+- **Ivy/Maven cache** — the spark-connect jar (`org.apache.spark:spark-connect_2.12:3.5.3`) is pre-resolved into `~/.ivy2/cache` at Dockerfile.spark-server build time so container startup doesn't pay the download cost on every CI run.
+- **Native Parquet read** — `spark.read.parquet(path).cache(); count()` materializes server-side. The client only sees an Arrow-encoded result handle.
+- **Noop sink** — large-result ops (`Column multiply`, `Filter rows`, `Sort`) use `df.write.format("noop")` to force execution server-side without streaming rows back to the client.
 - **Aggregations** — small-result ops use `.collect()` since the result is bounded.
 
 ### Dask

@@ -1,9 +1,13 @@
-# One service per framework. aaiclick depends on two sidecars: a ClickHouse
-# server (the data engine) and a Postgres server (the metadata catalog).
-# Spark/Dask/Ray run in-process and need no sidecars. The runner inside each
-# framework container loops through all 11 ops; per-op wall-clock, peak
-# memory (cgroup memory.peak delta), and CPU (cgroup cpu.stat delta) are
-# written to /data/results-<framework>.json.
+# One service per framework, each backed by its own engine sidecar(s) so
+# all four frameworks run in a true client-server topology:
+#   aaiclick    -> clickhouse + postgres + fileserver
+#   spark       -> spark-server (Spark Connect, gRPC on 15002)
+#   dask        -> dask-scheduler + dask-worker (phase 3)
+#   ray         -> ray-head    + ray-worker    (phase 4)
+# The runner inside each framework container loops through all 11 ops and
+# writes /data/results-<framework>.json. cgroup measurement sums across
+# the framework's client + server containers via COMPUTE_CONTAINERS - see
+# stats.py and SPEC.md.
 
 services:
   orchestrator:
@@ -11,7 +15,7 @@ services:
     volumes: [ "./data:/data" ]
     profiles: [ "tools" ]
 
-  # --- engine sidecars for aaiclick's distributed mode ---
+  # --- engine sidecars ---
 
   clickhouse:
     image: clickhouse/clickhouse-server:latest
@@ -57,6 +61,20 @@ services:
       - "./data:/usr/share/nginx/html:ro"
     profiles: [ "bench" ]
 
+  spark-server:
+    build: { context: ., dockerfile: Dockerfile.spark-server }
+    volumes: [ "./data:/data" ]
+    healthcheck:
+      # Spark Connect serves gRPC on 15002. bash /dev/tcp avoids needing
+      # nc/curl in the apache/spark image. 30s start_period covers Ivy
+      # resolve + JVM warm-up.
+      test: [ "CMD-SHELL", "bash -c '</dev/tcp/localhost/15002'" ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+    profiles: [ "bench" ]
+
   # --- framework runners ---
 
   aaiclick:
@@ -90,9 +108,16 @@ services:
 
   spark:
     build: { context: ., dockerfile: Dockerfile.spark }
-    volumes: [ "./data:/data" ]
+    volumes:
+      - "./data:/data"
+      - "/sys/fs/cgroup:/host/cgroup:ro"
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
     command: [ "python", "-m", "distributed_data_libs.runner" ]
-    mem_limit: 6g
+    depends_on:
+      spark-server: { condition: service_healthy }
+    environment:
+      SPARK_REMOTE: "sc://spark-server:15002"
+      COMPUTE_CONTAINERS: "spark,spark-server"
     profiles: [ "bench" ]
 
   dask:

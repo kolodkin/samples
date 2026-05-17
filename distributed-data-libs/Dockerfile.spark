@@ -1,21 +1,11 @@
-# Pin to bookworm: trixie (the new default) dropped openjdk-17-jre-headless.
-# Spark 3.5.x officially supports Java 17, so we stay on Debian 12 for that JRE.
-FROM python:3.11-slim-bookworm
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        openjdk-17-jre-headless \
-        procps \
-    && rm -rf /var/lib/apt/lists/*
-
-ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+# Thin Spark Connect client. No JVM in this container - the server runs in
+# the spark-server sidecar. `pyspark[connect]` brings the grpc/pyarrow deps;
+# `docker` SDK lets the runner resolve sidecar cgroup paths for measurement.
+FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir "pyspark==3.5.3" pyarrow
-
-# Pre-fetch Ivy/Maven jars so the first SparkSession in the runner does not
-# pay the download cost. Empty SparkSession boot is enough to populate caches.
-RUN python -c "from pyspark.sql import SparkSession; s = SparkSession.builder.master('local[1]').getOrCreate(); s.stop()"
+RUN pip install --no-cache-dir "pyspark[connect]==3.5.3" pyarrow docker
 
 COPY distributed_data_libs ./distributed_data_libs
 
