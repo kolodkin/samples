@@ -22,8 +22,16 @@ docker compose run --rm orchestrator \
 
 failed=()
 for fwk in "${FRAMEWORKS[@]}"; do
-    echo ">>> running $fwk (timeout=${TIMEOUT_SECS}s)"
-    if ! timeout --foreground "$TIMEOUT_SECS" \
+    # Ray Data's shuffle-heavy ops (groupby on 10M rows in a single
+    # 4-CPU node) take ~60s each. Total Ray runtime lands around 12-15
+    # minutes vs <1 minute for the others; bump its budget so a slow
+    # framework doesn't get killed mid-op and reported as a hang.
+    case "$fwk" in
+        ray) fwk_timeout="${RAY_TIMEOUT_SECS:-1500}" ;;
+        *)   fwk_timeout="$TIMEOUT_SECS" ;;
+    esac
+    echo ">>> running $fwk (timeout=${fwk_timeout}s)"
+    if ! timeout --foreground "$fwk_timeout" \
             docker compose up --abort-on-container-exit --exit-code-from "$fwk" "$fwk"; then
         ec=$?
         echo ">>> $fwk failed or timed out (exit=$ec)"

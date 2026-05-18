@@ -29,10 +29,21 @@ from .stats import (
 
 
 def _ops():
+    # Per-row `ds.map(lambda r: ...)` and `ds.filter(lambda r: ...)`
+    # are MUCH slower than vectorized `map_batches` in Ray Data - 32s
+    # vs ~2s for Column multiply on 10M rows. Use map_batches with
+    # pandas batches so the per-block work is a vectorized numpy op
+    # instead of one Python call per row.
     return {
         "Column sum":         lambda ds: ds.sum("amount"),
-        "Column multiply":    lambda ds: ds.map(lambda r: {"p": r["amount"] * r["quantity"]}).materialize().count(),
-        "Filter rows":        lambda ds: ds.filter(lambda r: r["amount"] > FILTER_THRESHOLD).materialize().count(),
+        "Column multiply":    lambda ds: ds.map_batches(
+            lambda b: {"p": b["amount"] * b["quantity"]},
+            batch_format="numpy",
+        ).materialize().count(),
+        "Filter rows":        lambda ds: ds.map_batches(
+            lambda b: b[b["amount"] > FILTER_THRESHOLD],
+            batch_format="pandas",
+        ).materialize().count(),
         "Sort":               lambda ds: ds.sort("amount", descending=True).materialize().count(),
         "Count distinct":     lambda ds: ds.unique("category"),
         "Group-by sum":       lambda ds: ds.groupby("category").sum("amount").take_all(),

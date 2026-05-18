@@ -50,10 +50,10 @@ def main():
     # The job's stdout isn't streamed in real time by Ray Jobs; we have
     # to poll get_job_logs and diff. Print incrementally so a hung job
     # shows up as the last op printed by ray_job.py. Also enforce our
-    # own deadline shorter than the orchestrator's outer timeout (900s
-    # in CI) so we can fetch logs and exit cleanly instead of being
-    # SIGTERM'd mid-polling.
-    job_deadline = time.time() + 800
+    # own deadline shorter than the orchestrator's outer timeout (1500s
+    # for ray in CI) so we can fetch logs and exit cleanly instead of
+    # being SIGTERM'd mid-polling.
+    job_deadline = time.time() + 1400
     last_logs = ""
     next_log_pull = time.time() + 5
     while True:
