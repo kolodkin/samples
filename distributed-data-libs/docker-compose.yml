@@ -112,7 +112,13 @@ services:
                "--include-dashboard=true",
                "--dashboard-host=0.0.0.0",
                "--block" ]
-    volumes: [ "./data:/data" ]
+    volumes:
+      - "./data:/data"
+      # Surface Ray's per-session internal logs (dashboard.log,
+      # dashboard_agent.log, raylet.err, gcs_server.err, ...) to the
+      # host so the orchestrator can dump them when the job agent
+      # fails to register.
+      - "./data/ray-logs:/tmp/ray"
     shm_size: 1g
     mem_limit: 6g
     healthcheck:

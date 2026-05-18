@@ -10,6 +10,8 @@ TIMEOUT_SECS="${TIMEOUT_SECS:-900}"
 
 mkdir -p data
 rm -f data/results-*.json
+rm -rf data/ray-logs 2>/dev/null || true
+mkdir -p data/ray-logs
 
 echo ">>> building images"
 docker compose --profile tools --profile bench build
@@ -36,6 +38,22 @@ for fwk in "${FRAMEWORKS[@]}"; do
                 echo ">>> --- end $svc logs ---"
             fi
         done
+        # ray-head writes its real diagnostics (dashboard, dashboard_agent,
+        # raylet, gcs_server) to files inside /tmp/ray/session_*/logs/.
+        # docker compose logs only captures stdout of `ray start --block`
+        # which is nearly empty, so dump the in-session log files too.
+        if [ "$fwk" = "ray" ] && [ -d data/ray-logs ]; then
+            echo ">>> --- ray-head /tmp/ray internal logs ---"
+            find data/ray-logs -maxdepth 4 -type f \
+                \( -name 'dashboard*.log' -o -name 'dashboard*.err' \
+                -o -name 'raylet.err' -o -name 'gcs_server.err' \
+                -o -name 'monitor.err' \) 2>/dev/null \
+                | while read -r f; do
+                    echo "===== $f ====="
+                    tail -150 "$f" 2>/dev/null || true
+                done
+            echo ">>> --- end ray-head internal logs ---"
+        fi
         failed+=("$fwk")
     fi
     # Stop the runner; engine sidecars (clickhouse, postgres) stay up across
