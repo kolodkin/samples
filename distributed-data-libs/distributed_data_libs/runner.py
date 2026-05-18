@@ -99,6 +99,15 @@ def main():
     fwk = os.environ["FRAMEWORK"]
     print(f"[runner] framework={fwk}", flush=True)
     mod = importlib.import_module(f"distributed_data_libs.bench_{fwk}")
+
+    # Adapters can override the entire flow by defining main() - used by
+    # ray, which ships the actual benchmark to ray-head via the Ray Jobs
+    # API and lets ray_job.py write results-ray.json itself (since the
+    # runner can't drive Ray Data over the network - see bench_ray.py).
+    if hasattr(mod, "main") and callable(mod.main):
+        mod.main()
+        return
+
     is_async = getattr(mod, "IS_ASYNC", False)
     has_ctx = hasattr(mod, "context")
     async_ctx = getattr(mod, "ASYNC_CONTEXT", False)

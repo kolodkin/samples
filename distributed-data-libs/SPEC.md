@@ -85,11 +85,13 @@ When comparing frameworks, the **Ingest** row (always first) is the most directl
 
 ### Ray Data
 
-- **Topology** — runner attaches to a `ray-head` sidecar via the standard Ray multi-container pattern:
-  1. The runner's container command runs `ray start --address=ray-head:6379 --num-cpus=0` to register itself as a 0-CPU node attached to the cluster.
-  2. Python then does `ray.init(address="auto")` to attach to that local node.
-
-  All tasks dispatch to ray-head (the only node with CPUs). **Not Ray Client (`ray://`)**: that mode runs the driver server-side, leaving the local Python process without a `core_worker`, which Ray Data's `get_local_object_locations` requires (raises `AttributeError: 'Worker' object has no attribute 'core_worker'` at the first `read_parquet`). **Not `ray.init(address="<head>:<port>")` directly either**: Ray can't resolve its own node info without a prior local `ray start`, raises `RuntimeError: No node info found matching attributes`.
+- **Topology — Ray Jobs API** — Ray Data does not work cleanly from a remote client in Ray 2.x. Instead the runner submits the entire benchmark as a Ray Job via `JobSubmissionClient("http://ray-head:8265")`; `ray_job.py` runs inside ray-head, does the ops + measurement, writes `/data/results-ray.json`. The runner polls until the job terminates, prints the job's captured logs, and exits.
+- **Why not the more common patterns** — three distinct failure modes pushed us to Jobs:
+  - **Ray Client (`ray://ray-head:10001`)** — raises `AttributeError: 'Worker' object has no attribute 'core_worker'` at the first `read_parquet` because Ray Data's `get_local_object_locations` runs client-side and Ray Client has no local core_worker.
+  - **Direct `ray.init(address="ray-head:6379")`** — raises `RuntimeError: No node info found matching attributes` because Ray can't resolve the driver's own node info without a prior `ray start`.
+  - **`ray start --address=… --num-cpus=0` then `ray.init(address="auto")`** — connects, then silently hangs forever on the first distributed task (object-store coordination across containers).
+- **Measurement** — since the job runs entirely inside ray-head, its cgroup is the only one doing real work. `ray_job.py` uses self-only measurement (`/sys/fs/cgroup`); no `COMPUTE_CONTAINERS` needed, no host-cgroup or docker-socket mounts on either ray container.
+- **`--block`** — keeps `ray start --head` in the foreground so the container stays up (the default daemonizes and exits).
 - **`--block`** — keeps `ray start --head` in the foreground so the container stays up (the default daemonizes and exits).
 - **Native Parquet read** — `rd.read_parquet(path, override_num_blocks=8).materialize()` lands blocks in the head node's object store via Arrow.
 - **`.materialize()`** — forces lazy ops to land in the object store; `.count()` triggers metadata fetch without pulling data.

@@ -102,21 +102,23 @@ services:
   ray-head:
     build: { context: ., dockerfile: Dockerfile.ray }
     # --block keeps `ray start` in the foreground so the container stays
-    # up. --num-cpus=4 matches the previous in-process Ray sizing. We do
-    # NOT enable Ray Client (ray://) - it gives the driver no local
-    # core_worker, which breaks Ray Data. The runner joins via direct
-    # gRPC on the GCS port (6379) instead.
+    # up. --num-cpus=4 matches the previous in-process Ray sizing. The
+    # dashboard is enabled (and bound on all interfaces) because the
+    # runner submits the benchmark via the Ray Jobs API (HTTP on 8265).
     command: [ "ray", "start", "--head",
                "--node-ip-address=0.0.0.0",
                "--port=6379",
                "--num-cpus=4",
-               "--include-dashboard=false",
+               "--include-dashboard=true",
+               "--dashboard-host=0.0.0.0",
                "--block" ]
     volumes: [ "./data:/data" ]
     shm_size: 1g
     mem_limit: 6g
     healthcheck:
-      test: [ "CMD-SHELL", "python -c \"import socket; socket.create_connection(('localhost', 6379), timeout=2).close()\"" ]
+      # Jobs API is HTTP on 8265. Wait for that, not the GCS port,
+      # because the runner submits via Jobs API immediately.
+      test: [ "CMD-SHELL", "python -c \"import socket; socket.create_connection(('localhost', 8265), timeout=2).close()\"" ]
       interval: 3s
       timeout: 3s
       retries: 40
@@ -185,23 +187,12 @@ services:
 
   ray:
     build: { context: ., dockerfile: Dockerfile.ray }
-    volumes:
-      - "./data:/data"
-      - "/sys/fs/cgroup:/host/cgroup:ro"
-      - "/var/run/docker.sock:/var/run/docker.sock:ro"
-    # `ray start --address=...` joins the runner to the cluster as a
-    # 0-CPU node (so all tasks dispatch to ray-head), runs in the
-    # background, then python attaches via ray.init(address="auto").
-    # ray.init(address="ray-head:6379") directly fails with
-    # "No node info found matching attributes" - autodiscovery only works
-    # after the local `ray start` has registered the node.
-    command:
-      - sh
-      - -c
-      - "ray start --address=ray-head:6379 --num-cpus=0 && python -m distributed_data_libs.runner"
+    # Just submits a Ray Job and polls. No cgroup/socket mounts: the
+    # measurement happens inside ray-head's container (in ray_job.py).
+    volumes: [ "./data:/data" ]
+    command: [ "python", "-m", "distributed_data_libs.runner" ]
     depends_on:
       ray-head: { condition: service_healthy }
     environment:
-      RAY_ADDRESS: "auto"
-      COMPUTE_CONTAINERS: "ray,ray-head"
+      RAY_JOBS_URL: "http://ray-head:8265"
     profiles: [ "bench" ]
