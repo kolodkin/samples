@@ -1,36 +1,32 @@
-"""Dask adapter — LocalCluster inside the container. Lazy ops materialize
-via .compute() (small results) or len(.compute()) (large results)."""
+"""Dask adapter — client-server topology. The thin client (this container)
+connects to a dask-scheduler sidecar, which routes work to a dask-worker
+sidecar. Worker is sized to match the previous in-process LocalCluster
+(1 worker × 4 threads × 4 GiB) so per-op numbers stay comparable. Lazy
+ops materialize via .compute() (small results) or _materialize() (large
+results) to avoid driver-side fetch."""
 
+import os
 from contextlib import contextmanager
 
 import dask
 import dask.dataframe as dd
-from dask.distributed import Client, LocalCluster
+from dask.distributed import Client
 
 from .config import FILTER_THRESHOLD
 
 VERSION = dask.__version__
 IS_ASYNC = False
 
+_SCHEDULER = os.environ.get("DASK_SCHEDULER", "tcp://dask-scheduler:8786")
+
 
 @contextmanager
 def context():
-    # One worker with 4 threads fits in the 6 GB container: tasks share
-    # process memory (no inter-worker serialization), and Sort's shuffle
-    # has room to spill without deadlocking. Multi-worker setups OOM at 10M
-    # rows under a 6 GB container.
-    cluster = LocalCluster(
-        n_workers=1,
-        threads_per_worker=4,
-        memory_limit="4GiB",
-        dashboard_address=None,
-    )
-    client = Client(cluster)
+    client = Client(_SCHEDULER)
     try:
         yield client
     finally:
         client.close()
-        cluster.close()
 
 
 def convert(path):

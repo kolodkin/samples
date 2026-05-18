@@ -1,8 +1,11 @@
+# Single image used by all three dask containers (scheduler, worker, and
+# thin client runner) — same deps, different commands in compose.
+# `docker` SDK lets the runner resolve sidecar cgroup paths.
 FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir "dask[complete]" pandas pyarrow
+RUN pip install --no-cache-dir "dask[complete]" pandas pyarrow docker
 
 COPY distributed_data_libs ./distributed_data_libs
 

@@ -25,7 +25,7 @@ Per-op measurement isolation comes from the kernel-tracked monotonic `memory.pea
 |---|---|---|---|
 | aaiclick | `aaiclick` python client | `clickhouse-server:latest` (data) + `postgres:16` (metadata catalog) + `nginx:alpine` (fileserver) | client ↔ HTTP ↔ CH, client ↔ TCP ↔ Postgres, CH ↔ HTTP ↔ nginx (parquet pull) |
 | Spark | `pyspark[connect]` thin client | `apache/spark:3.5.3` running Spark Connect server (gRPC on 15002) | client ↔ gRPC ↔ JVM server |
-| Dask | `dask[complete]` | (in-process — phase 3 will convert to scheduler+worker) | LocalCluster: 1 worker × 4 threads × 4 GiB |
+| Dask | `dask[complete]` thin client | `dask scheduler` (port 8786) + `dask worker` (1 × 4 threads × 4 GiB) | client ↔ TCP ↔ scheduler ↔ TCP ↔ worker |
 | Ray | `ray[data]` | (in-process — phase 4 will convert to head+worker) | `ray.init(num_cpus=4)` |
 
 ## Measurement methodology
@@ -79,7 +79,7 @@ When comparing frameworks, the **Ingest** row (always first) is the most directl
 
 ### Dask
 
-- **LocalCluster** — 1 worker × 4 threads × 4 GiB memory_limit. Single-process multi-threaded fits in the 6 GB container and avoids inter-worker serialization. Multi-worker setups deadlock on Sort's shuffle at 10M rows under a 6 GB container cap.
+- **Topology** — thin client (the runner) connects to a `dask-scheduler` sidecar via `Client("tcp://dask-scheduler:8786")`. A separate `dask-worker` sidecar joins the scheduler with `--nthreads 4 --memory-limit 4GiB`, matching the previous LocalCluster sizing. Multi-worker setups deadlock on Sort's shuffle at 10M rows under a 6 GB cap.
 - **Native Parquet read** — `dd.read_parquet(...).repartition(8).categorize(...).persist()`. Cast `category`/`subcategory` to dask categorical dtype before persisting; cuts group-by time substantially.
 - **Materialize without collect** — `_materialize` uses `map_partitions(len).compute().sum()` to force execution of large-result ops without pulling rows to the driver.
 
