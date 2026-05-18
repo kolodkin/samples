@@ -25,6 +25,17 @@ for fwk in "${FRAMEWORKS[@]}"; do
             docker compose up --abort-on-container-exit --exit-code-from "$fwk" "$fwk"; then
         ec=$?
         echo ">>> $fwk failed or timed out (exit=$ec)"
+        # Dump sidecar logs - `compose up <runner>` only streams the
+        # runner's stdout, so when the runner fails because of a sidecar
+        # (e.g. ray-head's dashboard agent not registering) we'd otherwise
+        # have nothing to debug from.
+        for svc in ray-head spark-server dask-scheduler dask-worker; do
+            if docker compose ps -a --services 2>/dev/null | grep -qx "$svc"; then
+                echo ">>> --- $svc logs (tail) ---"
+                docker compose logs --tail=200 --no-color "$svc" 2>&1 || true
+                echo ">>> --- end $svc logs ---"
+            fi
+        done
         failed+=("$fwk")
     fi
     # Stop the runner; engine sidecars (clickhouse, postgres) stay up across
