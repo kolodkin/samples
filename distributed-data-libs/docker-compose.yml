@@ -189,10 +189,19 @@ services:
       - "./data:/data"
       - "/sys/fs/cgroup:/host/cgroup:ro"
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
-    command: [ "python", "-m", "distributed_data_libs.runner" ]
+    # `ray start --address=...` joins the runner to the cluster as a
+    # 0-CPU node (so all tasks dispatch to ray-head), runs in the
+    # background, then python attaches via ray.init(address="auto").
+    # ray.init(address="ray-head:6379") directly fails with
+    # "No node info found matching attributes" - autodiscovery only works
+    # after the local `ray start` has registered the node.
+    command:
+      - sh
+      - -c
+      - "ray start --address=ray-head:6379 --num-cpus=0 && python -m distributed_data_libs.runner"
     depends_on:
       ray-head: { condition: service_healthy }
     environment:
-      RAY_ADDRESS: "ray-head:6379"
+      RAY_ADDRESS: "auto"
       COMPUTE_CONTAINERS: "ray,ray-head"
     profiles: [ "bench" ]

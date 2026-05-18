@@ -85,7 +85,11 @@ When comparing frameworks, the **Ingest** row (always first) is the most directl
 
 ### Ray Data
 
-- **Topology** — runner attaches to a `ray-head` sidecar via direct node join: `ray.init(address="ray-head:6379")`. The runner is a driver only (it does not register as a worker, so it contributes no CPUs); ray-head has 4 CPUs and runs all tasks. **Not Ray Client** (`ray://`): that mode runs the driver server-side, leaving the local Python process without a `core_worker`, which Ray Data's `get_local_object_locations` requires (raises `AttributeError: 'Worker' object has no attribute 'core_worker'` at the first read_parquet).
+- **Topology** — runner attaches to a `ray-head` sidecar via the standard Ray multi-container pattern:
+  1. The runner's container command runs `ray start --address=ray-head:6379 --num-cpus=0` to register itself as a 0-CPU node attached to the cluster.
+  2. Python then does `ray.init(address="auto")` to attach to that local node.
+
+  All tasks dispatch to ray-head (the only node with CPUs). **Not Ray Client (`ray://`)**: that mode runs the driver server-side, leaving the local Python process without a `core_worker`, which Ray Data's `get_local_object_locations` requires (raises `AttributeError: 'Worker' object has no attribute 'core_worker'` at the first `read_parquet`). **Not `ray.init(address="<head>:<port>")` directly either**: Ray can't resolve its own node info without a prior local `ray start`, raises `RuntimeError: No node info found matching attributes`.
 - **`--block`** — keeps `ray start --head` in the foreground so the container stays up (the default daemonizes and exits).
 - **Native Parquet read** — `rd.read_parquet(path, override_num_blocks=8).materialize()` lands blocks in the head node's object store via Arrow.
 - **`.materialize()`** — forces lazy ops to land in the object store; `.count()` triggers metadata fetch without pulling data.

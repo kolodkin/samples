@@ -1,9 +1,10 @@
-"""Ray Data adapter — client-server topology via direct node join. The
-runner connects to a ray-head sidecar as a driver node (NOT Ray Client:
-ray:// gives the driver no local core_worker, which Ray Data needs for
-get_local_object_locations — see https://github.com/ray-project/ray
-docs on Ray Client limitations). Compute dispatches to ray-head's CPUs;
-the runner is just the driver. Lazy ops materialize via .materialize()."""
+"""Ray Data adapter — client-server topology. The runner first joins the
+cluster as a 0-CPU node via `ray start --address=ray-head:6379` (run as
+part of the container command before python launches), then ray.init()
+attaches to that local node. We can't use ray:// (Ray Client) because it
+breaks Ray Data, and we can't use ray.init(address="<head>:<port>")
+directly from a fresh container because Ray can't resolve its own node
+info without a prior `ray start`. Lazy ops materialize via .materialize()."""
 
 import os
 from contextlib import contextmanager
@@ -16,11 +17,10 @@ from .config import FILTER_THRESHOLD
 VERSION = ray.__version__
 IS_ASYNC = False
 
-# Bare host:port (NOT ray://...) so the driver attaches a local
-# core_worker and Ray Data internals work. `ray.init(address=...)` joins
-# as a driver only - it does NOT register the runner as a worker node
-# with resources - so all tasks dispatch to ray-head (which has 4 CPUs).
-_RAY_ADDRESS = os.environ.get("RAY_ADDRESS", "ray-head:6379")
+# "auto" means: attach to the local Ray node that the container's
+# entrypoint joined to the cluster. The runner registers with
+# --num-cpus=0 so all tasks go to ray-head (which has 4 CPUs).
+_RAY_ADDRESS = os.environ.get("RAY_ADDRESS", "auto")
 
 
 @contextmanager
