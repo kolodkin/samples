@@ -1,12 +1,13 @@
-# Single image for both the ray-head sidecar and the thin client runner.
-# `ray[default,data]` is required (not just `ray[data]`): the [default]
-# extra ships the dashboard + Jobs HTTP server on port 8265 (aiohttp,
-# opencensus, py-spy, ...), and we submit benchmarks via the Jobs API.
-FROM python:3.11-slim
+# Use the official Ray image. python:3.11-slim was missing the system
+# libs the dashboard *agent* (the process that backs the Jobs API)
+# needs to even spawn - its log file stayed empty (0 bytes) and the
+# job HTTP server returned 500 "Agent info not found in internal KV"
+# indefinitely. rayproject/ray bundles everything correctly for the
+# Jobs API. pyarrow/pandas come in transitively via ray[data].
+FROM rayproject/ray:2.48.0-py311
 
+USER root
 WORKDIR /app
-
-RUN pip install --no-cache-dir "ray[default,data]" pyarrow pandas
 
 COPY distributed_data_libs ./distributed_data_libs
 
