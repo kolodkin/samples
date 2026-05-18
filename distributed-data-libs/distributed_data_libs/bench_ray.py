@@ -47,14 +47,44 @@ def main():
             raise
     print(f"[ray client] submitted job {job_id}", flush=True)
 
+    # The job's stdout isn't streamed in real time by Ray Jobs; we have
+    # to poll get_job_logs and diff. Print incrementally so a hung job
+    # shows up as the last op printed by ray_job.py. Also enforce our
+    # own deadline shorter than the orchestrator's outer timeout (900s
+    # in CI) so we can fetch logs and exit cleanly instead of being
+    # SIGTERM'd mid-polling.
+    job_deadline = time.time() + 800
+    last_logs = ""
+    next_log_pull = time.time() + 5
     while True:
         status = client.get_job_status(job_id)
         if status in _TERMINAL:
             break
+        if time.time() >= job_deadline:
+            print(f"[ray client] job exceeded internal deadline; dumping logs", flush=True)
+            try:
+                print(client.get_job_logs(job_id), flush=True)
+            except Exception as e:
+                print(f"[ray client] log fetch failed: {e}", flush=True)
+            raise RuntimeError(f"Ray job {job_id} hit internal deadline")
+        if time.time() >= next_log_pull:
+            try:
+                logs = client.get_job_logs(job_id)
+                delta = logs[len(last_logs):]
+                if delta:
+                    print(delta, end="", flush=True)
+                    last_logs = logs
+            except Exception:
+                pass
+            next_log_pull = time.time() + 5
         time.sleep(2)
 
-    logs = client.get_job_logs(job_id)
-    print(logs, flush=True)
+    # Final flush of any remaining log output.
+    try:
+        logs = client.get_job_logs(job_id)
+        print(logs[len(last_logs):], flush=True)
+    except Exception as e:
+        print(f"[ray client] final log fetch failed: {e}", flush=True)
 
     if status != JobStatus.SUCCEEDED:
         raise RuntimeError(f"Ray job ended with status: {status}")

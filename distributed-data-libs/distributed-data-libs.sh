@@ -47,7 +47,10 @@ for fwk in "${FRAMEWORKS[@]}"; do
             find data/ray-logs -maxdepth 4 -type f \
                 \( -name 'dashboard*.log' -o -name 'dashboard*.err' \
                 -o -name 'raylet.err' -o -name 'raylet.out' \
-                -o -name 'gcs_server.err' -o -name 'monitor.err' \) 2>/dev/null \
+                -o -name 'gcs_server.err' -o -name 'gcs_server.out' \
+                -o -name 'monitor.err' -o -name 'monitor.out' \
+                -o -name 'job-driver-*.log' -o -name 'job-supervisor-*.log' \
+                -o -name 'worker-*.err' -o -name 'worker-*.out' \) 2>/dev/null \
                 | while read -r f; do
                     echo "===== $f ====="
                     tail -150 "$f" 2>/dev/null || true
