@@ -1,6 +1,9 @@
-"""Ray Data adapter — client-server topology via Ray Client. The thin
-client (this container) connects to a ray-head sidecar over gRPC; the
-head node runs all compute. Lazy ops materialize via .materialize()."""
+"""Ray Data adapter — client-server topology via direct node join. The
+runner connects to a ray-head sidecar as a driver node (NOT Ray Client:
+ray:// gives the driver no local core_worker, which Ray Data needs for
+get_local_object_locations — see https://github.com/ray-project/ray
+docs on Ray Client limitations). Compute dispatches to ray-head's CPUs;
+the runner is just the driver. Lazy ops materialize via .materialize()."""
 
 import os
 from contextlib import contextmanager
@@ -13,10 +16,11 @@ from .config import FILTER_THRESHOLD
 VERSION = ray.__version__
 IS_ASYNC = False
 
-# Ray Client endpoint. ray:// scheme tells ray.init to use the thin-client
-# gRPC interface (port 10001 by default), as opposed to joining the
-# cluster as a node.
-_RAY_ADDRESS = os.environ.get("RAY_ADDRESS", "ray://ray-head:10001")
+# Bare host:port (NOT ray://...) so the driver attaches a local
+# core_worker and Ray Data internals work. `ray.init(address=...)` joins
+# as a driver only - it does NOT register the runner as a worker node
+# with resources - so all tasks dispatch to ray-head (which has 4 CPUs).
+_RAY_ADDRESS = os.environ.get("RAY_ADDRESS", "ray-head:6379")
 
 
 @contextmanager

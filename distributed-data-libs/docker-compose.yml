@@ -102,12 +102,13 @@ services:
   ray-head:
     build: { context: ., dockerfile: Dockerfile.ray }
     # --block keeps `ray start` in the foreground so the container stays
-    # up. --num-cpus=4 matches the previous in-process Ray sizing.
-    # --ray-client-server-port=10001 is the default but pinned for clarity.
+    # up. --num-cpus=4 matches the previous in-process Ray sizing. We do
+    # NOT enable Ray Client (ray://) - it gives the driver no local
+    # core_worker, which breaks Ray Data. The runner joins via direct
+    # gRPC on the GCS port (6379) instead.
     command: [ "ray", "start", "--head",
                "--node-ip-address=0.0.0.0",
                "--port=6379",
-               "--ray-client-server-port=10001",
                "--num-cpus=4",
                "--include-dashboard=false",
                "--block" ]
@@ -115,7 +116,7 @@ services:
     shm_size: 1g
     mem_limit: 6g
     healthcheck:
-      test: [ "CMD-SHELL", "python -c \"import socket; socket.create_connection(('localhost', 10001), timeout=2).close()\"" ]
+      test: [ "CMD-SHELL", "python -c \"import socket; socket.create_connection(('localhost', 6379), timeout=2).close()\"" ]
       interval: 3s
       timeout: 3s
       retries: 40
@@ -192,6 +193,6 @@ services:
     depends_on:
       ray-head: { condition: service_healthy }
     environment:
-      RAY_ADDRESS: "ray://ray-head:10001"
+      RAY_ADDRESS: "ray-head:6379"
       COMPUTE_CONTAINERS: "ray,ray-head"
     profiles: [ "bench" ]

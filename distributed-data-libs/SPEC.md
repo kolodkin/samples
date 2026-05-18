@@ -26,7 +26,7 @@ Per-op measurement isolation comes from the kernel-tracked monotonic `memory.pea
 | aaiclick | `aaiclick` python client | `clickhouse-server:latest` (data) + `postgres:16` (metadata catalog) + `nginx:alpine` (fileserver) | client ↔ HTTP ↔ CH, client ↔ TCP ↔ Postgres, CH ↔ HTTP ↔ nginx (parquet pull) |
 | Spark | `pyspark[connect]` thin client | `apache/spark:3.5.3` running Spark Connect server (gRPC on 15002) | client ↔ gRPC ↔ JVM server |
 | Dask | `dask[complete]` thin client | `dask scheduler` (port 8786) + `dask worker` (1 × 4 threads × 4 GiB) | client ↔ TCP ↔ scheduler ↔ TCP ↔ worker |
-| Ray | `ray[data,client]` thin client | `ray-head` (single node, 4 CPUs, Ray Client server on port 10001) | client ↔ gRPC ↔ ray-head |
+| Ray | `ray[data]` driver | `ray-head` (single node, 4 CPUs, GCS on port 6379) | driver ↔ gRPC ↔ ray-head |
 
 ## Measurement methodology
 
@@ -85,7 +85,7 @@ When comparing frameworks, the **Ingest** row (always first) is the most directl
 
 ### Ray Data
 
-- **Topology** — thin client (the runner) connects to a `ray-head` sidecar via Ray Client: `ray.init(address="ray://ray-head:10001")`. The head node is a single-node cluster with 4 CPUs that runs all compute; the client only ships task definitions over gRPC.
+- **Topology** — runner attaches to a `ray-head` sidecar via direct node join: `ray.init(address="ray-head:6379")`. The runner is a driver only (it does not register as a worker, so it contributes no CPUs); ray-head has 4 CPUs and runs all tasks. **Not Ray Client** (`ray://`): that mode runs the driver server-side, leaving the local Python process without a `core_worker`, which Ray Data's `get_local_object_locations` requires (raises `AttributeError: 'Worker' object has no attribute 'core_worker'` at the first read_parquet).
 - **`--block`** — keeps `ray start --head` in the foreground so the container stays up (the default daemonizes and exits).
 - **Native Parquet read** — `rd.read_parquet(path, override_num_blocks=8).materialize()` lands blocks in the head node's object store via Arrow.
 - **`.materialize()`** — forces lazy ops to land in the object store; `.count()` triggers metadata fetch without pulling data.

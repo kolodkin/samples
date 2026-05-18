@@ -4,7 +4,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir "ray[data,client]" pyarrow pandas docker
+RUN pip install --no-cache-dir "ray[data]" pyarrow pandas docker
 
 COPY distributed_data_libs ./distributed_data_libs
 
