@@ -28,9 +28,23 @@ _TERMINAL = {JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.STOPPED}
 def main():
     """Override runner.py's default flow: submit a Ray Job and poll."""
     client = JobSubmissionClient(_JOBS_URL)
-    job_id = client.submit_job(
-        entrypoint="python -m distributed_data_libs.ray_job",
-    )
+
+    # Retry submit_job: the dashboard accepts HTTP on 8265 (so the
+    # healthcheck passes) several seconds before the job agent has
+    # actually registered. In that window submit_job returns
+    # `500 No available agent to submit job`.
+    deadline = time.time() + 90
+    while True:
+        try:
+            job_id = client.submit_job(
+                entrypoint="python -m distributed_data_libs.ray_job",
+            )
+            break
+        except RuntimeError as e:
+            if "No available agent" in str(e) and time.time() < deadline:
+                time.sleep(2)
+                continue
+            raise
     print(f"[ray client] submitted job {job_id}", flush=True)
 
     while True:
