@@ -1,8 +1,10 @@
+# Single image for both ray-head sidecar and the thin client runner.
+# `docker` SDK lets the runner resolve sidecar cgroup paths.
 FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir "ray[data]" pyarrow pandas
+RUN pip install --no-cache-dir "ray[data,client]" pyarrow pandas docker
 
 COPY distributed_data_libs ./distributed_data_libs
 

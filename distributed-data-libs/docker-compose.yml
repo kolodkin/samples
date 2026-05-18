@@ -2,8 +2,8 @@
 # all four frameworks run in a true client-server topology:
 #   aaiclick    -> clickhouse + postgres + fileserver
 #   spark       -> spark-server (Spark Connect, gRPC on 15002)
-#   dask        -> dask-scheduler + dask-worker (phase 3)
-#   ray         -> ray-head    + ray-worker    (phase 4)
+#   dask        -> dask-scheduler + dask-worker
+#   ray         -> ray-head (Ray Client server on 10001)
 # The runner inside each framework container loops through all 11 ops and
 # writes /data/results-<framework>.json. cgroup measurement sums across
 # the framework's client + server containers via COMPUTE_CONTAINERS - see
@@ -99,6 +99,29 @@ services:
     mem_limit: 6g
     profiles: [ "bench" ]
 
+  ray-head:
+    build: { context: ., dockerfile: Dockerfile.ray }
+    # --block keeps `ray start` in the foreground so the container stays
+    # up. --num-cpus=4 matches the previous in-process Ray sizing.
+    # --ray-client-server-port=10001 is the default but pinned for clarity.
+    command: [ "ray", "start", "--head",
+               "--node-ip-address=0.0.0.0",
+               "--port=6379",
+               "--ray-client-server-port=10001",
+               "--num-cpus=4",
+               "--include-dashboard=false",
+               "--block" ]
+    volumes: [ "./data:/data" ]
+    shm_size: 1g
+    mem_limit: 6g
+    healthcheck:
+      test: [ "CMD-SHELL", "python -c \"import socket; socket.create_connection(('localhost', 10001), timeout=2).close()\"" ]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+      start_period: 15s
+    profiles: [ "bench" ]
+
   # --- framework runners ---
 
   aaiclick:
@@ -161,8 +184,14 @@ services:
 
   ray:
     build: { context: ., dockerfile: Dockerfile.ray }
-    volumes: [ "./data:/data" ]
+    volumes:
+      - "./data:/data"
+      - "/sys/fs/cgroup:/host/cgroup:ro"
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
     command: [ "python", "-m", "distributed_data_libs.runner" ]
-    mem_limit: 6g
-    shm_size: 1g
+    depends_on:
+      ray-head: { condition: service_healthy }
+    environment:
+      RAY_ADDRESS: "ray://ray-head:10001"
+      COMPUTE_CONTAINERS: "ray,ray-head"
     profiles: [ "bench" ]
