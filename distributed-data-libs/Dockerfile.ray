@@ -1,10 +1,12 @@
-# Single image for both ray-head sidecar and the thin client runner.
-# `docker` SDK lets the runner resolve sidecar cgroup paths.
+# Single image for both the ray-head sidecar and the thin client runner.
+# `ray[default,data]` is required (not just `ray[data]`): the [default]
+# extra ships the dashboard + Jobs HTTP server on port 8265 (aiohttp,
+# opencensus, py-spy, ...), and we submit benchmarks via the Jobs API.
 FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir "ray[data]" pyarrow pandas docker
+RUN pip install --no-cache-dir "ray[default,data]" pyarrow pandas
 
 COPY distributed_data_libs ./distributed_data_libs
 
