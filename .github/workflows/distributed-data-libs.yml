@@ -11,6 +11,9 @@ jobs:
   benchmark:
     runs-on: ubuntu-latest
     environment: CICD
+    permissions:
+      contents: read
+      checks: write
     defaults:
       run:
         working-directory: distributed-data-libs
@@ -44,10 +47,12 @@ jobs:
           cat /tmp/bench.txt >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload benchmark artifact
+      - name: Publish benchmark report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: ./.github/actions/publish-bench
         with:
-          name: distributed-data-libs-bench
-          path: /tmp/bench.txt
-          if-no-files-found: warn
+          workflow-name: distributed-data-libs
+          files: |
+            /tmp/bench.txt
+          deploy-key: ${{ secrets.DEPLOY_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}

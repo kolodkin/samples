@@ -10,6 +10,9 @@ jobs:
   benchmark:
     runs-on: ubuntu-latest
     environment: CICD
+    permissions:
+      contents: read
+      checks: write
     defaults:
       run:
         working-directory: python-data-libs
@@ -29,10 +32,12 @@ jobs:
           cat /tmp/data_bench.txt >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload benchmark artifact
+      - name: Publish benchmark report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: ./.github/actions/publish-bench
         with:
-          name: python-data-libs-bench
-          path: /tmp/data_bench.txt
-          if-no-files-found: warn
+          workflow-name: python-data-libs
+          files: |
+            /tmp/data_bench.txt
+          deploy-key: ${{ secrets.DEPLOY_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
