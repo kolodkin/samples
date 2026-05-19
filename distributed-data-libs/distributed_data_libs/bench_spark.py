@@ -1,8 +1,9 @@
 """PySpark adapter — client-server topology via Spark Connect. The thin
 Python client (this container) sends DataFrame plans over gRPC to the
 spark-server sidecar (JVM); the server reads parquet, runs all compute,
-and streams results back as Arrow. Lazy ops materialize into noop sinks
-so we measure server-side compute, not driver-side fetch."""
+and streams results back as Arrow. Large-result ops use offset+limit to
+pull a mid-range 10-row slice rather than materializing the full result —
+forces server-side compute through the offset, returns a bounded payload."""
 
 import os
 from contextlib import contextmanager
@@ -11,7 +12,7 @@ import pyspark
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
-from .config import FILTER_THRESHOLD
+from .config import FILTER_THRESHOLD, SAMPLE_LIMIT, SAMPLE_OFFSET
 
 VERSION = pyspark.__version__
 IS_ASYNC = False
@@ -46,15 +47,15 @@ def convert(path):
     return df
 
 
-def _materialize(df):
-    df.write.format("noop").mode("overwrite").save()
+def _sample(df):
+    return df.offset(SAMPLE_OFFSET).limit(SAMPLE_LIMIT).collect()
 
 
 BENCHMARKS = {
     "Column sum":         lambda df: df.agg(F.sum("amount")).collect(),
-    "Column multiply":    lambda df: _materialize(df.select((F.col("amount") * F.col("quantity")).alias("p"))),
-    "Filter rows":        lambda df: _materialize(df.filter(F.col("amount") > FILTER_THRESHOLD)),
-    "Sort":               lambda df: _materialize(df.orderBy(F.col("amount").desc())),
+    "Column multiply":    lambda df: _sample(df.select((F.col("amount") * F.col("quantity")).alias("p"))),
+    "Filter rows":        lambda df: _sample(df.filter(F.col("amount") > FILTER_THRESHOLD)),
+    "Sort":               lambda df: _sample(df.orderBy(F.col("amount").desc())),
     "Count distinct":     lambda df: df.agg(F.countDistinct("category")).collect(),
     "Group-by sum":       lambda df: df.groupBy("category").agg(F.sum("amount")).collect(),
     "Group-by count":     lambda df: df.groupBy("category").count().collect(),

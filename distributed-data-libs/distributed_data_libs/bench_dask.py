@@ -1,9 +1,11 @@
 """Dask adapter — client-server topology. The thin client (this container)
 connects to a dask-scheduler sidecar, which routes work to a dask-worker
 sidecar. Worker is sized to match the previous in-process LocalCluster
-(1 worker × 4 threads × 4 GiB) so per-op numbers stay comparable. Lazy
-ops materialize via .compute() (small results) or _materialize() (large
-results) to avoid driver-side fetch."""
+(1 worker × 4 threads × 4 GiB) so per-op numbers stay comparable. Small-
+result ops use .compute(); large-result ops pull a mid-range 10-row slice
+via head(N, npartitions=-1) — Dask has no native offset, so we walk
+partitions until SAMPLE_OFFSET+SAMPLE_LIMIT rows accumulate, then keep
+the last SAMPLE_LIMIT rows."""
 
 import os
 from contextlib import contextmanager
@@ -12,7 +14,7 @@ import dask
 import dask.dataframe as dd
 from dask.distributed import Client
 
-from .config import FILTER_THRESHOLD
+from .config import FILTER_THRESHOLD, SAMPLE_LIMIT, SAMPLE_OFFSET
 
 VERSION = dask.__version__
 IS_ASYNC = False
@@ -35,16 +37,16 @@ def convert(path):
     return ddf.persist()
 
 
-def _materialize(ddf):
-    """Trigger compute without collecting the full result to the driver."""
-    return ddf.map_partitions(len).compute().sum()
+def _sample(ddf):
+    head = ddf.head(SAMPLE_OFFSET + SAMPLE_LIMIT, npartitions=-1, compute=True)
+    return head.iloc[-SAMPLE_LIMIT:]
 
 
 BENCHMARKS = {
     "Column sum":         lambda ddf: ddf["amount"].sum().compute(),
-    "Column multiply":    lambda ddf: _materialize((ddf["amount"] * ddf["quantity"]).to_frame()),
-    "Filter rows":        lambda ddf: _materialize(ddf[ddf["amount"] > FILTER_THRESHOLD]),
-    "Sort":               lambda ddf: _materialize(ddf.sort_values("amount", ascending=False)),
+    "Column multiply":    lambda ddf: _sample((ddf["amount"] * ddf["quantity"]).to_frame()),
+    "Filter rows":        lambda ddf: _sample(ddf[ddf["amount"] > FILTER_THRESHOLD]),
+    "Sort":               lambda ddf: _sample(ddf.sort_values("amount", ascending=False)),
     "Count distinct":     lambda ddf: ddf["category"].nunique().compute(),
     "Group-by sum":       lambda ddf: ddf.groupby("category", observed=True)["amount"].sum().compute(),
     "Group-by count":     lambda ddf: ddf.groupby("category", observed=True).size().compute(),

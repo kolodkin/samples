@@ -9,25 +9,36 @@ import sys
 import ray
 import ray.data as rd
 
-from .config import FILTER_THRESHOLD
+from .config import FILTER_THRESHOLD, SAMPLE_LIMIT, SAMPLE_OFFSET
 from . import runner
 
 VERSION = ray.__version__
+
+
+# Ray Data has no native offset; .limit(N) is the closest distributed-side
+# truncation, and .take(N) is the only way to pull rows to the driver. We
+# limit to OFFSET+LIMIT rows server-side, take that many to the driver,
+# then slice the last LIMIT — simulates a mid-range sample with the
+# memory cost that Ray Data's missing-offset surface imposes.
+def _sample(ds):
+    n = SAMPLE_OFFSET + SAMPLE_LIMIT
+    return ds.limit(n).take(n)[-SAMPLE_LIMIT:]
+
 
 # Per-row `ds.map`/`ds.filter` lambdas are an order of magnitude slower
 # than vectorized `ds.map_batches` - the per-block work goes from one
 # Python call per row to a single numpy/pandas op per block.
 BENCHMARKS = {
     "Column sum":         lambda ds: ds.sum("amount"),
-    "Column multiply":    lambda ds: ds.map_batches(
+    "Column multiply":    lambda ds: _sample(ds.map_batches(
         lambda b: {"p": b["amount"] * b["quantity"]},
         batch_format="numpy",
-    ).materialize().count(),
-    "Filter rows":        lambda ds: ds.map_batches(
+    )),
+    "Filter rows":        lambda ds: _sample(ds.map_batches(
         lambda b: b[b["amount"] > FILTER_THRESHOLD],
         batch_format="pandas",
-    ).materialize().count(),
-    "Sort":               lambda ds: ds.sort("amount", descending=True).materialize().count(),
+    )),
+    "Sort":               lambda ds: _sample(ds.sort("amount", descending=True)),
     "Count distinct":     lambda ds: ds.unique("category"),
     "Group-by sum":       lambda ds: ds.groupby("category").sum("amount").take_all(),
     "Group-by count":     lambda ds: ds.groupby("category").count().take_all(),

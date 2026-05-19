@@ -12,9 +12,10 @@ import aaiclick
 from aaiclick import ColumnInfo
 from aaiclick.data.data_context import data_context
 from aaiclick.data.object import create_object_from_url
+from aaiclick.data import Computed
 from aaiclick.data.object.operators import Agg
 
-from .config import FILTER_THRESHOLD
+from .config import FILTER_THRESHOLD, SAMPLE_LIMIT, SAMPLE_OFFSET
 
 # Columns to read from the parquet via CH's url() table function. We also
 # pin types so CH's DESCRIBE-based inference doesn't pick wider integers
@@ -53,15 +54,28 @@ async def _col_sum(obj):
 
 
 async def _col_mul(obj):
-    return await (obj["amount"] * obj["quantity"])
+    view = obj.with_columns(
+        {"product": Computed("Float64", "amount * quantity")}
+    ).view(limit=SAMPLE_LIMIT, offset=SAMPLE_OFFSET)
+    return await view.data()
 
 
 async def _filter(obj):
-    return await obj.where(f"amount > {FILTER_THRESHOLD}").copy()
+    view = obj.view(
+        where=f"amount > {FILTER_THRESHOLD}",
+        limit=SAMPLE_LIMIT,
+        offset=SAMPLE_OFFSET,
+    )
+    return await view.data()
 
 
 async def _sort(obj):
-    return await obj.view(order_by="amount DESC").copy()
+    view = obj.view(
+        order_by="amount DESC",
+        limit=SAMPLE_LIMIT,
+        offset=SAMPLE_OFFSET,
+    )
+    return await view.data()
 
 
 async def _count_distinct(obj):
