@@ -29,6 +29,10 @@ for fwk in "${FRAMEWORKS[@]}"; do
         ray) fwk_timeout="${RAY_TIMEOUT_SECS:-1500}" ;;
         *)   fwk_timeout="$TIMEOUT_SECS" ;;
     esac
+    # bench_ray.py's internal deadline (RAY_JOB_DEADLINE_S in compose)
+    # must stay 100s under fwk_timeout so the client can stop_job and
+    # print logs before the outer `timeout` SIGTERMs the runner.
+    export RAY_JOB_DEADLINE_S=$((fwk_timeout - 100))
     echo ">>> running $fwk (timeout=${fwk_timeout}s)"
     if ! timeout --foreground "$fwk_timeout" \
             docker compose up --abort-on-container-exit --exit-code-from "$fwk" "$fwk"; then

@@ -3,7 +3,7 @@
 #   aaiclick    -> clickhouse + postgres + fileserver
 #   spark       -> spark-server (Spark Connect, gRPC on 15002)
 #   dask        -> dask-scheduler + dask-worker
-#   ray         -> ray-head (Ray Client server on 10001)
+#   ray         -> ray-head (Ray Jobs API, HTTP on 8265)
 # The runner inside each framework container loops through all 11 ops and
 # writes /data/results-<framework>.json. cgroup measurement sums across
 # the framework's client + server containers via COMPUTE_CONTAINERS - see
@@ -195,4 +195,7 @@ services:
       ray-head: { condition: service_healthy }
     environment:
       RAY_JOBS_URL: "http://ray-head:8265"
+      # Set by distributed-data-libs.sh from fwk_timeout - 100 so the
+      # client always exits with diagnostics before the outer SIGTERM.
+      RAY_JOB_DEADLINE_S: "${RAY_JOB_DEADLINE_S:-1400}"
     profiles: [ "bench" ]

@@ -12,9 +12,7 @@ from ray.job_submission import JobStatus, JobSubmissionClient
 VERSION = ray.__version__
 
 _JOBS_URL = os.environ.get("RAY_JOBS_URL", "http://ray-head:8265")
-# Stay under the orchestrator's per-framework timeout (RAY_TIMEOUT_SECS,
-# default 1500s) so we can exit cleanly with diagnostics instead of
-# being SIGTERM'd mid-poll.
+# Derived in distributed-data-libs.sh as RAY_TIMEOUT_SECS - 100.
 _JOB_DEADLINE_S = int(os.environ.get("RAY_JOB_DEADLINE_S", "1400"))
 
 
@@ -48,6 +46,7 @@ def run_as_client():
     try:
         asyncio.run(asyncio.wait_for(_stream(client, job_id), timeout=_JOB_DEADLINE_S))
     except asyncio.TimeoutError:
+        client.stop_job(job_id)
         raise RuntimeError(f"Ray job {job_id} hit internal deadline ({_JOB_DEADLINE_S}s)")
 
     status = client.get_job_status(job_id)

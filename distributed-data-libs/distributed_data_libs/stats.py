@@ -43,7 +43,7 @@ def _read_cpu_usec(cgroup_dir):
             key, _, val = line.partition(" ")
             if key == "usage_usec":
                 return int(val.strip())
-    return 0
+    raise RuntimeError(f"cpu.stat at {cgroup_dir} has no usage_usec key")
 
 
 def cgroup_v2_available():
