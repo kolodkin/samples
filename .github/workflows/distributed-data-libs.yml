@@ -10,6 +10,7 @@ on:
 jobs:
   benchmark:
     runs-on: ubuntu-latest
+    environment: CICD
     defaults:
       run:
         working-directory: distributed-data-libs
@@ -42,3 +43,11 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           cat /tmp/bench.txt >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload benchmark artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: distributed-data-libs-bench
+          path: /tmp/bench.txt
+          if-no-files-found: warn
