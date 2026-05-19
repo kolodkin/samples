@@ -1,10 +1,5 @@
-"""aaiclick adapter — distributed mode against ClickHouse + Postgres sidecars.
-
-Ingest uses create_object_from_url, which makes ClickHouse pull the parquet
-itself via its url() table function and parse it natively (no Python dict
-round-trip — that was the 60s tax dominating embedded-chdb Ingest). url()
-requires HTTP, so a tiny nginx sidecar (`fileserver`) serves /data/.
-"""
+"""aaiclick adapter — Ingest uses create_object_from_url so CH pulls the
+parquet via url() (HTTP-only, hence the nginx fileserver sidecar)."""
 
 import os
 
@@ -17,10 +12,7 @@ from aaiclick.data.object.operators import Agg
 
 from .config import FILTER_THRESHOLD, SAMPLE_LIMIT, SAMPLE_OFFSET
 
-# Columns to read from the parquet via CH's url() table function. We also
-# pin types so CH's DESCRIBE-based inference doesn't pick wider integers
-# (Int64 from parquet metadata is fine; explicit LowCardinality on the
-# string columns mirrors the python-data-libs adapter).
+# Pin types so DESCRIBE-based inference doesn't widen ints.
 COLUMNS = ["id", "category", "subcategory", "amount", "quantity"]
 COLUMN_TYPES = {
     "id":          ColumnInfo("Int64"),
@@ -34,7 +26,6 @@ VERSION = aaiclick.__version__
 IS_ASYNC = True
 ASYNC_CONTEXT = True
 
-# Fileserver sidecar that mounts /data on port 80 (see docker-compose.yml).
 _FILESERVER = os.environ.get("FILESERVER_URL", "http://fileserver")
 
 

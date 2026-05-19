@@ -2,12 +2,7 @@ NUM_ROWS = 10_000_000
 NUM_RUNS = 3
 FILTER_THRESHOLD = 500.0
 
-# Mid-range slice for the paginated companions (Column multiply page,
-# Filter rows page, Sort page). Realistic deep-pagination pattern:
-# force computation through the offset, then pull a small bounded
-# window back to the driver. The non-paginated ops still measure full
-# materialization (top of the table); the paginated ones measure how
-# each framework handles OFFSET as a primitive.
+# Mid-range slice for the paginated companions.
 SAMPLE_OFFSET = NUM_ROWS // 2
 SAMPLE_LIMIT = 10
 CATEGORIES = [f"cat_{i}" for i in range(10)]

@@ -1,9 +1,4 @@
-"""PySpark adapter — client-server topology via Spark Connect. The thin
-Python client (this container) sends DataFrame plans over gRPC to the
-spark-server sidecar (JVM); the server reads parquet, runs all compute,
-and streams results back as Arrow. Large-result ops materialize into noop
-sinks (server-side execution, no driver fetch). The paginated companions
-add offset+limit to pull a mid-range 10-row slice instead."""
+"""PySpark adapter — Spark Connect thin client → spark-server JVM sidecar."""
 
 import os
 from contextlib import contextmanager
@@ -17,8 +12,6 @@ from .config import FILTER_THRESHOLD, SAMPLE_LIMIT, SAMPLE_OFFSET
 VERSION = pyspark.__version__
 IS_ASYNC = False
 
-# Connect server endpoint. Defaults to the compose service name; override
-# with SPARK_REMOTE for standalone runs.
 _REMOTE = os.environ.get("SPARK_REMOTE", "sc://spark-server:15002")
 
 
@@ -43,7 +36,7 @@ def _spark():
 def convert(path):
     spark = _spark()
     df = spark.read.parquet(path).cache()
-    df.count()  # force materialization into the server-side cache
+    df.count()  # force server-side cache materialization
     return df
 
 

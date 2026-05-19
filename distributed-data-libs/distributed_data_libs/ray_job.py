@@ -1,7 +1,4 @@
-"""Ray Data benchmark, run inside ray-head via the Ray Jobs API.
-
-See SPEC.md for why Ray uses a Jobs-API split rather than the default
-in-container runner flow."""
+"""Ray Data benchmark, run inside ray-head via the Ray Jobs API (see SPEC.md)."""
 
 import os
 import sys
@@ -15,11 +12,8 @@ from . import runner
 VERSION = ray.__version__
 
 
-# Ray Data has no native offset. .limit(N).take(N) at N=5M hung the
-# LimitOperator's cross-block coordination for 15 minutes per filter run.
-# Instead we stream batches in dataset order, accumulate the row count,
-# and stop at the offset — bounded driver memory (one batch at a time)
-# while still forcing server-side compute through OFFSET rows.
+# Stream batches and stop at offset — .limit(N).take(N) hung the
+# LimitOperator's cross-block coordination at N=5M.
 def _sample(ds):
     seen = 0
     for batch in ds.iter_batches(batch_format="pandas", batch_size=10_000):
@@ -31,9 +25,7 @@ def _sample(ds):
     return None
 
 
-# Per-row `ds.map`/`ds.filter` lambdas are an order of magnitude slower
-# than vectorized `ds.map_batches` - the per-block work goes from one
-# Python call per row to a single numpy/pandas op per block.
+# map_batches over per-row map/filter — ~30x on 10M rows.
 BENCHMARKS = {
     "Column sum":         lambda ds: ds.sum("amount"),
     "Column multiply":    lambda ds: ds.map_batches(
@@ -76,8 +68,7 @@ def main():
     ray.init(address="auto", log_to_driver=False)
     ctx = rd.DataContext.get_current()
     ctx.execution_options.verbose_progress = False
-    # iter_batches needs ordered output for the offset semantics in _sample.
-    ctx.execution_options.preserve_order = True
+    ctx.execution_options.preserve_order = True  # for _sample's offset semantics
 
     self_mod = sys.modules[__name__]
     results = runner._run_sync(self_mod)
