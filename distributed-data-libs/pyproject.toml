@@ -1,0 +1,10 @@
+[project]
+name = "distributed-data-libs"
+version = "0.1.0"
+requires-python = ">=3.11"
+# Runtime deps live in the per-framework Docker images. This pyproject exists
+# so the package can be discovered and so `uv run` works for local linting.
+dependencies = [
+    "pyarrow",
+    "rich>=14.3.3",
+]

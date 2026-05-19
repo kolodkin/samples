@@ -1,0 +1,22 @@
+FROM apache/spark:3.5.3
+
+USER root
+
+# SPARK_NO_DAEMONIZE keeps start-connect-server.sh in the foreground so
+# the container stays up (default daemonizes and exits immediately).
+ENV SPARK_NO_DAEMONIZE=1
+
+# Pre-resolve the spark-connect jar via Ivy at image build time so container
+# startup doesn't pay the download cost on every CI run. The shell exits
+# instantly with </dev/null; we only care about populating ~/.ivy2/cache.
+RUN /opt/spark/bin/spark-shell \
+        --packages org.apache.spark:spark-connect_2.12:3.5.3 \
+        --conf spark.driver.bindAddress=127.0.0.1 \
+        </dev/null >/dev/null 2>&1 || true
+
+EXPOSE 15002
+
+CMD ["/opt/spark/sbin/start-connect-server.sh", \
+     "--packages", "org.apache.spark:spark-connect_2.12:3.5.3", \
+     "--conf", "spark.connect.grpc.binding.port=15002", \
+     "--conf", "spark.sql.shuffle.partitions=8"]

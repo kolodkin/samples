@@ -1,0 +1,201 @@
+# One service per framework, each backed by its own engine sidecar(s) so
+# all four frameworks run in a true client-server topology:
+#   aaiclick    -> clickhouse + postgres + fileserver
+#   spark       -> spark-server (Spark Connect, gRPC on 15002)
+#   dask        -> dask-scheduler + dask-worker
+#   ray         -> ray-head (Ray Jobs API, HTTP on 8265)
+# The runner inside each framework container loops through all 11 ops and
+# writes /data/results-<framework>.json. cgroup measurement sums across
+# the framework's client + server containers via COMPUTE_CONTAINERS - see
+# stats.py and SPEC.md.
+
+services:
+  orchestrator:
+    build: { context: ., dockerfile: Dockerfile.orchestrator }
+    volumes: [ "./data:/data" ]
+    profiles: [ "tools" ]
+
+  # --- engine sidecars ---
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    # /data mounted twice so both file:///data/... and CH's default
+    # user_files path resolve to the same parquet file. aaiclick may use
+    # either depending on which CH table function it picks under the hood.
+    volumes:
+      - "./data:/data"
+      - "./data:/var/lib/clickhouse/user_files"
+    environment:
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+    healthcheck:
+      test: [ "CMD", "wget", "--spider", "-q", "http://localhost:8123/ping" ]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    profiles: [ "bench" ]
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: aaiclick
+      POSTGRES_USER: aaiclick
+      POSTGRES_DB: aaiclick
+    healthcheck:
+      test: [ "CMD", "pg_isready", "-U", "aaiclick" ]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    profiles: [ "bench" ]
+
+  # aaiclick's create_object_from_url uses ClickHouse's url() table
+  # function, which requires HTTP. nginx serves /data/ so CH can pull
+  # raw.parquet directly (no Python dict round-trip). No healthcheck:
+  # nginx:alpine has no curl/wget that accepts --spider, and nginx is
+  # ready the instant it binds port 80 — depends_on: service_started
+  # is sufficient.
+  fileserver:
+    image: nginx:alpine
+    volumes:
+      - "./data:/usr/share/nginx/html:ro"
+    profiles: [ "bench" ]
+
+  spark-server:
+    build: { context: ., dockerfile: Dockerfile.spark-server }
+    volumes: [ "./data:/data" ]
+    healthcheck:
+      # Spark Connect serves gRPC on 15002. bash /dev/tcp avoids needing
+      # nc/curl in the apache/spark image. 30s start_period covers Ivy
+      # resolve + JVM warm-up.
+      test: [ "CMD-SHELL", "bash -c '</dev/tcp/localhost/15002'" ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+    profiles: [ "bench" ]
+
+  dask-scheduler:
+    build: { context: ., dockerfile: Dockerfile.dask }
+    command: [ "dask", "scheduler", "--host", "0.0.0.0", "--port", "8786",
+               "--dashboard-address", ":0" ]
+    healthcheck:
+      test: [ "CMD-SHELL", "python -c \"import socket; socket.create_connection(('localhost', 8786), timeout=2).close()\"" ]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    profiles: [ "bench" ]
+
+  dask-worker:
+    build: { context: ., dockerfile: Dockerfile.dask }
+    # One worker × 4 threads × 4 GiB to match the previous LocalCluster
+    # sizing. Multi-worker setups OOM on Sort's shuffle at 10M rows.
+    command: [ "dask", "worker", "tcp://dask-scheduler:8786",
+               "--nthreads", "4", "--memory-limit", "4GiB",
+               "--no-dashboard" ]
+    volumes: [ "./data:/data" ]
+    depends_on:
+      dask-scheduler: { condition: service_healthy }
+    mem_limit: 6g
+    profiles: [ "bench" ]
+
+  ray-head:
+    build: { context: ., dockerfile: Dockerfile.ray }
+    # Dashboard on 0.0.0.0:8265 hosts the Jobs API the client hits.
+    command: [ "ray", "start", "--head",
+               "--node-ip-address=0.0.0.0",
+               "--port=6379",
+               "--num-cpus=4",
+               "--include-dashboard=true",
+               "--dashboard-host=0.0.0.0",
+               "--block" ]
+    volumes:
+      - "./data:/data"
+      # Bind-mount Ray's session-log dir so the orchestrator can grep
+      # dashboard_agent.log etc. after a failure.
+      - "./data/ray-logs:/tmp/ray"
+    shm_size: 1g
+    mem_limit: 6g
+    healthcheck:
+      test: [ "CMD-SHELL", "python -c \"import socket; socket.create_connection(('localhost', 8265), timeout=2).close()\"" ]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+      start_period: 15s
+    profiles: [ "bench" ]
+
+  # --- framework runners ---
+
+  aaiclick:
+    build: { context: ., dockerfile: Dockerfile.aaiclick }
+    # Mount host /sys/fs/cgroup + docker.sock so the runner can read
+    # sidecar cgroup files (memory.peak, cpu.stat) — without this the
+    # cgroup we measure only sees the thin client's HTTP wait, not the
+    # actual compute happening in the clickhouse sidecar.
+    volumes:
+      - "./data:/data"
+      - "/sys/fs/cgroup:/host/cgroup:ro"
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    command: [ "python", "-m", "distributed_data_libs.runner" ]
+    depends_on:
+      clickhouse: { condition: service_healthy }
+      postgres:   { condition: service_healthy }
+      fileserver: { condition: service_started }
+    environment:
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_PORT: 8123
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: aaiclick
+      PGPASSWORD: aaiclick
+      PGDATABASE: aaiclick
+      FILESERVER_URL: http://fileserver
+      COMPUTE_CONTAINERS: "aaiclick,clickhouse,postgres,fileserver"
+    profiles: [ "bench" ]
+
+  spark:
+    build: { context: ., dockerfile: Dockerfile.spark }
+    volumes:
+      - "./data:/data"
+      - "/sys/fs/cgroup:/host/cgroup:ro"
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    command: [ "python", "-m", "distributed_data_libs.runner" ]
+    depends_on:
+      spark-server: { condition: service_healthy }
+    environment:
+      SPARK_REMOTE: "sc://spark-server:15002"
+      COMPUTE_CONTAINERS: "spark,spark-server"
+    profiles: [ "bench" ]
+
+  dask:
+    build: { context: ., dockerfile: Dockerfile.dask }
+    volumes:
+      - "./data:/data"
+      - "/sys/fs/cgroup:/host/cgroup:ro"
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    command: [ "python", "-m", "distributed_data_libs.runner" ]
+    depends_on:
+      dask-scheduler: { condition: service_healthy }
+      dask-worker:    { condition: service_started }
+    environment:
+      DASK_SCHEDULER: "tcp://dask-scheduler:8786"
+      COMPUTE_CONTAINERS: "dask,dask-scheduler,dask-worker"
+    profiles: [ "bench" ]
+
+  ray:
+    # Thin Jobs API client: submits ray_job.py to ray-head and streams
+    # its logs. Measurement runs inside ray-head, so no cgroup/socket
+    # mounts here.
+    build: { context: ., dockerfile: Dockerfile.ray }
+    volumes: [ "./data:/data" ]
+    command: [ "python", "-m", "distributed_data_libs.runner" ]
+    depends_on:
+      ray-head: { condition: service_healthy }
+    environment:
+      RAY_JOBS_URL: "http://ray-head:8265"
+      # Set by distributed-data-libs.sh from fwk_timeout - 100 so the
+      # client always exits with diagnostics before the outer SIGTERM.
+      RAY_JOB_DEADLINE_S: "${RAY_JOB_DEADLINE_S:-1400}"
+    profiles: [ "bench" ]

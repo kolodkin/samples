@@ -1,0 +1,13 @@
+# Thin Spark Connect client. No JVM in this container - the server runs in
+# the spark-server sidecar. `pyspark[connect]` brings the grpc/pyarrow deps;
+# `docker` SDK lets the runner resolve sidecar cgroup paths for measurement.
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir "pyspark[connect]==3.5.3" pyarrow docker
+
+COPY distributed_data_libs ./distributed_data_libs
+
+ENV PYTHONPATH=/app
+ENV FRAMEWORK=spark
