@@ -82,6 +82,7 @@ When comparing frameworks, the **Ingest** row (always first) is the most directl
 - **Ivy/Maven cache** — the spark-connect jar (`org.apache.spark:spark-connect_2.12:3.5.3`) is pre-resolved into `~/.ivy2/cache` at Dockerfile.spark-server build time so container startup doesn't pay the download cost on every CI run.
 - **Native Parquet read** — `spark.read.parquet(path).cache(); count()` materializes server-side. The client only sees an Arrow-encoded result handle.
 - **Mid-range slice** — large-result ops (`Column multiply`, `Filter rows`, `Sort`) use `df.offset(SAMPLE_OFFSET).limit(SAMPLE_LIMIT).collect()`. Spark Connect pushes both into the physical plan, so the JVM does the work and only 10 rows of Arrow stream back.
+- **Driver heap** — `Sort` with `OFFSET 5M` needs a 5M-entry `TakeOrderedAndProject` priority queue (~1 GB) inside the JVM. The default 1 GB driver heap OOMs; `--driver-memory 4g` is set in `Dockerfile.spark-server`.
 - **Aggregations** — small-result ops use `.collect()` since the result is bounded.
 
 ### Dask
@@ -102,7 +103,7 @@ When comparing frameworks, the **Ingest** row (always first) is the most directl
 - **Measurement** — the job runs entirely inside ray-head, so its cgroup is the only one doing real work. `ray_job.py` uses self-only measurement (`/sys/fs/cgroup`); no `COMPUTE_CONTAINERS` needed.
 - **`--block`** — keeps `ray start --head` in the foreground so the container stays up (the default daemonizes and exits).
 - **Vectorized `map_batches`** — `Column multiply` and `Filter rows` use `ds.map_batches(..., batch_format="numpy"/"pandas")` rather than `ds.map`/`ds.filter` per-row lambdas. The per-row form is ~30x slower on 10M rows because each row crosses Ray's task boundary.
-- **Mid-range slice** — Ray Data has no native `OFFSET`. `_sample` uses `ds.limit(SAMPLE_OFFSET + SAMPLE_LIMIT).take(...)[-SAMPLE_LIMIT:]`: the `limit` truncates server-side, `take` pulls the prefix to the driver, the final slice keeps 10 rows. Same prefix-on-driver cost as Dask. Group-by ops use `.take_all()` (bounded result).
+- **Mid-range slice** — Ray Data has no native `OFFSET`. `_sample` streams `ds.iter_batches(batch_format="pandas", batch_size=10_000)`, accumulates rows per batch, and stops at `SAMPLE_OFFSET`. `preserve_order=True` is set on the execution options so the batches arrive in dataset order. Bounded driver memory (one 10k-row batch at a time). The earlier `.limit(N).take(N)` form hung the LimitOperator's cross-block coordination for ~15 minutes per filter run at N=5M. Group-by ops still use `.take_all()` (bounded result).
 - **Why Ray is slow on groupby** — single-node Ray Data shuffles ~50s per groupby on 10M rows. Inherent; not a config issue. Hence `RAY_TIMEOUT_SECS=1500` (per-framework cap of 25 min) in the orchestrator.
 
 ## CI

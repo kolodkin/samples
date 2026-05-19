@@ -15,14 +15,20 @@ from . import runner
 VERSION = ray.__version__
 
 
-# Ray Data has no native offset; .limit(N) is the closest distributed-side
-# truncation, and .take(N) is the only way to pull rows to the driver. We
-# limit to OFFSET+LIMIT rows server-side, take that many to the driver,
-# then slice the last LIMIT — simulates a mid-range sample with the
-# memory cost that Ray Data's missing-offset surface imposes.
+# Ray Data has no native offset. .limit(N).take(N) at N=5M hung the
+# LimitOperator's cross-block coordination for 15 minutes per filter run.
+# Instead we stream batches in dataset order, accumulate the row count,
+# and stop at the offset — bounded driver memory (one batch at a time)
+# while still forcing server-side compute through OFFSET rows.
 def _sample(ds):
-    n = SAMPLE_OFFSET + SAMPLE_LIMIT
-    return ds.limit(n).take(n)[-SAMPLE_LIMIT:]
+    seen = 0
+    for batch in ds.iter_batches(batch_format="pandas", batch_size=10_000):
+        n = len(batch)
+        if seen + n > SAMPLE_OFFSET:
+            start = SAMPLE_OFFSET - seen
+            return batch.iloc[start:start + SAMPLE_LIMIT]
+        seen += n
+    return None
 
 
 # Per-row `ds.map`/`ds.filter` lambdas are an order of magnitude slower
@@ -59,7 +65,10 @@ def convert(path):
 
 def main():
     ray.init(address="auto", log_to_driver=False)
-    rd.DataContext.get_current().execution_options.verbose_progress = False
+    ctx = rd.DataContext.get_current()
+    ctx.execution_options.verbose_progress = False
+    # iter_batches needs ordered output for the offset semantics in _sample.
+    ctx.execution_options.preserve_order = True
 
     self_mod = sys.modules[__name__]
     results = runner._run_sync(self_mod)
