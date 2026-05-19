@@ -4,24 +4,29 @@ aaiclick (→ ClickHouse + Postgres), PySpark, Dask, Ray Data — 10M rows, 3 ru
 
 ## Operations
 
-Same 11 ops as `python-data-libs` so non-ingest results are directly comparable at scale. **Ingest semantics differ**: in `python-data-libs`, ingest converts a Python `dict[str, list]` into the library's native format; here, ingest reads `/data/raw.parquet` into the framework's native dataset. Distributed frameworks are designed to read from files, not from in-memory Python — going through `dict` → py4j / `from_pandas` / `from_items` is unrealistic and OOMs the Spark JVM at 10M rows.
+The standard 11 ops match `python-data-libs` so non-ingest results are directly comparable at scale. **Ingest semantics differ**: in `python-data-libs`, ingest converts a Python `dict[str, list]` into the library's native format; here, ingest reads `/data/raw.parquet` into the framework's native dataset. Distributed frameworks are designed to read from files, not from in-memory Python — going through `dict` → py4j / `from_pandas` / `from_items` is unrealistic and OOMs the Spark JVM at 10M rows.
 
 - **Ingest** — read `/data/raw.parquet` (Snappy-compressed) into the framework's native dataset
 - **Column** — sum, multiply, filter, sort, count distinct
 - **Group-by** — sum, count, multi-agg (sum/mean/min/max), multi-key, high cardinality (1000 groups)
 
-### Mid-range slice for large-result ops
+### Paginated companions (Column multiply page / Filter rows page / Sort page)
 
-**Column multiply**, **Filter rows**, and **Sort** all produce per-row outputs (~10M rows). Pulling the full result to the driver is unrealistic — production distributed pipelines either write to storage or pull a bounded inspection window. The benchmark now selects **10 mid-range rows** (`SAMPLE_OFFSET=NUM_ROWS/2`, `SAMPLE_LIMIT=10`) — the SQL equivalent of `LIMIT 10 OFFSET 5_000_000`.
+Three additional ops measure **mid-range pagination** — a more realistic distributed-inspection pattern than the full materialize of the standard `Column multiply` / `Filter rows` / `Sort`. Each pulls 10 rows starting at `SAMPLE_OFFSET = NUM_ROWS / 2 = 5_000_000` — the SQL equivalent of `LIMIT 10 OFFSET 5_000_000`.
 
-This forces server-side computation through the offset (the engine must produce at least 5M+10 rows of output) while keeping the driver-side payload tiny. Trade-off vs. the previous full-materialize pattern: aaiclick and Spark have native `LIMIT/OFFSET` so the cost is roughly half of "materialize everything"; Dask and Ray Data have no offset primitive, so they accumulate the prefix on the driver — exactly the kind of asymmetry the benchmark is meant to surface.
+These are **not replacements** for the standard ops; both sets run side-by-side. The standard rows measure raw compute (full materialization); the `page` rows measure how each framework handles OFFSET as a primitive. The asymmetry is the point:
+
+- **aaiclick** (ClickHouse): native `LIMIT/OFFSET` is a streaming pipeline operator — O(1) memory for the offset itself.
+- **Spark Connect**: `df.offset(N).limit(K)` is supported, but `orderBy + offset(N)` collapses into `TakeOrderedAndProject(N+K)` — a 5M-entry priority queue in the JVM, ~1 GB. Default driver heap (1 GB) OOMs; `--driver-memory 4g` is set on `spark-server`.
+- **Dask**: no native `OFFSET`. `_sample` uses `ddf.head(N+K, npartitions=-1, compute=True).iloc[-K:]` — walks partitions and accumulates ~5M rows on the driver before slicing.
+- **Ray Data**: no native `OFFSET`. `.limit(N).take(N)` hangs the LimitOperator's cross-block coordination at large N (15 minutes per filter run at N=5M). `_sample` streams `ds.iter_batches()` with `preserve_order=True` and stops at the offset — bounded driver memory.
 
 ## Architecture
 
 One `docker-compose.yml` declares one service per framework plus three sidecars that back aaiclick's distributed mode — `clickhouse` (data engine), `postgres` (metadata catalog), and `fileserver` (nginx serving `/data/` over HTTP, required because `create_object_from_url` uses CH's `url()` table function which speaks HTTP only) — and an orchestrator. The orchestrator generates `raw.parquet` once on a shared bind-mounted `./data/` volume. Then for each framework:
 
 1. `docker compose up <framework>` starts the runner container — engine sidecars auto-start via `depends_on` + healthcheck (first iteration only)
-2. The runner inside the container loops through all 11 ops in a single long-lived process and writes `/data/results-<framework>.json`
+2. The runner inside the container loops through all 14 ops (11 standard + 3 paginated companions) in a single long-lived process and writes `/data/results-<framework>.json`
 3. The runner container is stopped; engine sidecars stay up across framework iterations (cheap to leave running, expensive to restart per-framework)
 4. After all 4 frameworks finish, the orchestrator renders the report and the script tears down sidecars
 
@@ -78,22 +83,23 @@ When comparing frameworks, the **Ingest** row (always first) is the most directl
 
 ### Spark (Spark Connect)
 
-- **Topology** — thin `pyspark[connect]` client in the `spark` runner container talks gRPC to the `spark-server` sidecar (the JVM). No JVM in the client container; no py4j. SparkSession opens once via `SparkSession.builder.remote("sc://spark-server:15002")` and serves all 11 ops.
+- **Topology** — thin `pyspark[connect]` client in the `spark` runner container talks gRPC to the `spark-server` sidecar (the JVM). No JVM in the client container; no py4j. SparkSession opens once via `SparkSession.builder.remote("sc://spark-server:15002")` and serves all 14 ops.
 - **Ivy/Maven cache** — the spark-connect jar (`org.apache.spark:spark-connect_2.12:3.5.3`) is pre-resolved into `~/.ivy2/cache` at Dockerfile.spark-server build time so container startup doesn't pay the download cost on every CI run.
 - **Native Parquet read** — `spark.read.parquet(path).cache(); count()` materializes server-side. The client only sees an Arrow-encoded result handle.
-- **Mid-range slice** — large-result ops (`Column multiply`, `Filter rows`, `Sort`) use `df.offset(SAMPLE_OFFSET).limit(SAMPLE_LIMIT).collect()`. Spark Connect pushes both into the physical plan, so the JVM does the work and only 10 rows of Arrow stream back.
-- **Driver heap** — `Sort` with `OFFSET 5M` needs a 5M-entry `TakeOrderedAndProject` priority queue (~1 GB) inside the JVM. The default 1 GB driver heap OOMs; `--driver-memory 4g` is set in `Dockerfile.spark-server`.
+- **Noop sink** — standard large-result ops (`Column multiply`, `Filter rows`, `Sort`) use `df.write.format("noop")` to force execution server-side without streaming rows back.
+- **Paginated companions** — `Column multiply page` / `Filter rows page` / `Sort page` use `df.offset(SAMPLE_OFFSET).limit(SAMPLE_LIMIT).collect()`. Spark Connect pushes both into the physical plan; only 10 rows of Arrow stream back. `Sort page` at OFFSET 5M needs a 5M-entry `TakeOrderedAndProject` priority queue (~1 GB) in the JVM — `--driver-memory 4g` is set in `Dockerfile.spark-server` (default 1 GB OOMs).
 - **Aggregations** — small-result ops use `.collect()` since the result is bounded.
 
 ### Dask
 
 - **Topology** — thin client (the runner) connects to a `dask-scheduler` sidecar via `Client("tcp://dask-scheduler:8786")`. A separate `dask-worker` sidecar joins the scheduler with `--nthreads 4 --memory-limit 4GiB`, matching the previous LocalCluster sizing. Multi-worker setups deadlock on Sort's shuffle at 10M rows under a 6 GB cap.
 - **Native Parquet read** — `dd.read_parquet(...).repartition(8).categorize(...).persist()`. Cast `category`/`subcategory` to dask categorical dtype before persisting; cuts group-by time substantially.
-- **Mid-range slice** — Dask has no native `OFFSET`. `_sample` uses `ddf.head(SAMPLE_OFFSET + SAMPLE_LIMIT, npartitions=-1, compute=True).iloc[-SAMPLE_LIMIT:]`: walks partitions in order, accumulating the prefix on the driver, then keeps the last 10 rows. The 5M-row driver materialization is the cost of Dask's missing offset primitive.
+- **Materialize without collect** — standard large-result ops use `_materialize`: `map_partitions(len).compute().sum()` to force execution without pulling rows to the driver.
+- **Paginated companions** — `_sample` uses `ddf.head(SAMPLE_OFFSET + SAMPLE_LIMIT, npartitions=-1, compute=True).iloc[-SAMPLE_LIMIT:]`: walks partitions in order, accumulating ~5M rows on the driver, then keeps the last 10. The driver materialization is the cost of Dask's missing offset primitive.
 
 ### Ray Data
 
-- **Topology — Ray Jobs API** — Ray Data does not work cleanly from a remote client in Ray 2.x. Instead `bench_ray.py` (in the runner container) submits the entire benchmark as a Ray Job via `JobSubmissionClient("http://ray-head:8265")`; `ray_job.py` runs inside ray-head and reuses `runner._run_sync` to drive the standard 11 ops + measurement, then writes `/data/results-ray.json`. Logs stream back to the runner via `client.tail_job_logs(job_id)` (async iterator) — no polling, no log-buffer growth.
+- **Topology — Ray Jobs API** — Ray Data does not work cleanly from a remote client in Ray 2.x. Instead `bench_ray.py` (in the runner container) submits the entire benchmark as a Ray Job via `JobSubmissionClient("http://ray-head:8265")`; `ray_job.py` runs inside ray-head and reuses `runner._run_sync` to drive all 14 ops + measurement, then writes `/data/results-ray.json`. Logs stream back to the runner via `client.tail_job_logs(job_id)` (async iterator) — no polling, no log-buffer growth.
 - **Why not the more common patterns** — three distinct failure modes pushed us to Jobs:
   - **Ray Client (`ray://ray-head:10001`)** — raises `AttributeError: 'Worker' object has no attribute 'core_worker'` at the first `read_parquet` because Ray Data's `get_local_object_locations` runs client-side and Ray Client has no local core_worker.
   - **Direct `ray.init(address="ray-head:6379")`** — raises `RuntimeError: No node info found matching attributes` because Ray can't resolve the driver's own node info without a prior `ray start`.
@@ -103,7 +109,8 @@ When comparing frameworks, the **Ingest** row (always first) is the most directl
 - **Measurement** — the job runs entirely inside ray-head, so its cgroup is the only one doing real work. `ray_job.py` uses self-only measurement (`/sys/fs/cgroup`); no `COMPUTE_CONTAINERS` needed.
 - **`--block`** — keeps `ray start --head` in the foreground so the container stays up (the default daemonizes and exits).
 - **Vectorized `map_batches`** — `Column multiply` and `Filter rows` use `ds.map_batches(..., batch_format="numpy"/"pandas")` rather than `ds.map`/`ds.filter` per-row lambdas. The per-row form is ~30x slower on 10M rows because each row crosses Ray's task boundary.
-- **Mid-range slice** — Ray Data has no native `OFFSET`. `_sample` streams `ds.iter_batches(batch_format="pandas", batch_size=10_000)`, accumulates rows per batch, and stops at `SAMPLE_OFFSET`. `preserve_order=True` is set on the execution options so the batches arrive in dataset order. Bounded driver memory (one 10k-row batch at a time). The earlier `.limit(N).take(N)` form hung the LimitOperator's cross-block coordination for ~15 minutes per filter run at N=5M. Group-by ops still use `.take_all()` (bounded result).
+- **`.materialize().count()`** — standard large-result ops force lazy plans into the object store; `.count()` triggers metadata fetch without pulling rows. Group-by ops use `.take_all()` (bounded result).
+- **Paginated companions** — `_sample` streams `ds.iter_batches(batch_format="pandas", batch_size=10_000)`, accumulates rows per batch, and stops at `SAMPLE_OFFSET`. `preserve_order=True` is set on the execution options so the batches arrive in dataset order. Bounded driver memory (one 10k-row batch at a time). The earlier `.limit(N).take(N)` form hung the LimitOperator's cross-block coordination for ~15 minutes per filter run at N=5M.
 - **Why Ray is slow on groupby** — single-node Ray Data shuffles ~50s per groupby on 10M rows. Inherent; not a config issue. Hence `RAY_TIMEOUT_SECS=1500` (per-framework cap of 25 min) in the orchestrator.
 
 ## CI

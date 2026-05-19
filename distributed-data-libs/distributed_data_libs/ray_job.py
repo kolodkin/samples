@@ -36,15 +36,15 @@ def _sample(ds):
 # Python call per row to a single numpy/pandas op per block.
 BENCHMARKS = {
     "Column sum":         lambda ds: ds.sum("amount"),
-    "Column multiply":    lambda ds: _sample(ds.map_batches(
+    "Column multiply":    lambda ds: ds.map_batches(
         lambda b: {"p": b["amount"] * b["quantity"]},
         batch_format="numpy",
-    )),
-    "Filter rows":        lambda ds: _sample(ds.map_batches(
+    ).materialize().count(),
+    "Filter rows":        lambda ds: ds.map_batches(
         lambda b: b[b["amount"] > FILTER_THRESHOLD],
         batch_format="pandas",
-    )),
-    "Sort":               lambda ds: _sample(ds.sort("amount", descending=True)),
+    ).materialize().count(),
+    "Sort":               lambda ds: ds.sort("amount", descending=True).materialize().count(),
     "Count distinct":     lambda ds: ds.unique("category"),
     "Group-by sum":       lambda ds: ds.groupby("category").sum("amount").take_all(),
     "Group-by count":     lambda ds: ds.groupby("category").count().take_all(),
@@ -56,6 +56,15 @@ BENCHMARKS = {
     ).take_all(),
     "Multi-key group-by": lambda ds: ds.groupby(["category", "subcategory"]).sum("amount").take_all(),
     "High-card group-by": lambda ds: ds.groupby("subcategory").sum("amount").take_all(),
+    "Column multiply page": lambda ds: _sample(ds.map_batches(
+        lambda b: {"p": b["amount"] * b["quantity"]},
+        batch_format="numpy",
+    )),
+    "Filter rows page":     lambda ds: _sample(ds.map_batches(
+        lambda b: b[b["amount"] > FILTER_THRESHOLD],
+        batch_format="pandas",
+    )),
+    "Sort page":            lambda ds: _sample(ds.sort("amount", descending=True)),
 }
 
 

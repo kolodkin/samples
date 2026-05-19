@@ -54,13 +54,25 @@ async def _col_sum(obj):
 
 
 async def _col_mul(obj):
+    return await (obj["amount"] * obj["quantity"])
+
+
+async def _filter(obj):
+    return await obj.where(f"amount > {FILTER_THRESHOLD}").copy()
+
+
+async def _sort(obj):
+    return await obj.view(order_by="amount DESC").copy()
+
+
+async def _col_mul_page(obj):
     view = obj.with_columns(
         {"product": Computed("Float64", "amount * quantity")}
     ).view(limit=SAMPLE_LIMIT, offset=SAMPLE_OFFSET)
     return await view.data()
 
 
-async def _filter(obj):
+async def _filter_page(obj):
     view = obj.view(
         where=f"amount > {FILTER_THRESHOLD}",
         limit=SAMPLE_LIMIT,
@@ -69,7 +81,7 @@ async def _filter(obj):
     return await view.data()
 
 
-async def _sort(obj):
+async def _sort_page(obj):
     view = obj.view(
         order_by="amount DESC",
         limit=SAMPLE_LIMIT,
@@ -120,4 +132,7 @@ BENCHMARKS = {
     "Group-by multi-agg": _groupby_multi,
     "Multi-key group-by": _groupby_multikey,
     "High-card group-by": _groupby_highcard,
+    "Column multiply page": _col_mul_page,
+    "Filter rows page": _filter_page,
+    "Sort page": _sort_page,
 }
