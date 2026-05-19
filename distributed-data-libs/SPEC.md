@@ -1,6 +1,6 @@
 # distributed-data-libs: Distributed Data Library Benchmark
 
-aaiclick (→ ClickHouse + Postgres), PySpark, Dask, Ray Data — 10M rows, 3 runs averaged. Runs entirely inside Docker; cgroup v2 provides exact resource attribution.
+aaiclick (→ ClickHouse + Postgres), PySpark, Dask — 10M rows, 3 runs averaged. Runs entirely inside Docker; cgroup v2 provides exact resource attribution. Ray Data was tried and dropped — see the bottom of this file.
 
 ## Operations
 
@@ -19,7 +19,6 @@ These are **not replacements** for the standard ops; both sets run side-by-side.
 - **aaiclick** (ClickHouse): native `LIMIT/OFFSET` is a streaming pipeline operator — O(1) memory for the offset itself.
 - **Spark Connect**: `df.offset(N).limit(K)` is supported, but `orderBy + offset(N)` collapses into `TakeOrderedAndProject(N+K)` — a 5M-entry priority queue in the JVM, ~1 GB. Default driver heap (1 GB) OOMs; `--driver-memory 4g` is set on `spark-server`.
 - **Dask**: no native `OFFSET`. `_sample` uses `ddf.head(N+K, npartitions=-1, compute=True).iloc[-K:]` — walks partitions and accumulates ~5M rows on the driver before slicing.
-- **Ray Data**: no native `OFFSET`. `.limit(N).take(N)` hangs the LimitOperator's cross-block coordination at large N (15 minutes per filter run at N=5M). `_sample` streams `ds.iter_batches()` with `preserve_order=True` and stops at the offset — bounded driver memory.
 
 ## Architecture
 
@@ -37,7 +36,6 @@ Per-op measurement isolation comes from the kernel-tracked monotonic `memory.pea
 | aaiclick | `aaiclick` python client | `clickhouse-server:latest` (data) + `postgres:16` (metadata catalog) + `nginx:alpine` (fileserver) | client ↔ HTTP ↔ CH, client ↔ TCP ↔ Postgres, CH ↔ HTTP ↔ nginx (parquet pull) |
 | Spark | `pyspark[connect]` thin client | `apache/spark:3.5.3` running Spark Connect server (gRPC on 15002) | client ↔ gRPC ↔ JVM server |
 | Dask | `dask[complete]` thin client | `dask scheduler` (port 8786) + `dask worker` (1 × 4 threads × 4 GiB) | client ↔ TCP ↔ scheduler ↔ TCP ↔ worker |
-| Ray | thin Jobs API client | `ray-head` (single node, 4 CPUs, GCS on 6379, Jobs HTTP on 8265) | client ↔ HTTP /api/jobs/ ↔ ray-head |
 
 ## Measurement methodology
 
@@ -58,7 +56,7 @@ aaiclick is a thin Python client; the actual compute runs in the `clickhouse` si
 2. Resolves the host-side cgroup path (`/host/cgroup/system.slice/docker-<id>.scope/` for systemd driver, `/host/cgroup/docker/<id>/` for cgroupfs)
 3. Sums `memory.peak` and `cpu.stat:usage_usec` across all of them per snapshot
 
-For aaiclick: `COMPUTE_CONTAINERS=aaiclick,clickhouse,postgres,fileserver`. For frameworks running in-process (Spark/Dask/Ray today), the env is unset and the runner falls back to self-only measurement (`/sys/fs/cgroup`). Upcoming client-server topologies for those frameworks will populate `COMPUTE_CONTAINERS` to match.
+All three frameworks populate `COMPUTE_CONTAINERS` (aaiclick: `aaiclick,clickhouse,postgres,fileserver`; spark: `spark,spark-server`; dask: `dask,dask-scheduler,dask-worker`). The self-only fallback is kept for standalone debug runs without a sidecar topology.
 
 ### memory.peak delta model
 
@@ -97,21 +95,15 @@ When comparing frameworks, the **Ingest** row (always first) is the most directl
 - **Materialize without collect** — standard large-result ops use `_materialize`: `map_partitions(len).compute().sum()` to force execution without pulling rows to the driver.
 - **Paginated companions** — `_sample` uses `ddf.head(SAMPLE_OFFSET + SAMPLE_LIMIT, npartitions=-1, compute=True).iloc[-SAMPLE_LIMIT:]`: walks partitions in order, accumulating ~5M rows on the driver, then keeps the last 10. The driver materialization is the cost of Dask's missing offset primitive.
 
-### Ray Data
+## Why Ray was dropped
 
-- **Topology — Ray Jobs API** — Ray Data does not work cleanly from a remote client in Ray 2.x. Instead `bench_ray.py` (in the runner container) submits the entire benchmark as a Ray Job via `JobSubmissionClient("http://ray-head:8265")`; `ray_job.py` runs inside ray-head and reuses `runner._run_sync` to drive all 14 ops + measurement, then writes `/data/results-ray.json`. Logs stream back to the runner via `client.tail_job_logs(job_id)` (async iterator) — no polling, no log-buffer growth.
-- **Why not the more common patterns** — three distinct failure modes pushed us to Jobs:
-  - **Ray Client (`ray://ray-head:10001`)** — raises `AttributeError: 'Worker' object has no attribute 'core_worker'` at the first `read_parquet` because Ray Data's `get_local_object_locations` runs client-side and Ray Client has no local core_worker.
-  - **Direct `ray.init(address="ray-head:6379")`** — raises `RuntimeError: No node info found matching attributes` because Ray can't resolve the driver's own node info without a prior `ray start`.
-  - **`ray start --address=… --num-cpus=0` then `ray.init(address="auto")`** — connects, then silently hangs forever on the first distributed task (object-store coordination across containers).
-- **Image** — `rayproject/ray:2.48.0-py311`, not `python:3.11-slim + pip install ray[default,data]`. The slim image is missing native libs the dashboard agent (which serves the Jobs API on port 8265) needs to even spawn — its log file stays 0 bytes and `POST /api/jobs/` returns `500 Agent info not found in internal KV` forever.
-- **Submit retry** — port 8265 accepts HTTP before the Jobs agent has registered with the head node; the first ~10s of `submit_job` calls return `500 No available agent`. `bench_ray.py` retries for up to 90s.
-- **Measurement** — the job runs entirely inside ray-head, so its cgroup is the only one doing real work. `ray_job.py` uses self-only measurement (`/sys/fs/cgroup`); no `COMPUTE_CONTAINERS` needed.
-- **`--block`** — keeps `ray start --head` in the foreground so the container stays up (the default daemonizes and exits).
-- **Vectorized `map_batches`** — `Column multiply` and `Filter rows` use `ds.map_batches(..., batch_format="numpy"/"pandas")` rather than `ds.map`/`ds.filter` per-row lambdas. The per-row form is ~30x slower on 10M rows because each row crosses Ray's task boundary.
-- **`.materialize().count()`** — standard large-result ops force lazy plans into the object store; `.count()` triggers metadata fetch without pulling rows. Group-by ops use `.take_all()` (bounded result).
-- **Paginated companions** — `_sample` streams `ds.iter_batches(batch_format="pandas", batch_size=10_000)`, accumulates rows per batch, and stops at `SAMPLE_OFFSET`. `preserve_order=True` is set on the execution options so the batches arrive in dataset order. Bounded driver memory (one 10k-row batch at a time). The earlier `.limit(N).take(N)` form hung the LimitOperator's cross-block coordination for ~15 minutes per filter run at N=5M.
-- **Why Ray is slow on groupby** — single-node Ray Data shuffles ~50s per groupby on 10M rows. Inherent; not a config issue. Hence `RAY_TIMEOUT_SECS=1500` (per-framework cap of 25 min) in the orchestrator.
+Ray Data was a fourth column for several iterations and is now removed. We made it run cleanly (Jobs API topology, vectorized `map_batches`, streaming `iter_batches` for the paginated companions, the official `rayproject/ray` image) and the numbers were valid — they just weren't useful:
+
+- Single-node Ray Data hash-shuffle made every group-by op 50-90 s — 100-1000× the other frameworks on the same hardware. Inherent to Ray Data's shuffle implementation on 4 CPUs, not a config issue.
+- Ray Data is engineered for ML preprocessing pipelines (large parquet → training), not OLAP aggregation on small clusters. The benchmark was reporting that mismatch in 14 table rows when one README sentence says it better.
+- Ray Core (the actual scheduler) lives at a different abstraction level — peers are Celery and MPI, not Spark SQL — so substituting it would be hand-written aggregation code vs. library-provided operators, not a fair comparison.
+
+Past commit history retains the full Ray Data adapter (`bench_ray.py`, `ray_job.py`, `Dockerfile.ray`, the `ray-head` compose service, the Jobs API split with all the "why not the simpler patterns" diagnostics) if anyone wants to revive it.
 
 ## CI
 
@@ -120,5 +112,5 @@ When comparing frameworks, the **Ingest** row (always first) is the most directl
 ## Caveats
 
 - Container memory limits (`mem_limit: 6g`) cap each framework. If a framework OOMs at 10M rows, raise the limit or downscale `NUM_ROWS` in `config.py`.
-- Spark JVM cold-start is amortized across 11 ops but still skews the `Ingest` measurement upward by ~5-10s relative to the other frameworks. Subsequent ops are clean.
+- Spark JVM cold-start is amortized across the 14 ops but still skews the `Ingest` measurement upward by ~5-10s relative to the other frameworks. Subsequent ops are clean.
 - Per-op `memory.peak` reset captures the peak *during the op*, not the framework's resident baseline. The first op may report a larger peak because it triggers lazy framework subsystems.

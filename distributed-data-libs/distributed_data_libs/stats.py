@@ -2,12 +2,12 @@
 
 Two modes:
 
-* **Self-only** (Spark/Dask/Ray in-process, also the legacy path): read this
-  container's own /sys/fs/cgroup. Works because Docker mounts each
-  container's cgroup namespace as /sys/fs/cgroup by default.
+* **Self-only** (legacy in-process path): read this container's own
+  /sys/fs/cgroup. Works because Docker mounts each container's cgroup
+  namespace as /sys/fs/cgroup by default.
 
-* **Multi-container** (aaiclick distributed, and the upcoming Spark Connect
-  / Dask cluster / Ray cluster topologies): the runner can't measure
+* **Multi-container** (aaiclick + CH + Postgres + nginx, Spark Connect client
+  + JVM, Dask client + scheduler + worker): the runner can't measure
   server-side work by reading its own cgroup — compute happens in sidecar
   containers. We mount the *host's* /sys/fs/cgroup at /host/cgroup:ro and
   /var/run/docker.sock:ro, look up each compose-service container by
@@ -99,8 +99,7 @@ def resolve_measurement_targets():
     """Return list of cgroup directories to read for the active framework.
 
     If COMPUTE_CONTAINERS=svc1,svc2 is set, sum those containers'
-    host-side cgroups. Otherwise fall back to this container's own cgroup
-    (preserves the in-process-framework path: Spark/Dask/Ray today).
+    host-side cgroups. Otherwise fall back to this container's own cgroup.
     """
     raw = os.environ.get("COMPUTE_CONTAINERS", "").strip()
     if not raw:

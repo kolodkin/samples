@@ -27,7 +27,7 @@ BENCH_NAMES = [
     "Sort page",
 ]
 
-FRAMEWORKS = ["aaiclick", "spark", "dask", "ray"]
+FRAMEWORKS = ["aaiclick", "spark", "dask"]
 
 RAW_DATA_PATH = "/data/raw.parquet"
 RESULTS_DIR = "/data"
