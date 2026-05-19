@@ -8,10 +8,9 @@ FRAMEWORKS=("aaiclick" "spark" "dask" "ray")
 # (we hit GH Actions' 6-hour ceiling once on a Dask sort deadlock).
 TIMEOUT_SECS="${TIMEOUT_SECS:-900}"
 
-mkdir -p data
+mkdir -p data data/ray-logs
 rm -f data/results-*.json
-rm -rf data/ray-logs 2>/dev/null || true
-mkdir -p data/ray-logs
+rm -rf data/ray-logs/*
 
 echo ">>> building images"
 docker compose --profile tools --profile bench build
@@ -35,34 +34,29 @@ for fwk in "${FRAMEWORKS[@]}"; do
             docker compose up --abort-on-container-exit --exit-code-from "$fwk" "$fwk"; then
         ec=$?
         echo ">>> $fwk failed or timed out (exit=$ec)"
-        # Dump sidecar logs - `compose up <runner>` only streams the
-        # runner's stdout, so when the runner fails because of a sidecar
-        # (e.g. ray-head's dashboard agent not registering) we'd otherwise
-        # have nothing to debug from.
-        for svc in ray-head spark-server dask-scheduler dask-worker; do
-            if docker compose ps -a --services 2>/dev/null | grep -qx "$svc"; then
-                echo ">>> --- $svc logs (tail) ---"
-                docker compose logs --tail=200 --no-color "$svc" 2>&1 || true
-                echo ">>> --- end $svc logs ---"
-            fi
+        # `compose up <runner>` only streams the runner's stdout, so on
+        # failure we dump the sidecars for this framework explicitly.
+        case "$fwk" in
+            ray)   sidecars=(ray-head) ;;
+            spark) sidecars=(spark-server) ;;
+            dask)  sidecars=(dask-scheduler dask-worker) ;;
+            *)     sidecars=() ;;
+        esac
+        for svc in "${sidecars[@]}"; do
+            echo ">>> --- $svc logs (tail) ---"
+            docker compose logs --tail=200 --no-color "$svc" 2>&1 || true
+            echo ">>> --- end $svc logs ---"
         done
-        # ray-head writes its real diagnostics (dashboard, dashboard_agent,
-        # raylet, gcs_server) to files inside /tmp/ray/session_*/logs/.
-        # docker compose logs only captures stdout of `ray start --block`
-        # which is nearly empty, so dump the in-session log files too.
-        if [ "$fwk" = "ray" ] && [ -d data/ray-logs ]; then
+        # ray-head's real diagnostics (dashboard agent, raylet,
+        # gcs_server) live in files under /tmp/ray/session_*/logs/, not
+        # the container's stdout, so dump them from the bind-mount.
+        if [ "$fwk" = "ray" ]; then
             echo ">>> --- ray-head /tmp/ray internal logs ---"
             find data/ray-logs -maxdepth 4 -type f \
                 \( -name 'dashboard*.log' -o -name 'dashboard*.err' \
-                -o -name 'raylet.err' -o -name 'raylet.out' \
-                -o -name 'gcs_server.err' -o -name 'gcs_server.out' \
-                -o -name 'monitor.err' -o -name 'monitor.out' \
-                -o -name 'job-driver-*.log' -o -name 'job-supervisor-*.log' \
-                -o -name 'worker-*.err' -o -name 'worker-*.out' \) 2>/dev/null \
-                | while read -r f; do
-                    echo "===== $f ====="
-                    tail -150 "$f" 2>/dev/null || true
-                done
+                -o -name 'raylet.*' -o -name 'gcs_server.*' \
+                -o -name 'monitor.*' -o -name 'job-driver-*.log' \) \
+                -print -exec tail -150 {} \;
             echo ">>> --- end ray-head internal logs ---"
         fi
         failed+=("$fwk")

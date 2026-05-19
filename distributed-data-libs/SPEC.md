@@ -26,7 +26,7 @@ Per-op measurement isolation comes from the kernel-tracked monotonic `memory.pea
 | aaiclick | `aaiclick` python client | `clickhouse-server:latest` (data) + `postgres:16` (metadata catalog) + `nginx:alpine` (fileserver) | client ↔ HTTP ↔ CH, client ↔ TCP ↔ Postgres, CH ↔ HTTP ↔ nginx (parquet pull) |
 | Spark | `pyspark[connect]` thin client | `apache/spark:3.5.3` running Spark Connect server (gRPC on 15002) | client ↔ gRPC ↔ JVM server |
 | Dask | `dask[complete]` thin client | `dask scheduler` (port 8786) + `dask worker` (1 × 4 threads × 4 GiB) | client ↔ TCP ↔ scheduler ↔ TCP ↔ worker |
-| Ray | `ray[data]` driver | `ray-head` (single node, 4 CPUs, GCS on port 6379) | driver ↔ gRPC ↔ ray-head |
+| Ray | thin Jobs API client | `ray-head` (single node, 4 CPUs, GCS on 6379, Jobs HTTP on 8265) | client ↔ HTTP /api/jobs/ ↔ ray-head |
 
 ## Measurement methodology
 
@@ -85,17 +85,18 @@ When comparing frameworks, the **Ingest** row (always first) is the most directl
 
 ### Ray Data
 
-- **Topology — Ray Jobs API** — Ray Data does not work cleanly from a remote client in Ray 2.x. Instead the runner submits the entire benchmark as a Ray Job via `JobSubmissionClient("http://ray-head:8265")`; `ray_job.py` runs inside ray-head, does the ops + measurement, writes `/data/results-ray.json`. The runner polls until the job terminates, prints the job's captured logs, and exits.
+- **Topology — Ray Jobs API** — Ray Data does not work cleanly from a remote client in Ray 2.x. Instead `bench_ray.py` (in the runner container) submits the entire benchmark as a Ray Job via `JobSubmissionClient("http://ray-head:8265")`; `ray_job.py` runs inside ray-head and reuses `runner._run_sync` to drive the standard 11 ops + measurement, then writes `/data/results-ray.json`. Logs stream back to the runner via `client.tail_job_logs(job_id)` (async iterator) — no polling, no log-buffer growth.
 - **Why not the more common patterns** — three distinct failure modes pushed us to Jobs:
   - **Ray Client (`ray://ray-head:10001`)** — raises `AttributeError: 'Worker' object has no attribute 'core_worker'` at the first `read_parquet` because Ray Data's `get_local_object_locations` runs client-side and Ray Client has no local core_worker.
   - **Direct `ray.init(address="ray-head:6379")`** — raises `RuntimeError: No node info found matching attributes` because Ray can't resolve the driver's own node info without a prior `ray start`.
   - **`ray start --address=… --num-cpus=0` then `ray.init(address="auto")`** — connects, then silently hangs forever on the first distributed task (object-store coordination across containers).
-- **Measurement** — since the job runs entirely inside ray-head, its cgroup is the only one doing real work. `ray_job.py` uses self-only measurement (`/sys/fs/cgroup`); no `COMPUTE_CONTAINERS` needed, no host-cgroup or docker-socket mounts on either ray container.
+- **Image** — `rayproject/ray:2.48.0-py311`, not `python:3.11-slim + pip install ray[default,data]`. The slim image is missing native libs the dashboard agent (which serves the Jobs API on port 8265) needs to even spawn — its log file stays 0 bytes and `POST /api/jobs/` returns `500 Agent info not found in internal KV` forever.
+- **Submit retry** — port 8265 accepts HTTP before the Jobs agent has registered with the head node; the first ~10s of `submit_job` calls return `500 No available agent`. `bench_ray.py` retries for up to 90s.
+- **Measurement** — the job runs entirely inside ray-head, so its cgroup is the only one doing real work. `ray_job.py` uses self-only measurement (`/sys/fs/cgroup`); no `COMPUTE_CONTAINERS` needed.
 - **`--block`** — keeps `ray start --head` in the foreground so the container stays up (the default daemonizes and exits).
-- **`--block`** — keeps `ray start --head` in the foreground so the container stays up (the default daemonizes and exits).
-- **Native Parquet read** — `rd.read_parquet(path, override_num_blocks=8).materialize()` lands blocks in the head node's object store via Arrow.
-- **`.materialize()`** — forces lazy ops to land in the object store; `.count()` triggers metadata fetch without pulling data.
-- **Group-by `.take_all()`** — bounded result, safe to collect.
+- **Vectorized `map_batches`** — `Column multiply` and `Filter rows` use `ds.map_batches(..., batch_format="numpy"/"pandas")` rather than `ds.map`/`ds.filter` per-row lambdas. The per-row form is ~30x slower on 10M rows because each row crosses Ray's task boundary.
+- **`.materialize()` + `.count()`** — forces lazy ops into the object store; `.count()` triggers metadata fetch without pulling data. Group-by ops use `.take_all()` (bounded result).
+- **Why Ray is slow on groupby** — single-node Ray Data shuffles ~50s per groupby on 10M rows. Inherent; not a config issue. Hence `RAY_TIMEOUT_SECS=1500` (per-framework cap of 25 min) in the orchestrator.
 
 ## CI
 

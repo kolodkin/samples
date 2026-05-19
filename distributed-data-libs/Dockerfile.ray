@@ -1,9 +1,5 @@
-# Use the official Ray image. python:3.11-slim was missing the system
-# libs the dashboard *agent* (the process that backs the Jobs API)
-# needs to even spawn - its log file stayed empty (0 bytes) and the
-# job HTTP server returned 500 "Agent info not found in internal KV"
-# indefinitely. rayproject/ray bundles everything correctly for the
-# Jobs API. pyarrow/pandas come in transitively via ray[data].
+# Official Ray image: python:3.11-slim is missing native libs the
+# dashboard agent (Jobs API server) needs to spawn. See SPEC.md.
 FROM rayproject/ray:2.48.0-py311
 
 USER root

@@ -95,17 +95,27 @@ async def _run_async(mod):
     return results
 
 
+def _write_results(fwk, mod, results):
+    out_path = os.path.join(RESULTS_DIR, f"results-{fwk}.json")
+    with open(out_path, "w") as f:
+        json.dump({
+            "framework": fwk,
+            "version": getattr(mod, "VERSION", ""),
+            "results": results,
+        }, f, indent=2)
+    print(f"wrote {out_path}", flush=True)
+
+
 def main():
     fwk = os.environ["FRAMEWORK"]
     print(f"[runner] framework={fwk}", flush=True)
     mod = importlib.import_module(f"distributed_data_libs.bench_{fwk}")
 
-    # Adapters can override the entire flow by defining main() - used by
-    # ray, which ships the actual benchmark to ray-head via the Ray Jobs
-    # API and lets ray_job.py write results-ray.json itself (since the
-    # runner can't drive Ray Data over the network - see bench_ray.py).
-    if hasattr(mod, "main") and callable(mod.main):
-        mod.main()
+    # Ray drives the benchmark via the Jobs API instead of running the
+    # default in-container loop - the runner container can't directly
+    # drive Ray Data over the network (see SPEC.md).
+    if hasattr(mod, "run_as_client") and callable(mod.run_as_client):
+        mod.run_as_client()
         return
 
     is_async = getattr(mod, "IS_ASYNC", False)
@@ -130,14 +140,7 @@ def main():
         else:
             results = _run_sync(mod)
 
-    out_path = os.path.join(RESULTS_DIR, f"results-{fwk}.json")
-    with open(out_path, "w") as f:
-        json.dump({
-            "framework": fwk,
-            "version": getattr(mod, "VERSION", ""),
-            "results": results,
-        }, f, indent=2)
-    print(f"wrote {out_path}", flush=True)
+    _write_results(fwk, mod, results)
 
 
 if __name__ == "__main__":

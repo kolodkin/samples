@@ -101,10 +101,7 @@ services:
 
   ray-head:
     build: { context: ., dockerfile: Dockerfile.ray }
-    # --block keeps `ray start` in the foreground so the container stays
-    # up. --num-cpus=4 matches the previous in-process Ray sizing. The
-    # dashboard is enabled (and bound on all interfaces) because the
-    # runner submits the benchmark via the Ray Jobs API (HTTP on 8265).
+    # Dashboard on 0.0.0.0:8265 hosts the Jobs API the client hits.
     command: [ "ray", "start", "--head",
                "--node-ip-address=0.0.0.0",
                "--port=6379",
@@ -114,16 +111,12 @@ services:
                "--block" ]
     volumes:
       - "./data:/data"
-      # Surface Ray's per-session internal logs (dashboard.log,
-      # dashboard_agent.log, raylet.err, gcs_server.err, ...) to the
-      # host so the orchestrator can dump them when the job agent
-      # fails to register.
+      # Bind-mount Ray's session-log dir so the orchestrator can grep
+      # dashboard_agent.log etc. after a failure.
       - "./data/ray-logs:/tmp/ray"
     shm_size: 1g
     mem_limit: 6g
     healthcheck:
-      # Jobs API is HTTP on 8265. Wait for that, not the GCS port,
-      # because the runner submits via Jobs API immediately.
       test: [ "CMD-SHELL", "python -c \"import socket; socket.create_connection(('localhost', 8265), timeout=2).close()\"" ]
       interval: 3s
       timeout: 3s
@@ -192,9 +185,10 @@ services:
     profiles: [ "bench" ]
 
   ray:
+    # Thin Jobs API client: submits ray_job.py to ray-head and streams
+    # its logs. Measurement runs inside ray-head, so no cgroup/socket
+    # mounts here.
     build: { context: ., dockerfile: Dockerfile.ray }
-    # Just submits a Ray Job and polls. No cgroup/socket mounts: the
-    # measurement happens inside ray-head's container (in ray_job.py).
     volumes: [ "./data:/data" ]
     command: [ "python", "-m", "distributed_data_libs.runner" ]
     depends_on:
