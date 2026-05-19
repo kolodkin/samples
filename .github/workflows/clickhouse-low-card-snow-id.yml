@@ -6,6 +6,9 @@ on:
     paths:
       - 'clickhouse-low-card-snow-id/**'
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_RUNNER_NODE_VERSION: node24
+
 jobs:
   benchmark:
     runs-on: ubuntu-latest

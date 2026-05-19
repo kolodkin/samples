@@ -16,6 +16,16 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Check deploy key is set
+      shell: bash
+      env:
+        DEPLOY_KEY: ${{ inputs.deploy-key }}
+      run: |
+        if [ -z "${DEPLOY_KEY:-}" ]; then
+          echo "::error::deploy-key input is empty. The DEPLOY_KEY secret in the CICD environment is missing or has no value. Set it to an SSH private key whose public counterpart is registered as a write-access deploy key on kolodkin/artifact-view."
+          exit 1
+        fi
+
     - name: Stage benchmark report
       id: stage
       shell: bash
