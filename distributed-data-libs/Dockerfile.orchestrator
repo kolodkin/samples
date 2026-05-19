@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir pyarrow rich
+RUN pip install --no-cache-dir numpy pyarrow rich
 
 COPY distributed_data_libs ./distributed_data_libs
 
