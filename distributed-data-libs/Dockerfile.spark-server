@@ -19,4 +19,5 @@ EXPOSE 15002
 CMD ["/opt/spark/sbin/start-connect-server.sh", \
      "--packages", "org.apache.spark:spark-connect_2.12:3.5.3", \
      "--conf", "spark.connect.grpc.binding.port=15002", \
-     "--conf", "spark.sql.shuffle.partitions=8"]
+     "--conf", "spark.sql.shuffle.partitions=8", \
+     "--driver-memory", "4g"]

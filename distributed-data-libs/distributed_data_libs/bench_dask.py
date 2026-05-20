@@ -1,9 +1,4 @@
-"""Dask adapter — client-server topology. The thin client (this container)
-connects to a dask-scheduler sidecar, which routes work to a dask-worker
-sidecar. Worker is sized to match the previous in-process LocalCluster
-(1 worker × 4 threads × 4 GiB) so per-op numbers stay comparable. Lazy
-ops materialize via .compute() (small results) or _materialize() (large
-results) to avoid driver-side fetch."""
+"""Dask adapter — thin client → dask-scheduler → dask-worker (1×4 threads×4 GiB)."""
 
 import os
 from contextlib import contextmanager
@@ -12,7 +7,7 @@ import dask
 import dask.dataframe as dd
 from dask.distributed import Client
 
-from .config import FILTER_THRESHOLD
+from .config import FILTER_THRESHOLD, SAMPLE_LIMIT, SAMPLE_OFFSET
 
 VERSION = dask.__version__
 IS_ASYNC = False
@@ -36,8 +31,13 @@ def convert(path):
 
 
 def _materialize(ddf):
-    """Trigger compute without collecting the full result to the driver."""
+    # Force compute without driver-side fetch.
     return ddf.map_partitions(len).compute().sum()
+
+
+def _sample(ddf):
+    head = ddf.head(SAMPLE_OFFSET + SAMPLE_LIMIT, npartitions=-1, compute=True)
+    return head.iloc[-SAMPLE_LIMIT:]
 
 
 BENCHMARKS = {
@@ -51,4 +51,7 @@ BENCHMARKS = {
     "Group-by multi-agg": lambda ddf: ddf.groupby("category", observed=True)["amount"].agg(["sum", "mean", "min", "max"]).compute(),
     "Multi-key group-by": lambda ddf: ddf.groupby(["category", "subcategory"], observed=True)["amount"].sum().compute(),
     "High-card group-by": lambda ddf: ddf.groupby("subcategory", observed=True)["amount"].sum().compute(),
+    "Column multiply page": lambda ddf: _sample((ddf["amount"] * ddf["quantity"]).to_frame()),
+    "Filter rows page":     lambda ddf: _sample(ddf[ddf["amount"] > FILTER_THRESHOLD]),
+    "Sort page":            lambda ddf: _sample(ddf.sort_values("amount", ascending=False)),
 }
