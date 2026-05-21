@@ -44,16 +44,30 @@ async def _col_sum(obj):
     return await obj["amount"].sum()
 
 
+async def _force(obj, *, select="*", where=None, order_by=None):
+    """Force full server-side execution, discard the output — ClickHouse's
+    `FORMAT Null`, the analog of Spark's noop sink and Dask's map_partitions(len).
+    The operator/`.copy()` paths would instead CREATE a new MergeTree table
+    holding the full result, charging these ops an extra ~10M-row write that
+    the Spark/Dask materialize paths never pay."""
+    sql = f"SELECT {select} FROM {obj.table}"
+    if where:
+        sql += f" WHERE {where}"
+    if order_by:
+        sql += f" ORDER BY {order_by}"
+    await obj.ch_client.command(sql + " FORMAT Null")
+
+
 async def _col_mul(obj):
-    return await (obj["amount"] * obj["quantity"])
+    await _force(obj, select="amount * quantity")
 
 
 async def _filter(obj):
-    return await obj.where(f"amount > {FILTER_THRESHOLD}").copy()
+    await _force(obj, where=f"amount > {FILTER_THRESHOLD}")
 
 
 async def _sort(obj):
-    return await obj.view(order_by="amount DESC").copy()
+    await _force(obj, order_by="amount DESC")
 
 
 async def _col_mul_page(obj):
