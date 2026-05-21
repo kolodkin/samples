@@ -25,7 +25,10 @@ def context():
 
 
 def convert(path):
-    ddf = dd.read_parquet(path, split_row_groups=False).repartition(npartitions=8)
+    # split_row_groups=True reads the parquet's row groups in parallel (the
+    # 10M-row file has 10), so we skip the single-partition read + reshuffle
+    # that split_row_groups=False + repartition(8) forced.
+    ddf = dd.read_parquet(path, split_row_groups=True)
     ddf = ddf.categorize(columns=["category", "subcategory"])
     return ddf.persist()
 

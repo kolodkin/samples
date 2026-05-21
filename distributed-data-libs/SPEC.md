@@ -91,7 +91,7 @@ When comparing frameworks, the **Ingest** row (always first) is the most directl
 ### Dask
 
 - **Topology** — thin client (the runner) connects to a `dask-scheduler` sidecar via `Client("tcp://dask-scheduler:8786")`. A separate `dask-worker` sidecar joins the scheduler with `--nthreads 4 --memory-limit 4GiB`, matching the previous LocalCluster sizing. Multi-worker setups deadlock on Sort's shuffle at 10M rows under a 6 GB cap.
-- **Native Parquet read** — `dd.read_parquet(...).repartition(8).categorize(...).persist()`. Cast `category`/`subcategory` to dask categorical dtype before persisting; cuts group-by time substantially.
+- **Native Parquet read** — `dd.read_parquet(..., split_row_groups=True).categorize(...).persist()`. `split_row_groups=True` reads the parquet's row groups in parallel (the 10M-row file has 10), giving ~10 partitions straight off disk — no single-partition read + `repartition(8)` reshuffle. Cast `category`/`subcategory` to dask categorical dtype before persisting; cuts group-by time substantially.
 - **Materialize without collect** — standard large-result ops use `_materialize`: `map_partitions(len).compute().sum()` to force execution without pulling rows to the driver.
 - **Paginated companions** — `_sample` uses `ddf.head(SAMPLE_OFFSET + SAMPLE_LIMIT, npartitions=-1, compute=True).iloc[-SAMPLE_LIMIT:]`: walks partitions in order, accumulating ~5M rows on the driver, then keeps the last 10. The driver materialization is the cost of Dask's missing offset primitive.
 
