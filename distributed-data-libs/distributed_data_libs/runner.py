@@ -111,13 +111,6 @@ def main():
     print(f"[runner] framework={fwk}", flush=True)
     mod = importlib.import_module(f"distributed_data_libs.bench_{fwk}")
 
-    # Ray drives the benchmark via the Jobs API instead of running the
-    # default in-container loop - the runner container can't directly
-    # drive Ray Data over the network (see SPEC.md).
-    if hasattr(mod, "run_as_client") and callable(mod.run_as_client):
-        mod.run_as_client()
-        return
-
     is_async = getattr(mod, "IS_ASYNC", False)
     has_ctx = hasattr(mod, "context")
     async_ctx = getattr(mod, "ASYNC_CONTEXT", False)

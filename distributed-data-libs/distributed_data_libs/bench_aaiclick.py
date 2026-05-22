@@ -1,10 +1,5 @@
-"""aaiclick adapter — distributed mode against ClickHouse + Postgres sidecars.
-
-Ingest uses create_object_from_url, which makes ClickHouse pull the parquet
-itself via its url() table function and parse it natively (no Python dict
-round-trip — that was the 60s tax dominating embedded-chdb Ingest). url()
-requires HTTP, so a tiny nginx sidecar (`fileserver`) serves /data/.
-"""
+"""aaiclick adapter — Ingest uses create_object_from_url so CH pulls the
+parquet via url() (HTTP-only, hence the nginx fileserver sidecar)."""
 
 import os
 
@@ -12,14 +7,12 @@ import aaiclick
 from aaiclick import ColumnInfo
 from aaiclick.data.data_context import data_context
 from aaiclick.data.object import create_object_from_url
+from aaiclick.data import Computed
 from aaiclick.data.object.operators import Agg
 
-from .config import FILTER_THRESHOLD
+from .config import FILTER_THRESHOLD, SAMPLE_LIMIT, SAMPLE_OFFSET
 
-# Columns to read from the parquet via CH's url() table function. We also
-# pin types so CH's DESCRIBE-based inference doesn't pick wider integers
-# (Int64 from parquet metadata is fine; explicit LowCardinality on the
-# string columns mirrors the python-data-libs adapter).
+# Pin types so DESCRIBE-based inference doesn't widen ints.
 COLUMNS = ["id", "category", "subcategory", "amount", "quantity"]
 COLUMN_TYPES = {
     "id":          ColumnInfo("Int64"),
@@ -33,7 +26,6 @@ VERSION = aaiclick.__version__
 IS_ASYNC = True
 ASYNC_CONTEXT = True
 
-# Fileserver sidecar that mounts /data on port 80 (see docker-compose.yml).
 _FILESERVER = os.environ.get("FILESERVER_URL", "http://fileserver")
 
 
@@ -62,6 +54,31 @@ async def _filter(obj):
 
 async def _sort(obj):
     return await obj.view(order_by="amount DESC").copy()
+
+
+async def _col_mul_page(obj):
+    view = obj.with_columns(
+        {"product": Computed("Float64", "amount * quantity")}
+    ).view(limit=SAMPLE_LIMIT, offset=SAMPLE_OFFSET)
+    return await view.data()
+
+
+async def _filter_page(obj):
+    view = obj.view(
+        where=f"amount > {FILTER_THRESHOLD}",
+        limit=SAMPLE_LIMIT,
+        offset=SAMPLE_OFFSET,
+    )
+    return await view.data()
+
+
+async def _sort_page(obj):
+    view = obj.view(
+        order_by="amount DESC",
+        limit=SAMPLE_LIMIT,
+        offset=SAMPLE_OFFSET,
+    )
+    return await view.data()
 
 
 async def _count_distinct(obj):
@@ -106,4 +123,7 @@ BENCHMARKS = {
     "Group-by multi-agg": _groupby_multi,
     "Multi-key group-by": _groupby_multikey,
     "High-card group-by": _groupby_highcard,
+    "Column multiply page": _col_mul_page,
+    "Filter rows page": _filter_page,
+    "Sort page": _sort_page,
 }
