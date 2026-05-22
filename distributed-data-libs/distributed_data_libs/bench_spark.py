@@ -41,7 +41,12 @@ def convert(path):
 
 
 def _materialize(df):
-    df.write.format("noop").mode("overwrite").save()
+    # Land the full result in executor memory (matches aaiclick keeping its
+    # result in-engine), then evict so each of the NUM_RUNS iterations starts
+    # from a clean cache instead of stacking copies.
+    df = df.cache()
+    df.count()  # force the cached relation to populate over all rows
+    df.unpersist()
 
 
 def _sample(df):

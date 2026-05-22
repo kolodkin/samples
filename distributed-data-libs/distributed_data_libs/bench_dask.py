@@ -5,7 +5,7 @@ from contextlib import contextmanager
 
 import dask
 import dask.dataframe as dd
-from dask.distributed import Client
+from dask.distributed import Client, wait
 
 from .config import FILTER_THRESHOLD, SAMPLE_LIMIT, SAMPLE_OFFSET
 
@@ -34,8 +34,12 @@ def convert(path):
 
 
 def _materialize(ddf):
-    # Force compute without driver-side fetch.
-    return ddf.map_partitions(len).compute().sum()
+    # Land the full result in worker memory (matches aaiclick keeping its
+    # result in-engine), then release so each of the NUM_RUNS iterations starts
+    # clean instead of stacking persisted copies.
+    persisted = ddf.persist()
+    wait(persisted)
+    del persisted
 
 
 def _sample(ddf):
