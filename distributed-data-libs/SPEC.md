@@ -68,6 +68,18 @@ All three frameworks populate `COMPUTE_CONTAINERS` (aaiclick: `aaiclick,clickhou
 
 When comparing frameworks, the **Ingest** row (always first) is the most directly comparable per-op memory number.
 
+### Materialize cleanup inside the timed region
+
+The wall-clock bracket wraps the entire `NUM_RUNS` loop in one `before()`/`after()` pair (`runner.py`), so everything an op's `_materialize` does is measured — including the per-iteration release that follows the materialize: Dask's `del persisted`, Spark's `df.unpersist()`. The release can't move outside the timed region without a pausable envelope, and it has to run every iteration regardless — skip it and `NUM_RUNS` materialized copies stack in worker/executor memory, which both risks OOM on the 4 GiB workers and inflates the `memory.peak` delta to N copies instead of one.
+
+That leaves a small cross-framework asymmetry, since the release cost differs:
+
+- **Dask** — `del persisted` drops the last client-side reference and fires an async "release keys" message to the scheduler; the client does not block on workers actually freeing the bytes. Sub-millisecond.
+- **Spark** — `df.unpersist()` is a single Spark Connect RPC, non-blocking by default. Small but nonzero.
+- **aaiclick** — no release in the timed region at all.
+
+In every case the release is dominated by the materialize it trails: `wait()` / `count()` over the full 10M-row result runs hundreds of ms to seconds (Sort lands ~880 MB), so the asymmetry stays well under 1% — below run-to-run noise. The matched, dominant unit across frameworks is the materialization itself (`persist()`+`wait()` ≈ `cache()`+`count()` ≈ `.copy()`); the cleanup is bookkeeping folded into the same window rather than a comparable cost.
+
 ## Per-framework optimizations
 
 ### aaiclick
