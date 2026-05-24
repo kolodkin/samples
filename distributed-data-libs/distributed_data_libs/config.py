@@ -25,6 +25,9 @@ BENCH_NAMES = [
     "Column multiply page",
     "Filter rows page",
     "Sort page",
+    "Column multiply (no mat)",
+    "Filter rows (no mat)",
+    "Sort (no mat)",
 ]
 
 FRAMEWORKS = ["aaiclick", "spark", "dask"]
