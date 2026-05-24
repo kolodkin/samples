@@ -3,7 +3,7 @@
 #   aaiclick    -> clickhouse + postgres + fileserver
 #   spark       -> spark-server (Spark Connect, gRPC on 15002)
 #   dask        -> dask-scheduler + dask-worker
-# The runner inside each framework container loops through all 14 ops and
+# The runner inside each framework container loops through all 17 ops and
 # writes /data/results-<framework>.json. cgroup measurement sums across
 # the framework's client + server containers via COMPUTE_CONTAINERS - see
 # stats.py and SPEC.md.

@@ -42,6 +42,14 @@ def _materialize(ddf):
     del persisted
 
 
+def _execute(ddf):
+    # No-materialize counterpart of _materialize: force the full pipeline over
+    # all rows but reduce each partition to its length, so nothing is persisted
+    # in worker memory and only per-partition counts return to the driver.
+    # Matches aaiclick's execute() (FORMAT Null) and Spark's noop sink.
+    return ddf.map_partitions(len).compute().sum()
+
+
 def _sample(ddf):
     head = ddf.head(SAMPLE_OFFSET + SAMPLE_LIMIT, npartitions=-1, compute=True)
     return head.iloc[-SAMPLE_LIMIT:]
@@ -61,4 +69,7 @@ BENCHMARKS = {
     "Column multiply page": lambda ddf: _sample((ddf["amount"] * ddf["quantity"]).to_frame()),
     "Filter rows page":     lambda ddf: _sample(ddf[ddf["amount"] > FILTER_THRESHOLD]),
     "Sort page":            lambda ddf: _sample(ddf.sort_values("amount", ascending=False)),
+    "Column multiply (no mat)": lambda ddf: _execute((ddf["amount"] * ddf["quantity"]).to_frame()),
+    "Filter rows (no mat)":     lambda ddf: _execute(ddf[ddf["amount"] > FILTER_THRESHOLD]),
+    "Sort (no mat)":            lambda ddf: _execute(ddf.sort_values("amount", ascending=False)),
 }

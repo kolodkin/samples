@@ -81,6 +81,25 @@ async def _sort_page(obj):
     return await view.data()
 
 
+async def _col_mul_exec(obj):
+    # No-materialize counterpart of _col_mul: project the product via a View
+    # and run it with execute() (FORMAT Null) — the full multiply runs over all
+    # rows server-side but no result table is created. (A bare operator's
+    # .execute() would materialize first, so go through with_columns.)
+    view = obj.with_columns(
+        {"product": Computed("Float64", "amount * quantity")}
+    )
+    return await view.execute()
+
+
+async def _filter_exec(obj):
+    return await obj.where(f"amount > {FILTER_THRESHOLD}").execute()
+
+
+async def _sort_exec(obj):
+    return await obj.view(order_by="amount DESC").execute()
+
+
 async def _count_distinct(obj):
     return await obj["category"].nunique()
 
@@ -126,4 +145,7 @@ BENCHMARKS = {
     "Column multiply page": _col_mul_page,
     "Filter rows page": _filter_page,
     "Sort page": _sort_page,
+    "Column multiply (no mat)": _col_mul_exec,
+    "Filter rows (no mat)": _filter_exec,
+    "Sort (no mat)": _sort_exec,
 }
