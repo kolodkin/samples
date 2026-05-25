@@ -4,7 +4,7 @@ aaiclick (→ ClickHouse + Postgres), PySpark, Dask — 10M rows, 3 runs average
 
 ## Operations
 
-The standard 11 ops match `python-data-libs` so non-ingest results are directly comparable at scale. **Ingest semantics differ**: in `python-data-libs`, ingest converts a Python `dict[str, list]` into the library's native format; here, ingest reads `/data/raw.parquet` into the framework's native dataset. Distributed frameworks are designed to read from files, not from in-memory Python — going through `dict` → py4j / `from_pandas` / `from_items` is unrealistic and OOMs the Spark JVM at 10M rows.
+The standard 11 ops match `python-data-libs` so non-ingest results are directly comparable at scale. Two companion sets layer on top — 3 paginated and 3 execute (compute-and-discard) — for 17 ops total. **Ingest semantics differ**: in `python-data-libs`, ingest converts a Python `dict[str, list]` into the library's native format; here, ingest reads `/data/raw.parquet` into the framework's native dataset. Distributed frameworks are designed to read from files, not from in-memory Python — going through `dict` → py4j / `from_pandas` / `from_items` is unrealistic and OOMs the Spark JVM at 10M rows.
 
 - **Ingest** — read `/data/raw.parquet` (Snappy-compressed) into the framework's native dataset
 - **Column** — sum, multiply, filter, sort, count distinct
@@ -20,12 +20,22 @@ These are **not replacements** for the standard ops; both sets run side-by-side.
 - **Spark Connect**: `df.offset(N).limit(K)` is supported, but `orderBy + offset(N)` collapses into `TakeOrderedAndProject(N+K)` — a 5M-entry priority queue in the JVM, ~1 GB. Default driver heap (1 GB) OOMs; `--driver-memory 4g` is set on `spark-server`.
 - **Dask**: no native `OFFSET`. `_sample` uses `ddf.head(N+K, npartitions=-1, compute=True).iloc[-K:]` — walks partitions and accumulates ~5M rows on the driver before slicing.
 
+### Execute companions (Column multiply execute / Filter rows execute / Sort execute)
+
+Three further ops run the same compute as the standard `Column multiply` / `Filter rows` / `Sort` but **discard the result** instead of retaining it. They isolate pure compute from the cost of materializing/keeping the full ~10M-row output, and — like the `page` companions — run side-by-side with the standard rows, not as replacements:
+
+- **aaiclick**: `View.execute()` (new in aaiclick 0.0.16) issues the operation's `SELECT … FORMAT Null`. ClickHouse runs the full pipeline server-side and emits zero rows — no result table, nothing streamed back — returning `QueryStats`.
+- **Spark Connect**: the `noop` write sink (`df.write.format("noop").mode("overwrite").save()`) forces full execution and throws the result away.
+- **Dask**: `ddf.map_partitions(len).compute().sum()` reduces each partition to a row count, forcing the compute without landing the result in worker memory or shipping rows to the driver.
+
+The standard rows keep the full result in-engine; the `execute` rows pay only the compute. The gap between them is the materialization/retention cost.
+
 ## Architecture
 
 One `docker-compose.yml` declares one service per framework plus three sidecars that back aaiclick's distributed mode — `clickhouse` (data engine), `postgres` (metadata catalog), and `fileserver` (nginx serving `/data/` over HTTP, required because `create_object_from_url` uses CH's `url()` table function which speaks HTTP only) — and an orchestrator. The orchestrator generates `raw.parquet` once on a shared bind-mounted `./data/` volume. Then for each framework:
 
 1. `docker compose up <framework>` starts the runner container — engine sidecars auto-start via `depends_on` + healthcheck (first iteration only)
-2. The runner inside the container loops through all 14 ops (11 standard + 3 paginated companions) in a single long-lived process and writes `/data/results-<framework>.json`
+2. The runner inside the container loops through all 17 ops (11 standard + 3 paginated companions + 3 execute companions) in a single long-lived process and writes `/data/results-<framework>.json`
 3. The runner container is stopped; engine sidecars stay up across framework iterations (cheap to leave running, expensive to restart per-framework)
 4. After all 4 frameworks finish, the orchestrator renders the report and the script tears down sidecars
 
@@ -87,18 +97,20 @@ In every case the release is dominated by the materialize it trails: `wait()` / 
 - **Data engine** — `clickhouse/clickhouse-server:latest` sidecar; runner connects via `CLICKHOUSE_HOST=clickhouse` env vars (standard aaiclick discovery path).
 - **Metadata catalog** — `postgres:16` sidecar holds aaiclick's object/schema metadata; runner connects via `PGHOST=postgres` + `PGUSER/PGPASSWORD/PGDATABASE=aaiclick`. Required for aaiclick's distributed mode (embedded chdb mode used the local SQLite catalog instead, but that doesn't scale across processes).
 - **Ingest** — `aaiclick.create_object_from_url("http://fileserver/raw.parquet", columns=…, column_types=…)`. This is aaiclick's CH-native fast path: it emits a CH query backed by the `url()` table function, so CH itself does the HTTP fetch + parquet parse + insert in its server process. Zero Python memory footprint, no dict round-trip (which was the 60s tax dominating embedded-chdb Ingest in `python-data-libs`).
-- **Full materialize** — standard large-result ops (`Column multiply`, `Filter rows`, `Sort`) use aaiclick's own operators: `obj["amount"] * obj["quantity"]` and `obj.where(…)/view(order_by=…).copy()`. These force the full server-side computation over all 10M rows and keep the result in ClickHouse. All three frameworks now retain the whole result in-engine rather than discarding it — aaiclick in a ClickHouse result table, Spark in an executor-memory cache (`df.cache(); count()`), Dask in worker-memory (`persist(); wait()`) — so the comparison is apples-to-apples. (One residual asymmetry: aaiclick's table is disk-backed CH storage while Spark/Dask hold the result in cluster memory.) aaiclick's materialize lands in a result table (operators "create new tables with results" by design); `.data()` is rejected here because it would stream all ~10M rows back to Python, work that the Spark/Dask paths never do. Staying on the operator/`.copy()` API also keeps the comparison library-vs-library — dropping to raw `ch_client.command("… FORMAT Null")` would measure ClickHouse the engine, not aaiclick. The bounded `… page` ops below cover the realistic limited-inspection pattern.
+- **Full materialize** — standard large-result ops (`Column multiply`, `Filter rows`, `Sort`) use aaiclick's own operators: `obj["amount"] * obj["quantity"]` and `obj.where(…)/view(order_by=…).copy()`. These force the full server-side computation over all 10M rows and keep the result in ClickHouse. All three frameworks now retain the whole result in-engine rather than discarding it — aaiclick in a ClickHouse result table, Spark in an executor-memory cache (`df.cache(); count()`), Dask in worker-memory (`persist(); wait()`) — so the comparison is apples-to-apples. (One residual asymmetry: aaiclick's table is disk-backed CH storage while Spark/Dask hold the result in cluster memory.) aaiclick's materialize lands in a result table (operators "create new tables with results" by design); `.data()` is rejected here because it would stream all ~10M rows back to Python, work that the Spark/Dask paths never do. Staying on the operator/`.copy()` API also keeps the comparison library-vs-library. The bounded `… page` ops and the discard `… execute` ops below cover the other access patterns.
 - **Mid-range slice** — `obj.view(where=…, order_by=…, limit=SAMPLE_LIMIT, offset=SAMPLE_OFFSET).data()` for Filter/Sort, and `obj.with_columns({"product": Computed("Float64", "amount * quantity")}).view(limit=…, offset=…).data()` for Column multiply. Views compile to a single CH query with native `LIMIT/OFFSET` — the server skips OFFSET rows and streams 10 back. `Computed` puts the multiplication expression directly into the SELECT list so multiply + slice fuse into one query.
+- **Execute companions** — `Column multiply execute` / `Filter rows execute` / `Sort execute` call `View.execute()` (new in aaiclick 0.0.16): the View rebuilds the operation's `SELECT` and appends `FORMAT Null`, so CH runs the full pipeline server-side and emits zero rows — no result table, nothing streamed back, just `QueryStats`. This is the library-level `FORMAT Null` discard, so it stays library-vs-library (earlier versions had no such API, which is why the standard rows materialize into a result table instead of dropping to raw `ch_client.command(…)`). The faithful match for Spark's `noop` sink and Dask's `map_partitions(len)`.
 - **Why HTTP and not file://** — CH's `url()` table function speaks HTTP only; `file()` is a different table function that aaiclick's `create_object_from_url` doesn't target. Hence the nginx sidecar.
 - **Types** — `column_types` pins `Int64` / `Float64` / `LowCardinality(String)` so CH's `DESCRIBE`-based inference doesn't widen the integer columns; mirrors the chdb adapter in `python-data-libs`.
 
 ### Spark (Spark Connect)
 
-- **Topology** — thin `pyspark[connect]` client in the `spark` runner container talks gRPC to the `spark-server` sidecar (the JVM). No JVM in the client container; no py4j. SparkSession opens once via `SparkSession.builder.remote("sc://spark-server:15002")` and serves all 14 ops.
+- **Topology** — thin `pyspark[connect]` client in the `spark` runner container talks gRPC to the `spark-server` sidecar (the JVM). No JVM in the client container; no py4j. SparkSession opens once via `SparkSession.builder.remote("sc://spark-server:15002")` and serves all 17 ops.
 - **Ivy/Maven cache** — the spark-connect jar (`org.apache.spark:spark-connect_2.12:3.5.3`) is pre-resolved into `~/.ivy2/cache` at Dockerfile.spark-server build time so container startup doesn't pay the download cost on every CI run.
 - **Native Parquet read** — `spark.read.parquet(path).cache(); count()` materializes server-side. The client only sees an Arrow-encoded result handle.
 - **In-memory materialize** — standard large-result ops (`Column multiply`, `Filter rows`, `Sort`) call `df.cache(); df.count()` to force the full result into executor memory server-side (no rows streamed back), then `df.unpersist()` so each of the `NUM_RUNS` iterations starts from a clean cache instead of stacking copies. Matches aaiclick retaining its result in-engine (previously this used the `noop` write sink, which discarded the result).
 - **Paginated companions** — `Column multiply page` / `Filter rows page` / `Sort page` use `df.offset(SAMPLE_OFFSET).limit(SAMPLE_LIMIT).collect()`. Spark Connect pushes both into the physical plan; only 10 rows of Arrow stream back. `Sort page` at OFFSET 5M needs a 5M-entry `TakeOrderedAndProject` priority queue (~1 GB) in the JVM — `--driver-memory 4g` is set in `Dockerfile.spark-server` (default 1 GB OOMs).
+- **Execute companions** — `Column multiply execute` / `Filter rows execute` / `Sort execute` use the `noop` write sink (`df.write.format("noop").mode("overwrite").save()`): full server-side execution, result discarded, nothing cached or streamed back. The compute-only counterpart to the in-memory materialize above.
 - **Aggregations** — small-result ops use `.collect()` since the result is bounded.
 
 ### Dask
@@ -107,6 +119,7 @@ In every case the release is dominated by the materialize it trails: `wait()` / 
 - **Native Parquet read** — `dd.read_parquet(..., split_row_groups=True).categorize(...).persist()`. `split_row_groups=True` reads the parquet's row groups in parallel (the 10M-row file has 10), giving ~10 partitions straight off disk — no single-partition read + `repartition(8)` reshuffle. Cast `category`/`subcategory` to dask categorical dtype before persisting; cuts group-by time substantially.
 - **In-memory materialize** — standard large-result ops use `_materialize`: `persist(); wait(...)` lands the full result in worker memory without pulling rows to the driver, then drops the reference to release it before the next run. Matches aaiclick retaining its result in-engine (previously this used `map_partitions(len).compute().sum()`, which discarded the result and returned only a row count).
 - **Paginated companions** — `_sample` uses `ddf.head(SAMPLE_OFFSET + SAMPLE_LIMIT, npartitions=-1, compute=True).iloc[-SAMPLE_LIMIT:]`: walks partitions in order, accumulating ~5M rows on the driver, then keeps the last 10. The driver materialization is the cost of Dask's missing offset primitive.
+- **Execute companions** — `Column multiply execute` / `Filter rows execute` / `Sort execute` use `_discard`: `ddf.map_partitions(len).compute().sum()` reduces each partition to a row count, forcing the full server-side compute without landing the result in worker memory or shipping rows to the driver. The compute-only counterpart to the in-memory materialize above.
 
 ## Why Ray was dropped
 
@@ -125,5 +138,5 @@ Past commit history retains the full Ray Data adapter (`bench_ray.py`, `ray_job.
 ## Caveats
 
 - Container memory limits (`mem_limit: 6g`) cap each framework. If a framework OOMs at 10M rows, raise the limit or downscale `NUM_ROWS` in `config.py`.
-- Spark JVM cold-start is amortized across the 14 ops but still skews the `Ingest` measurement upward by ~5-10s relative to the other frameworks. Subsequent ops are clean.
+- Spark JVM cold-start is amortized across the 17 ops but still skews the `Ingest` measurement upward by ~5-10s relative to the other frameworks. Subsequent ops are clean.
 - Per-op `memory.peak` reset captures the peak *during the op*, not the framework's resident baseline. The first op may report a larger peak because it triggers lazy framework subsystems.

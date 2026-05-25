@@ -81,6 +81,25 @@ async def _sort_page(obj):
     return await view.data()
 
 
+async def _col_mul_execute(obj):
+    # FORMAT Null discard — project amount*quantity over all rows server-side
+    # and keep nothing (Object.execute(), new in 0.0.16). The View path runs the
+    # computed column without materializing a result table; a LazyOperator would
+    # materialize first. Returns QueryStats.
+    view = obj.with_columns(
+        {"product": Computed("Float64", "amount * quantity")}
+    )
+    return await view.execute()
+
+
+async def _filter_execute(obj):
+    return await obj.where(f"amount > {FILTER_THRESHOLD}").execute()
+
+
+async def _sort_execute(obj):
+    return await obj.view(order_by="amount DESC").execute()
+
+
 async def _count_distinct(obj):
     return await obj["category"].nunique()
 
@@ -126,4 +145,7 @@ BENCHMARKS = {
     "Column multiply page": _col_mul_page,
     "Filter rows page": _filter_page,
     "Sort page": _sort_page,
+    "Column multiply execute": _col_mul_execute,
+    "Filter rows execute": _filter_execute,
+    "Sort execute": _sort_execute,
 }

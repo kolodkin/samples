@@ -25,6 +25,9 @@ BENCH_NAMES = [
     "Column multiply page",
     "Filter rows page",
     "Sort page",
+    "Column multiply execute",
+    "Filter rows execute",
+    "Sort execute",
 ]
 
 FRAMEWORKS = ["aaiclick", "spark", "dask"]
