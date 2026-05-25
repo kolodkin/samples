@@ -13,21 +13,23 @@ resolution-markers = [
 
 [[package]]
 name = "aaiclick"
-version = "0.0.9"
+version = "0.0.16"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiosqlite" },
     { name = "alembic" },
     { name = "chdb" },
+    { name = "croniter" },
+    { name = "greenlet" },
     { name = "pyarrow" },
     { name = "pydantic" },
     { name = "python-dotenv" },
     { name = "pyyaml" },
     { name = "sqlmodel" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/04/9b/0a12fd2d3e36054b25221fcb229867f142cb6b3691197b09dbbb0cf77e35/aaiclick-0.0.9.tar.gz", hash = "sha256:91b6f0c5da777ae7e4f0aa5efee873225bf50f33832f5b1248592dc601528e53", size = 580000, upload-time = "2026-04-03T19:32:15.327Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e1/dc/a53046a316a70480327497f0dca95c0b2b94bcc66a12589daa934d1955cc/aaiclick-0.0.16.tar.gz", hash = "sha256:4cf84af75bc9a78dea97601500426000d8651814c3a4dd3ea27bf9355c761bae", size = 1587643, upload-time = "2026-05-24T15:29:06.491Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2b/ba/0f54602c27416899cbde1e3800cd3f2e50d50d9961084af2d0597741aa7c/aaiclick-0.0.9-py3-none-any.whl", hash = "sha256:d912481cef48dff03041f12ec87282b770111a5daca4d14d9506fbfc51417521", size = 338786, upload-time = "2026-04-03T19:32:13.371Z" },
+    { url = "https://files.pythonhosted.org/packages/f3/d0/06dbae725fe145981365b222be47bc34195d6069af13db2075be3d361f44/aaiclick-0.0.16-py3-none-any.whl", hash = "sha256:3734414e9d53ab850fb31b73fdc865b912d8d5dfc1a4f45968a1360466ae144b", size = 1293098, upload-time = "2026-05-24T15:29:04.198Z" },
 ]
 
 [[package]]
@@ -74,7 +76,7 @@ wheels = [
 
 [[package]]
 name = "chdb"
-version = "4.1.6"
+version = "4.1.8"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "chdb-core" },
@@ -83,7 +85,7 @@ dependencies = [
     { name = "pyarrow" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/61/8b/b7ec9eff8795a87f462c4b304e82391ecd6e4b238607f130557294a9ae6f/chdb-4.1.6-py3-none-any.whl", hash = "sha256:9acf64920697a9a88608c2c740d5ad5c650d1f75a47af089bd78ae5b6fe40f30", size = 1444649, upload-time = "2026-03-19T15:27:04.271Z" },
+    { url = "https://files.pythonhosted.org/packages/a8/6a/2f83aa4ad09c86d97c58b00f2a7915f70e9c3c8b5ef52d13c1339e10f9e9/chdb-4.1.8-py3-none-any.whl", hash = "sha256:69d6bc5be0f88202926e1c6814aaba96dc06c6992fdc1c48ca7b3547bcc823aa", size = 1501206, upload-time = "2026-05-22T09:00:37.229Z" },
 ]
 
 [[package]]
@@ -171,6 +173,18 @@ wheels = [
 ]
 
 [[package]]
+name = "croniter"
+version = "6.2.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "python-dateutil" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/df/de/5832661ed55107b8a09af3f0a2e71e0957226a59eb1dcf0a445cce6daf20/croniter-6.2.2.tar.gz", hash = "sha256:ba60832a5ec8e12e51b8691c3309a113d1cf6526bdf1a48150ce8ec7a532d0ab", size = 113762, upload-time = "2026-03-15T08:43:48.112Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d0/39/783980e78cb92c2d7bdb1fc7dbc86e94ccc6d58224d76a7f1f51b6c51e30/croniter-6.2.2-py3-none-any.whl", hash = "sha256:a5d17b1060974d36251ea4faf388233eca8acf0d09cbd92d35f4c4ac8f279960", size = 45422, upload-time = "2026-03-15T08:43:46.626Z" },
+]
+
+[[package]]
 name = "databear"
 version = "0.1.0"
 source = { virtual = "." }
@@ -189,7 +203,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aaiclick", specifier = ">=0.0.9" },
+    { name = "aaiclick", specifier = ">=0.0.16" },
     { name = "clickhouse-connect" },
     { name = "duckdb" },
     { name = "numpy" },

@@ -6,7 +6,7 @@ WORKDIR /app
 # host-side cgroup paths so it can sum memory.peak / cpu.stat across all
 # containers doing real work (aaiclick client + clickhouse + postgres +
 # fileserver). See distributed_data_libs/stats.py.
-RUN pip install --no-cache-dir aaiclick clickhouse-connect pyarrow docker
+RUN pip install --no-cache-dir aaiclick==0.0.16 clickhouse-connect pyarrow docker
 
 COPY distributed_data_libs ./distributed_data_libs
 
