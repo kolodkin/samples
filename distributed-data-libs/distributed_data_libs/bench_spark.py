@@ -49,6 +49,13 @@ def _materialize(df):
     df.unpersist()
 
 
+def _discard(df):
+    # noop sink — force full server-side execution and throw the result away
+    # (no cache, no rows streamed back). The compute-only counterpart to
+    # _materialize / aaiclick's Object.execute().
+    df.write.format("noop").mode("overwrite").save()
+
+
 def _sample(df):
     return df.offset(SAMPLE_OFFSET).limit(SAMPLE_LIMIT).collect()
 
@@ -69,4 +76,7 @@ BENCHMARKS = {
     "Column multiply page": lambda df: _sample(df.select((F.col("amount") * F.col("quantity")).alias("p"))),
     "Filter rows page":     lambda df: _sample(df.filter(F.col("amount") > FILTER_THRESHOLD)),
     "Sort page":            lambda df: _sample(df.orderBy(F.col("amount").desc())),
+    "Column multiply execute": lambda df: _discard(df.select((F.col("amount") * F.col("quantity")).alias("p"))),
+    "Filter rows execute":     lambda df: _discard(df.filter(F.col("amount") > FILTER_THRESHOLD)),
+    "Sort execute":            lambda df: _discard(df.orderBy(F.col("amount").desc())),
 }

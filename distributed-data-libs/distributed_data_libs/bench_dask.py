@@ -42,6 +42,14 @@ def _materialize(ddf):
     del persisted
 
 
+def _discard(ddf):
+    # Reduce to a per-partition row count and sum it — forces full server-side
+    # compute without landing the result in worker memory or shipping rows to
+    # the driver. The compute-only counterpart to _materialize / aaiclick's
+    # Object.execute().
+    ddf.map_partitions(len).compute().sum()
+
+
 def _sample(ddf):
     head = ddf.head(SAMPLE_OFFSET + SAMPLE_LIMIT, npartitions=-1, compute=True)
     return head.iloc[-SAMPLE_LIMIT:]
@@ -61,4 +69,7 @@ BENCHMARKS = {
     "Column multiply page": lambda ddf: _sample((ddf["amount"] * ddf["quantity"]).to_frame()),
     "Filter rows page":     lambda ddf: _sample(ddf[ddf["amount"] > FILTER_THRESHOLD]),
     "Sort page":            lambda ddf: _sample(ddf.sort_values("amount", ascending=False)),
+    "Column multiply execute": lambda ddf: _discard((ddf["amount"] * ddf["quantity"]).to_frame()),
+    "Filter rows execute":     lambda ddf: _discard(ddf[ddf["amount"] > FILTER_THRESHOLD]),
+    "Sort execute":            lambda ddf: _discard(ddf.sort_values("amount", ascending=False)),
 }
