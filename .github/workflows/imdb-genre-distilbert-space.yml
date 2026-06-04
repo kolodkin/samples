@@ -1,0 +1,26 @@
+name: imdb-genre-distilbert-space
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'imdb-genre-distilbert/space/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Push subfolder to Hugging Face Space
+        run: |
+          cd imdb-genre-distilbert/space
+          git init -b main
+          git config user.email "ci@github"
+          git config user.name "CI"
+          git add .
+          git commit -m "deploy from ${{ github.sha }}"
+          git push --force \
+            https://kolodkin:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/kolodkin/imdb-genre-distilbert \
+            main
