@@ -9,7 +9,7 @@ pipe = pipeline("text-classification", model=MODEL, top_k=None)
 def predict(text):
     if not text or not text.strip():
         return {}
-    scores = pipe(text)[0]
+    scores = pipe(text, truncation=True, max_length=512)[0]
     return {row["label"]: float(row["score"]) for row in scores}
 
 
