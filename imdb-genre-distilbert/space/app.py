@@ -4,12 +4,19 @@ from transformers import pipeline
 MODEL = "kolodkin/imdb-genre-distilbert"
 
 pipe = pipeline("text-classification", model=MODEL, top_k=None)
+MAX_TOKENS = pipe.tokenizer.model_max_length  # 512 for DistilBERT
 
 
 def predict(text):
     if not text or not text.strip():
         return {}
-    scores = pipe(text, truncation=True, max_length=512)[0]
+    n_tokens = len(pipe.tokenizer(text, truncation=False)["input_ids"])
+    if n_tokens > MAX_TOKENS:
+        raise gr.Error(
+            f"Plot is ~{n_tokens} tokens but the model accepts at most {MAX_TOKENS} "
+            f"(≈ 2,000 characters). Please shorten it and try again."
+        )
+    scores = pipe(text)[0]
     return {row["label"]: float(row["score"]) for row in scores}
 
 
