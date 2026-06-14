@@ -68,7 +68,16 @@ with gr.Blocks(title="IMDb Plot → Genre Classifier") as demo:
     notice = gr.Markdown(visible=False)
     genres = gr.Label(num_top_classes=5, label="Predicted genres")
 
-    gr.Examples(examples=examples, inputs=plot, example_labels=example_labels)
+    # run_on_click classifies the moment an example is picked, so selecting a film
+    # (e.g. "The Lion King") populates the genres without a separate Classify press.
+    gr.Examples(
+        examples=examples,
+        inputs=plot,
+        outputs=genres,
+        fn=predict,
+        run_on_click=True,
+        example_labels=example_labels,
+    )
 
     plot.change(on_change, inputs=plot, outputs=[submit, notice])
     submit.click(predict, inputs=plot, outputs=genres)
