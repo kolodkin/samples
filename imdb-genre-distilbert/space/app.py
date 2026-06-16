@@ -14,22 +14,20 @@ def count_tokens(text):
 
 
 def on_change(text):
-    """As the user types, flip the button to a Truncate action and show an inline
-    message when the plot exceeds the model's token limit."""
+    """As the user types, disable the Classify button and show an inline message
+    when the plot exceeds the model's token limit."""
     n_tokens = count_tokens(text)
     if n_tokens > MAX_TOKENS:
         msg = (
-            f"⚠️ Plot is ~{n_tokens} tokens but the model reads only the first "
-            f"{MAX_TOKENS}. Click **Truncate & classify** to use the opening "
-            f"{MAX_TOKENS} tokens, or shorten the text for a result that reflects "
-            f"the whole plot."
+            f"⚠️ Plot is ~{n_tokens} tokens, over the model's {MAX_TOKENS}-token "
+            f"limit. Shorten the text to classify."
         )
         return (
-            gr.update(value="Truncate & classify", variant="stop"),
+            gr.update(interactive=False),
             gr.update(value=msg, visible=True),
         )
     return (
-        gr.update(value="Classify", variant="primary"),
+        gr.update(interactive=True),
         gr.update(value="", visible=False),
     )
 
@@ -37,8 +35,8 @@ def on_change(text):
 def predict(text):
     if not text or not text.strip():
         return {}
-    # truncation=True is a no-op when the text fits and trims to MAX_TOKENS otherwise,
-    # so this handles both the normal and the "Truncate & classify" paths.
+    # The button is disabled for over-limit text, so input normally fits; truncation=True
+    # is a no-op then and a safety net for any other caller (e.g. examples).
     scores = pipe(text, truncation=True, max_length=MAX_TOKENS)[0]
     return {row["label"]: float(row["score"]) for row in scores}
 
@@ -68,7 +66,16 @@ with gr.Blocks(title="IMDb Plot → Genre Classifier") as demo:
     notice = gr.Markdown(visible=False)
     genres = gr.Label(num_top_classes=5, label="Predicted genres")
 
-    gr.Examples(examples=examples, inputs=plot, example_labels=example_labels)
+    # run_on_click classifies the moment an example is picked, so selecting a film
+    # (e.g. "The Lion King") populates the genres without a separate Classify press.
+    gr.Examples(
+        examples=examples,
+        inputs=plot,
+        outputs=genres,
+        fn=predict,
+        run_on_click=True,
+        example_labels=example_labels,
+    )
 
     plot.change(on_change, inputs=plot, outputs=[submit, notice])
     submit.click(predict, inputs=plot, outputs=genres)
