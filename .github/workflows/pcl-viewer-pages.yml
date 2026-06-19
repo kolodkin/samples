@@ -1,0 +1,55 @@
+name: pcl-viewer-pages
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'pcl-viewer/web/**'
+      - 'pcl-viewer/vendor.sh'
+      - '.github/workflows/pcl-viewer-pages.yml'
+
+# Allow the GITHUB_TOKEN to deploy to GitHub Pages.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deployment; don't cancel an in-progress one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pcl-viewer
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Vendor frontend ES modules
+        run: ./vendor.sh
+
+      - name: Stage site under /pcl-viewer
+        run: |
+          mkdir -p _site
+          cp -r web _site/pcl-viewer          # viewer served at <gh-pages>/pcl-viewer/
+          cp pages-index.html _site/index.html # root redirect to ./pcl-viewer/
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: pcl-viewer/_site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
