@@ -10,7 +10,7 @@ function App() {
   const canvasRef = useRef(null);
   const viewerRef = useRef(null);
   const [pointSize, setPointSize] = useState(0.01);
-  const [colorMode, setColorMode] = useState('flat');
+  const [colorMode, setColorMode] = useState('height');
   const [showHelpers, setShowHelpers] = useState(false);
   const [stats, setStats] = useState({ pointCount: 0, fps: 0, cameraDistance: 0 });
 

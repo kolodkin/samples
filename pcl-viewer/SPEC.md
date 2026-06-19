@@ -19,9 +19,12 @@ Python server, never a CDN at test time). Preact renders via `htm` — no JSX/tr
 
 ## Sample asset
 `web/models/Zaghetto.pcd` — the canonical three.js `PCDLoader` demo asset (binary
-PCD, `FIELDS x y z`, 59,750 points, ~704 KB). MIT-licensed via three.js. Since it
-carries no color, "by height" mode computes per-vertex colors from the Z coordinate
-(blue → red); "flat" uses a single material color.
+PCD, `FIELDS x y z`, 59,750 points, ~704 KB). MIT-licensed via three.js. It is a
+single-viewpoint 2.5D scan (a relief surface), so the camera frames it mostly
+front-on with a slight tilt — a steep angle would just show its thin edge. Since it
+carries no color, the **default** "by height" mode computes per-vertex colors from
+the vertical (Y) coordinate (blue → red), which conveys the form far better than a
+flat silhouette; "flat" mode (a single material color) is available as a toggle.
 
 ## Controls
 | Control       | Effect                                              |

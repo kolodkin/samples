@@ -31,7 +31,7 @@ export function createViewer(canvas, { modelUrl = './models/Zaghetto.pcd' } = {}
   const state = {
     ready: false,
     pointCount: 0,
-    settings: { pointSize: 0.01, colorMode: 'flat', helpers: false },
+    settings: { pointSize: 0.01, colorMode: 'height', helpers: false },
     framesRendered: 0,
   };
   window.__PCL = state;
@@ -51,7 +51,11 @@ export function createViewer(canvas, { modelUrl = './models/Zaghetto.pcd' } = {}
     const center = box.getCenter(new THREE.Vector3());
     const radius = Math.max(size.x, size.y, size.z);
     controls.target.copy(center);
-    camera.position.copy(center).add(new THREE.Vector3(0, 0, radius * 2.2));
+    // Mostly front-on (this is a single-viewpoint 2.5D scan, so a steep angle
+    // just shows its thin edge) with a slight tilt from the upper-right so the
+    // surface relief reads as 3D instead of a flat silhouette.
+    const dir = new THREE.Vector3(0.28, 0.18, 1).normalize();
+    camera.position.copy(center).add(dir.multiplyScalar(radius * 2.2));
     camera.near = radius / 100;
     camera.far = radius * 100;
     camera.updateProjectionMatrix();
@@ -61,12 +65,12 @@ export function createViewer(canvas, { modelUrl = './models/Zaghetto.pcd' } = {}
   function computeHeightColors(geometry) {
     const pos = geometry.getAttribute('position');
     const box = new THREE.Box3().setFromBufferAttribute(pos);
-    const minZ = box.min.z;
-    const span = box.max.z - box.min.z || 1;
+    const minY = box.min.y;
+    const span = box.max.y - box.min.y || 1;
     const colors = new Float32Array(pos.count * 3);
     const c = new THREE.Color();
     for (let i = 0; i < pos.count; i++) {
-      const t = (pos.getZ(i) - minZ) / span;
+      const t = (pos.getY(i) - minY) / span; // color along the vertical axis
       c.setHSL(0.7 - 0.7 * t, 0.9, 0.5); // blue (low) -> red (high)
       colors[i * 3] = c.r;
       colors[i * 3 + 1] = c.g;
@@ -109,6 +113,7 @@ export function createViewer(canvas, { modelUrl = './models/Zaghetto.pcd' } = {}
     });
     scene.add(points);
     baseColors = computeHeightColors(points.geometry);
+    applyColorMode(state.settings.colorMode); // height ramp by default
     state.pointCount = points.geometry.getAttribute('position').count;
     buildHelpers();
     resize();
