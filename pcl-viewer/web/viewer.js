@@ -155,9 +155,12 @@ export function createViewer(canvas, { modelUrl = './models/kitti-velodyne-00000
     setColorMode(mode) { applyColorMode(mode); },
     resetCamera() { if (points) frameCamera(); },
     getStats() {
+      const e = camera.position, t = controls.target;
       return {
         pointCount: state.pointCount,
-        cameraDistance: camera.position.distanceTo(controls.target),
+        cameraDistance: e.distanceTo(t),
+        eye: { x: e.x, y: e.y, z: e.z },
+        target: { x: t.x, y: t.y, z: t.z },
       };
     },
     // e2e helper: count non-background pixels in the rendered frame.

@@ -25,6 +25,7 @@ def test_point_cloud_loads_and_renders(server_url, page):
 def test_point_size_control(server_url, page):
     page.goto(server_url + "/")
     _wait_ready(page)
+    page.get_by_test_id("menu-toggle").click()  # controls live in a modal
     slider = page.get_by_test_id("point-size")
     slider.evaluate(
         "el => { el.value = '0.05'; el.dispatchEvent(new Event('input', {bubbles:true})); }")
@@ -36,6 +37,7 @@ def test_color_mode_toggle(server_url, page):
     _wait_ready(page)
     # Default mode is the height ramp; toggling to flat must take effect.
     assert page.evaluate("() => window.__PCL.settings.colorMode") == "height"
+    page.get_by_test_id("menu-toggle").click()  # controls live in a modal
     page.get_by_test_id("color-mode").select_option("flat")
     page.wait_for_function("() => window.__PCL.settings.colorMode === 'flat'")
 
@@ -44,10 +46,34 @@ def test_reset_camera(server_url, page):
     page.goto(server_url + "/")
     _wait_ready(page)
     # Orbit far away via wheel, then reset and confirm still ready & rendering.
+    page.get_by_test_id("menu-toggle").click()  # reset button lives in a modal
     before = page.evaluate("() => window.__PCL.framesRendered")
     page.get_by_test_id("reset").click()
     page.wait_for_function(f"() => window.__PCL.framesRendered > {before}")
     assert page.evaluate("() => window.__PCL.ready") is True
+
+
+def test_menu_toggle(server_url, page):
+    page.goto(server_url + "/")
+    _wait_ready(page)
+    # Controls modal is closed by default for a clean view.
+    expect(page.get_by_test_id("controls")).to_have_count(0)
+    page.get_by_test_id("menu-toggle").click()
+    expect(page.get_by_test_id("controls")).to_be_visible()
+    # Tapping the backdrop closes it again.
+    page.get_by_test_id("backdrop").click()
+    expect(page.get_by_test_id("controls")).to_have_count(0)
+
+
+def test_camera_readout(server_url, page):
+    page.goto(server_url + "/")
+    _wait_ready(page)
+    page.wait_for_timeout(600)  # let the 500ms stats cadence tick at least once
+    for tid in ("cam-eye", "cam-target"):
+        parts = page.get_by_test_id(tid).inner_text().split()
+        assert len(parts) == 3, f"{tid} should show x y z, got {parts!r}"
+        for p in parts:
+            float(p)  # each component parses as a number
 
 
 def test_screenshot_capture(server_url, page, tmp_path):
