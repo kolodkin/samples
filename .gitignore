@@ -71,3 +71,6 @@ uuid
 
 # pcl-viewer vendored ESM libs (fetched by pcl-viewer/vendor.sh)
 pcl-viewer/web/vendor/
+
+# pcl-viewer Playwright test output (screenshots, traces)
+pcl-viewer/test-results/
