@@ -68,3 +68,6 @@ preprocessed_configs/
 store/
 status
 uuid
+
+# pcl-viewer vendored ESM libs (fetched by pcl-viewer/vendor.sh)
+pcl-viewer/web/vendor/
