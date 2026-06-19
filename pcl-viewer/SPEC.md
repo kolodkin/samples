@@ -33,7 +33,12 @@ KITTI uses a z-up vehicle frame in metres, so on load the viewer reorients it
 scene fills the view instead of being shrunk by a few 80 m stray returns. The
 **default** "by height" mode colors per-vertex along the vertical axis (blue → red),
 with the range clamped to the 2nd–98th height percentile so ground reads blue and
-cars/walls climb through to red; "flat" mode (a single material color) is a toggle.
+cars/walls climb through to red. The same ramp (and the same robust percentile
+clamp) also drives "by distance" (radial range from the sensor, which lights up the
+concentric scan rings) and "by intensity" (the PCD's per-point laser reflectance,
+which picks out road markings and signs); "flat" mode (a single material color) is a
+toggle. The ramp buffers are precomputed once per cloud and swapped on the geometry,
+and a scalar mode the source lacks (e.g. an intensity-free PCD) falls back to flat.
 The camera sits low and forward-facing — just above the sensor's forward (+X) axis,
 looking down the road — so the scan reads like an onboard driving view: ground
 rings sweep to the horizon and cars/walls/poles stand up along the street.
@@ -42,7 +47,7 @@ rings sweep to the horizon and cars/walls/poles stand up along the street.
 | Control       | Effect                                              |
 |---------------|-----------------------------------------------------|
 | Point size    | `PointsMaterial.size` (0.002–0.05)                  |
-| Color mode    | flat material color vs. per-vertex color-by-height  |
+| Color mode    | flat vs. per-vertex ramp by height / distance / intensity |
 | Reset camera  | re-frames the low forward-facing view down the road  |
 | Stats overlay | point count, rolling FPS, camera distance           |
 

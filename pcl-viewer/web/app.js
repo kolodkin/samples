@@ -68,6 +68,8 @@ function App() {
         <select data-testid="color-mode" value=${colorMode} onChange=${onColor}>
           <option value="flat">Flat</option>
           <option value="height">By height</option>
+          <option value="distance">By distance</option>
+          <option value="intensity">By intensity</option>
         </select>
         <div class="row">
           <button data-testid="reset" onClick=${onReset}>Reset camera</button>

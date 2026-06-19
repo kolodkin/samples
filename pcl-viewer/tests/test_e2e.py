@@ -40,6 +40,14 @@ def test_color_mode_toggle(server_url, page):
     page.get_by_test_id("menu-toggle").click()  # controls live in a modal
     page.get_by_test_id("color-mode").select_option("flat")
     page.wait_for_function("() => window.__PCL.settings.colorMode === 'flat'")
+    # Each scalar ramp mode applies and keeps the cloud rendering. Intensity
+    # only resolves if the loader actually parsed the PCD's `intensity` field;
+    # falling back to flat would leave colorMode == 'flat' and fail this loop.
+    for mode in ("distance", "intensity", "height"):
+        page.get_by_test_id("color-mode").select_option(mode)
+        page.wait_for_function(
+            f"() => window.__PCL.settings.colorMode === '{mode}'")
+        assert page.evaluate("() => window.__PCL.handle.visiblePixelCount()") > 1000
 
 
 def test_reset_camera(server_url, page):

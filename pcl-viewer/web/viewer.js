@@ -23,7 +23,7 @@ export function createViewer(canvas, { modelUrl = './models/kitti-velodyne-00000
   controls.enableDamping = true;
 
   let points = null;
-  let baseColors = null; // Float32Array of height-mapped colors
+  let colorBuffers = {}; // mode name -> Float32Array of per-point ramp colors
   let sceneRadius = 1; // robust horizontal radius of the scan, in normalized units
 
   const state = {
@@ -49,11 +49,14 @@ export function createViewer(canvas, { modelUrl = './models/kitti-velodyne-00000
     const radius = sceneRadius; // ignore far stray returns so the scene fills the view
     // Axis convention after normalizeGeometry: +X is forward (down the road),
     // +Y is up, +Z is right, and the sensor sits at the cloud center. Pull the
-    // eye up and behind the sensor and aim it forward and down at the road ahead,
-    // an elevated chase view that pulls back so the whole scene reads at once
-    // (the sensor blind-spot ring sits in the foreground).
-    const eye = center.clone().add(new THREE.Vector3(-1.4, 1.17, 0).multiplyScalar(radius));
-    const look = center.clone().add(new THREE.Vector3(0.8, -0.1, 0).multiplyScalar(radius));
+    // eye up and behind the sensor and aim it forward at the road ahead, an
+    // elevated chase view that pulls back so the whole scene reads at once (the
+    // sensor blind-spot ring sits in the foreground). The eye sits above the
+    // target, so the view still looks down even with a level aim point.
+    // Offsets are round multiples of 0.1 so that, at sceneRadius 0.5, the eye
+    // and target land on clean values in the HUD readout.
+    const eye = center.clone().add(new THREE.Vector3(-1.4, 1.2, 0).multiplyScalar(radius));
+    const look = center.clone().add(new THREE.Vector3(0.8, 0, 0).multiplyScalar(radius));
     camera.position.copy(eye);
     controls.target.copy(look);
     camera.near = radius / 100;
@@ -62,18 +65,18 @@ export function createViewer(canvas, { modelUrl = './models/kitti-velodyne-00000
     controls.update();
   }
 
-  function computeHeightColors(geometry) {
-    const pos = geometry.getAttribute('position');
-    // Robust vertical range: clamp to the 2nd..98th percentile of height so a
-    // handful of stray high/low returns don't compress the whole ramp into one
-    // hue (ground stays blue, cars/walls climb through green to red).
-    const ys = Float32Array.from({ length: pos.count }, (_, i) => pos.getY(i)).sort();
-    const minY = ys[Math.floor(pos.count * 0.02)];
-    const span = (ys[Math.floor(pos.count * 0.98)] - minY) || 1;
-    const colors = new Float32Array(pos.count * 3);
+  // Map a per-point scalar field onto the blue->red HSL ramp. Robust 2nd..98th
+  // percentile clamp so a handful of outliers don't compress the whole ramp
+  // into one hue (low values stay blue, high values climb through green to red).
+  function rampColors(values) {
+    const n = values.length;
+    const sorted = Float32Array.from(values).sort();
+    const min = sorted[Math.floor(n * 0.02)];
+    const span = (sorted[Math.floor(n * 0.98)] - min) || 1;
+    const colors = new Float32Array(n * 3);
     const c = new THREE.Color();
-    for (let i = 0; i < pos.count; i++) {
-      const t = Math.min(1, Math.max(0, (pos.getY(i) - minY) / span));
+    for (let i = 0; i < n; i++) {
+      const t = Math.min(1, Math.max(0, (values[i] - min) / span));
       c.setHSL(0.7 - 0.7 * t, 0.9, 0.5); // blue (low) -> red (high)
       colors[i * 3] = c.r;
       colors[i * 3 + 1] = c.g;
@@ -82,12 +85,35 @@ export function createViewer(canvas, { modelUrl = './models/kitti-velodyne-00000
     return colors;
   }
 
+  // Precompute a ramp buffer for every scalar mode the cloud can supply:
+  // height (y), radial distance from the sensor (origin), and laser intensity
+  // (only if the source PCD carried an `intensity` field).
+  function computeColorBuffers(geometry) {
+    const pos = geometry.getAttribute('position');
+    const n = pos.count;
+    const height = new Float32Array(n);
+    const distance = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      height[i] = pos.getY(i);
+      distance[i] = Math.hypot(pos.getX(i), pos.getY(i), pos.getZ(i));
+    }
+    const buffers = { height: rampColors(height), distance: rampColors(distance) };
+    const intensity = geometry.getAttribute('intensity');
+    if (intensity) {
+      const vals = Float32Array.from({ length: n }, (_, i) => intensity.getX(i));
+      buffers.intensity = rampColors(vals);
+    }
+    return buffers;
+  }
+
   function applyColorMode(mode) {
     if (!points) return;
-    state.settings.colorMode = mode;
-    if (mode === 'height') {
-      points.geometry.setAttribute(
-        'color', new THREE.BufferAttribute(baseColors, 3));
+    const buffer = mode === 'flat' ? null : colorBuffers[mode];
+    // A scalar mode the cloud can't supply (e.g. intensity-free data) falls
+    // back to flat shading rather than rendering nothing.
+    state.settings.colorMode = mode === 'flat' || buffer ? mode : 'flat';
+    if (buffer) {
+      points.geometry.setAttribute('color', new THREE.BufferAttribute(buffer, 3));
       points.material.vertexColors = true;
       points.material.color.set(0xffffff);
     } else {
@@ -129,7 +155,7 @@ export function createViewer(canvas, { modelUrl = './models/kitti-velodyne-00000
       sizeAttenuation: true,
     });
     scene.add(points);
-    baseColors = computeHeightColors(points.geometry);
+    colorBuffers = computeColorBuffers(points.geometry);
     applyColorMode(state.settings.colorMode); // height ramp by default
     state.pointCount = points.geometry.getAttribute('position').count;
     resize();
