@@ -56,7 +56,7 @@ export function createViewer(canvas, { modelUrl = './models/kitti-velodyne-00000
     // the road ahead. The ground rings sweep out to the horizon and the cars /
     // walls / poles stand up along the street (a bird's-eye angle flattens it).
     const dir = new THREE.Vector3(-0.96, 0.18, 0).normalize();
-    camera.position.copy(center).add(dir.multiplyScalar(radius * 2.2));
+    camera.position.copy(center).add(dir.multiplyScalar(radius * 1.0));
     camera.near = radius / 100;
     camera.far = radius * 100;
     camera.updateProjectionMatrix();
