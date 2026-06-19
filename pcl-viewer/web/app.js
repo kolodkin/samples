@@ -12,9 +12,9 @@ function App() {
   const [pointSize, setPointSize] = useState(0.004);
   const [colorMode, setColorMode] = useState('height');
   const [menuOpen, setMenuOpen] = useState(false);
+  const origin = { x: 0, y: 0, z: 0 }; // placeholder until the first stats tick
   const [stats, setStats] = useState({
-    pointCount: 0, fps: 0, cameraDistance: 0,
-    eye: { x: 0, y: 0, z: 0 }, target: { x: 0, y: 0, z: 0 },
+    pointCount: 0, fps: 0, cameraDistance: 0, eye: origin, target: origin,
   });
 
   useEffect(() => {

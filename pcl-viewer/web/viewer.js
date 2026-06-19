@@ -156,11 +156,12 @@ export function createViewer(canvas, { modelUrl = './models/kitti-velodyne-00000
     resetCamera() { if (points) frameCamera(); },
     getStats() {
       const e = camera.position, t = controls.target;
+      const vec = (v) => ({ x: v.x, y: v.y, z: v.z }); // snapshot, don't leak the live Vector3
       return {
         pointCount: state.pointCount,
         cameraDistance: e.distanceTo(t),
-        eye: { x: e.x, y: e.y, z: e.z },
-        target: { x: t.x, y: t.y, z: t.z },
+        eye: vec(e),
+        target: vec(t),
       };
     },
     // e2e helper: count non-background pixels in the rendered frame.
