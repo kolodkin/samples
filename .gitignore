@@ -72,5 +72,8 @@ uuid
 # pcl-viewer vendored ESM libs (fetched by pcl-viewer/vendor.sh)
 pcl-viewer/web/vendor/
 
+# pcl-viewer GitHub Pages staging dir (built in CI)
+pcl-viewer/_site/
+
 # pcl-viewer Playwright test output (screenshots, traces)
 pcl-viewer/test-results/

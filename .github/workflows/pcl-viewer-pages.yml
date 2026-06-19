@@ -34,21 +34,14 @@ jobs:
 
       - name: Stage site under /pcl-viewer
         run: |
-          mkdir -p "$GITHUB_WORKSPACE/_site/pcl-viewer"
-          cp -r web/. "$GITHUB_WORKSPACE/_site/pcl-viewer/"
-          # Redirect the Pages root to the viewer for convenience.
-          cat > "$GITHUB_WORKSPACE/_site/index.html" <<'HTML'
-          <!doctype html>
-          <meta charset="utf-8" />
-          <title>PCL Viewer</title>
-          <meta http-equiv="refresh" content="0; url=./pcl-viewer/" />
-          <a href="./pcl-viewer/">PCL Viewer</a>
-          HTML
+          mkdir -p _site
+          cp -r web _site/pcl-viewer          # viewer served at <gh-pages>/pcl-viewer/
+          cp pages-index.html _site/index.html # root redirect to ./pcl-viewer/
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: _site
+          path: pcl-viewer/_site
 
   deploy:
     needs: build
