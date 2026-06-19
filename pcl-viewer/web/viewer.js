@@ -31,7 +31,7 @@ export function createViewer(canvas, { modelUrl = './models/Zaghetto.pcd' } = {}
   const state = {
     ready: false,
     pointCount: 0,
-    settings: { pointSize: 0.01, colorMode: 'height', helpers: false },
+    settings: { pointSize: 0.004, colorMode: 'height', helpers: false },
     framesRendered: 0,
   };
   window.__PCL = state;
