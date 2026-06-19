@@ -34,8 +34,9 @@ scene fills the view instead of being shrunk by a few 80 m stray returns. The
 **default** "by height" mode colors per-vertex along the vertical axis (blue → red),
 with the range clamped to the 2nd–98th height percentile so ground reads blue and
 cars/walls climb through to red; "flat" mode (a single material color) is a toggle.
-An elevated 3/4 camera frames the scan so both the ground rings and the vertical
-structures read.
+The camera sits low and forward-facing — just above the sensor's forward (+X) axis,
+looking down the road — so the scan reads like an onboard driving view: ground
+rings sweep to the horizon and cars/walls/poles stand up along the street.
 
 ## Controls
 | Control       | Effect                                              |
@@ -43,7 +44,7 @@ structures read.
 | Point size    | `PointsMaterial.size` (0.002–0.05)                  |
 | Color mode    | flat material color vs. per-vertex color-by-height  |
 | Show helpers  | toggles `Box3Helper` + `AxesHelper`                 |
-| Reset camera  | re-frames the elevated 3/4 view to the scan's center |
+| Reset camera  | re-frames the low forward-facing view down the road  |
 | Stats overlay | point count, rolling FPS, camera distance           |
 
 ## e2e strategy

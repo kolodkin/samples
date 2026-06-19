@@ -51,12 +51,12 @@ export function createViewer(canvas, { modelUrl = './models/kitti-velodyne-00000
     const center = box.getCenter(new THREE.Vector3());
     const radius = sceneRadius; // ignore far stray returns so the scene fills the view
     controls.target.copy(center);
-    // This is a 360° street-level LiDAR scan (a wide, near-flat disc with the
-    // road, parked cars and building walls rising out of it). An elevated 3/4
-    // view looks down the scene so the ring pattern and the vertical structures
-    // both read, instead of the thin-edge view a front-on angle would give.
-    const dir = new THREE.Vector3(0.45, 0.78, 0.55).normalize();
-    camera.position.copy(center).add(dir.multiplyScalar(radius * 2.6));
+    // A low, forward-facing "just above the vehicle" vantage: the sensor's
+    // forward axis is +X, so sit just behind and a touch above it and look down
+    // the road ahead. The ground rings sweep out to the horizon and the cars /
+    // walls / poles stand up along the street (a bird's-eye angle flattens it).
+    const dir = new THREE.Vector3(-0.96, 0.18, 0).normalize();
+    camera.position.copy(center).add(dir.multiplyScalar(radius * 2.2));
     camera.near = radius / 100;
     camera.far = radius * 100;
     camera.updateProjectionMatrix();
