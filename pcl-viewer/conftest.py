@@ -7,6 +7,7 @@ import subprocess
 import threading
 import time
 import urllib.request
+from urllib.error import HTTPError, URLError
 
 import pytest
 
@@ -44,7 +45,9 @@ def server_url(vendored):
         try:
             urllib.request.urlopen(base + "/", timeout=0.2)
             break
-        except OSError:
+        except HTTPError:
+            break  # server is up; an HTTP status still means it's listening
+        except (URLError, OSError):
             time.sleep(0.05)
     try:
         yield base

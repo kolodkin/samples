@@ -8,7 +8,7 @@ def test_serves_index_html(server_url):
         assert "<div id=\"app\">" in body
 
 
-def test_serves_js_with_module_mime(server_url, tmp_path):
+def test_serves_js_with_module_mime(server_url):
     # A .js file under web/ must be served with a JS MIME so <script type=module> loads.
     with urllib.request.urlopen(server_url + "/app.js") as resp:
         assert resp.status == 200

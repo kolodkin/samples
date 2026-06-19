@@ -15,7 +15,7 @@ mkdir -p "$DEST/addons/controls" "$DEST/addons/loaders"
 fetch() { # url dest
   if [ -f "$2" ]; then echo "have   $2"; return; fi
   echo "fetch  $2"
-  curl -fsSL "$1" -o "$2"
+  curl -fsSL "$1" -o "$2.tmp" && mv "$2.tmp" "$2"
 }
 
 fetch "$BASE/three@$THREE/build/three.module.js"                     "$DEST/three.module.js"
