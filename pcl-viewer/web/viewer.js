@@ -50,13 +50,14 @@ export function createViewer(canvas, { modelUrl = './models/kitti-velodyne-00000
     const box = new THREE.Box3().setFromObject(points);
     const center = box.getCenter(new THREE.Vector3());
     const radius = sceneRadius; // ignore far stray returns so the scene fills the view
-    controls.target.copy(center);
-    // A low, forward-facing "just above the vehicle" vantage: the sensor's
-    // forward axis is +X, so sit just behind and a touch above it and look down
-    // the road ahead. The ground rings sweep out to the horizon and the cars /
-    // walls / poles stand up along the street (a bird's-eye angle flattens it).
-    const dir = new THREE.Vector3(0, -0.5, 0.5).normalize();
-    camera.position.copy(center).add(dir.multiplyScalar(radius * 1.0));
+    // Axis convention after normalizeGeometry: +X is forward (down the road),
+    // +Y is up, +Z is right, and the sensor sits at the cloud center. Put the
+    // eye just above the sensor and aim it forward and slightly down at the road
+    // ahead, so it reads like an onboard camera looking straight down the street.
+    const eye = center.clone().add(new THREE.Vector3(0, 0.25, 0).multiplyScalar(radius));
+    const look = center.clone().add(new THREE.Vector3(1.4, -0.15, 0).multiplyScalar(radius));
+    camera.position.copy(eye);
+    controls.target.copy(look);
     camera.near = radius / 100;
     camera.far = radius * 100;
     camera.updateProjectionMatrix();
