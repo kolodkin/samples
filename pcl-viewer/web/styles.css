@@ -1,0 +1,18 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: #101418; color: #e6edf3;
+  font: 14px/1.4 system-ui, sans-serif; }
+#app { position: relative; height: 100vh; }
+#scene { display: block; width: 100%; height: 100%; }
+.panel { position: absolute; background: rgba(20, 26, 33, 0.82);
+  border: 1px solid #2a3340; border-radius: 8px; padding: 12px 14px; }
+.controls { top: 12px; left: 12px; width: 220px; }
+.controls h1 { font-size: 14px; margin: 0 0 10px; }
+.controls label { display: block; margin: 10px 0 4px; font-size: 12px; color: #9fb0c0; }
+.controls input[type=range], .controls select { width: 100%; }
+.controls .row { display: flex; gap: 8px; margin-top: 12px; }
+.controls button { flex: 1; cursor: pointer; background: #1f6feb; color: #fff;
+  border: 0; border-radius: 6px; padding: 7px; }
+.controls .toggle { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.stats { top: 12px; right: 12px; font-variant-numeric: tabular-nums; }
+.stats div { margin: 2px 0; }
+.stats b { color: #58a6ff; }
