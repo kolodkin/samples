@@ -16,6 +16,6 @@ def test_serves_js_with_module_mime(server_url):
 
 
 def test_serves_pcd_as_octet_stream(server_url):
-    with urllib.request.urlopen(server_url + "/models/Zaghetto.pcd") as resp:
+    with urllib.request.urlopen(server_url + "/models/kitti-velodyne-000000.pcd") as resp:
         assert resp.status == 200
         assert resp.headers.get("Content-Type") == "application/octet-stream"

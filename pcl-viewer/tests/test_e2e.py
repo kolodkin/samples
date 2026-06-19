@@ -12,10 +12,10 @@ def test_point_cloud_loads_and_renders(server_url, page):
     _wait_ready(page)
 
     point_count = page.evaluate("() => window.__PCL.pointCount")
-    assert point_count == 59750
+    assert point_count == 115385
 
     # Stats overlay reflects the loaded cloud.
-    expect(page.get_by_test_id("point-count")).to_have_text("59,750")
+    expect(page.get_by_test_id("point-count")).to_have_text("115,385")
 
     # The canvas actually drew the cloud (non-background pixels present).
     visible = page.evaluate("() => window.__PCL.handle.visiblePixelCount()")

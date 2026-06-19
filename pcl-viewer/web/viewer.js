@@ -7,7 +7,7 @@ import { PCDLoader } from 'three/addons/loaders/PCDLoader.js';
 const BG = 0x101418;
 const FLAT_COLOR = 0x66ccff;
 
-export function createViewer(canvas, { modelUrl = './models/Zaghetto.pcd' } = {}) {
+export function createViewer(canvas, { modelUrl = './models/kitti-velodyne-000000.pcd' } = {}) {
   const renderer = new THREE.WebGLRenderer({
     canvas,
     antialias: true,
@@ -24,6 +24,7 @@ export function createViewer(canvas, { modelUrl = './models/Zaghetto.pcd' } = {}
 
   let points = null;
   let baseColors = null; // Float32Array of height-mapped colors
+  let sceneRadius = 1; // robust horizontal radius of the scan, in normalized units
   const helpers = new THREE.Group();
   helpers.visible = false;
   scene.add(helpers);
@@ -47,15 +48,15 @@ export function createViewer(canvas, { modelUrl = './models/Zaghetto.pcd' } = {}
 
   function frameCamera() {
     const box = new THREE.Box3().setFromObject(points);
-    const size = box.getSize(new THREE.Vector3());
     const center = box.getCenter(new THREE.Vector3());
-    const radius = Math.max(size.x, size.y, size.z);
+    const radius = sceneRadius; // ignore far stray returns so the scene fills the view
     controls.target.copy(center);
-    // Mostly front-on (this is a single-viewpoint 2.5D scan, so a steep angle
-    // just shows its thin edge) with a slight tilt from the upper-right so the
-    // surface relief reads as 3D instead of a flat silhouette.
-    const dir = new THREE.Vector3(0.28, 0.18, 1).normalize();
-    camera.position.copy(center).add(dir.multiplyScalar(radius * 2.2));
+    // This is a 360° street-level LiDAR scan (a wide, near-flat disc with the
+    // road, parked cars and building walls rising out of it). An elevated 3/4
+    // view looks down the scene so the ring pattern and the vertical structures
+    // both read, instead of the thin-edge view a front-on angle would give.
+    const dir = new THREE.Vector3(0.45, 0.78, 0.55).normalize();
+    camera.position.copy(center).add(dir.multiplyScalar(radius * 2.6));
     camera.near = radius / 100;
     camera.far = radius * 100;
     camera.updateProjectionMatrix();
@@ -64,13 +65,16 @@ export function createViewer(canvas, { modelUrl = './models/Zaghetto.pcd' } = {}
 
   function computeHeightColors(geometry) {
     const pos = geometry.getAttribute('position');
-    const box = new THREE.Box3().setFromBufferAttribute(pos);
-    const minY = box.min.y;
-    const span = box.max.y - box.min.y || 1;
+    // Robust vertical range: clamp to the 2nd..98th percentile of height so a
+    // handful of stray high/low returns don't compress the whole ramp into one
+    // hue (ground stays blue, cars/walls climb through green to red).
+    const ys = Float32Array.from({ length: pos.count }, (_, i) => pos.getY(i)).sort();
+    const minY = ys[Math.floor(pos.count * 0.02)];
+    const span = (ys[Math.floor(pos.count * 0.98)] - minY) || 1;
     const colors = new Float32Array(pos.count * 3);
     const c = new THREE.Color();
     for (let i = 0; i < pos.count; i++) {
-      const t = (pos.getY(i) - minY) / span; // color along the vertical axis
+      const t = Math.min(1, Math.max(0, (pos.getY(i) - minY) / span));
       c.setHSL(0.7 - 0.7 * t, 0.9, 0.5); // blue (low) -> red (high)
       colors[i * 3] = c.r;
       colors[i * 3 + 1] = c.g;
@@ -103,9 +107,31 @@ export function createViewer(canvas, { modelUrl = './models/Zaghetto.pcd' } = {}
     helpers.add(new THREE.AxesHelper(size * 0.5));
   }
 
+  // Normalize an arbitrary cloud into the viewer's working frame: KITTI scans
+  // are z-up and ~80 m across, so rotate them y-up, center on the origin and
+  // scale to ~unit size. This keeps the camera framing and the point-size
+  // slider range meaningful regardless of the source dataset's units.
+  function normalizeGeometry(geom) {
+    geom.rotateX(-Math.PI / 2); // z-up (vehicle frame) -> three.js y-up
+    geom.computeBoundingBox();
+    const center = geom.boundingBox.getCenter(new THREE.Vector3());
+    geom.translate(-center.x, -center.y, -center.z);
+    // Scale by a robust horizontal radius (90th percentile of distance from the
+    // sensor) rather than the absolute max, so the dense street scene fills the
+    // frame instead of being shrunk by a few 80 m stray returns.
+    const pos = geom.getAttribute('position');
+    const radii = Float32Array.from(
+      { length: pos.count }, (_, i) => Math.hypot(pos.getX(i), pos.getZ(i))).sort();
+    const r = radii[Math.floor(pos.count * 0.9)] || 1;
+    const s = 0.5 / r; // characteristic radius -> 0.5 units
+    geom.scale(s, s, s);
+    sceneRadius = 0.5;
+  }
+
   const loader = new PCDLoader();
   loader.load(modelUrl, (loaded) => {
     points = loaded;
+    normalizeGeometry(points.geometry);
     points.material = new THREE.PointsMaterial({
       size: state.settings.pointSize,
       color: FLAT_COLOR,

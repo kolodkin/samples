@@ -18,13 +18,24 @@ Python server, never a CDN at test time). Preact renders via `htm` — no JSX/tr
   `Cache-Control: no-store`.
 
 ## Sample asset
-`web/models/Zaghetto.pcd` — the canonical three.js `PCDLoader` demo asset (binary
-PCD, `FIELDS x y z`, 59,750 points, ~704 KB). MIT-licensed via three.js. It is a
-single-viewpoint 2.5D scan (a relief surface), so the camera frames it mostly
-front-on with a slight tilt — a steep angle would just show its thin edge. Since it
-carries no color, the **default** "by height" mode computes per-vertex colors from
-the vertical (Y) coordinate (blue → red), which conveys the form far better than a
-flat silhouette; "flat" mode (a single material color) is available as a toggle.
+`web/models/kitti-velodyne-000000.pcd` — frame `000000` of the KITTI raw Velodyne
+data: a single 360° street-level LiDAR scan (binary PCD, `FIELDS x y z intensity`,
+115,385 points, ~1.8 MB). It is a *city viewpoint* cloud — one sensor sweep showing
+the road as concentric scan rings with parked cars, walls, poles and vegetation
+rising out of it. Source: the KITTI dataset (Geiger et al., CVPR 2012), via the
+`Qjizhi/kitti-velodyne-viewer` repo's pre-converted PCDs. KITTI is licensed
+**CC BY-NC-SA 3.0** (non-commercial, attribution, share-alike) — fine for this demo,
+but note it is *not* permissively licensed like the rest of the project.
+
+KITTI uses a z-up vehicle frame in metres, so on load the viewer reorients it
+(z-up → three.js y-up), centers it, and scales by a **robust** horizontal radius
+(90th percentile of distance from the sensor, not the absolute max) so the dense
+scene fills the view instead of being shrunk by a few 80 m stray returns. The
+**default** "by height" mode colors per-vertex along the vertical axis (blue → red),
+with the range clamped to the 2nd–98th height percentile so ground reads blue and
+cars/walls climb through to red; "flat" mode (a single material color) is a toggle.
+An elevated 3/4 camera frames the scan so both the ground rings and the vertical
+structures read.
 
 ## Controls
 | Control       | Effect                                              |
@@ -32,7 +43,7 @@ flat silhouette; "flat" mode (a single material color) is available as a toggle.
 | Point size    | `PointsMaterial.size` (0.002–0.05)                  |
 | Color mode    | flat material color vs. per-vertex color-by-height  |
 | Show helpers  | toggles `Box3Helper` + `AxesHelper`                 |
-| Reset camera  | re-frames the camera to the cloud's bounding box    |
+| Reset camera  | re-frames the elevated 3/4 view to the scan's center |
 | Stats overlay | point count, rolling FPS, camera distance           |
 
 ## e2e strategy
