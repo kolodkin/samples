@@ -49,11 +49,14 @@ export function createViewer(canvas, { modelUrl = './models/kitti-velodyne-00000
     const radius = sceneRadius; // ignore far stray returns so the scene fills the view
     // Axis convention after normalizeGeometry: +X is forward (down the road),
     // +Y is up, +Z is right, and the sensor sits at the cloud center. Pull the
-    // eye up and behind the sensor and aim it forward and down at the road ahead,
-    // an elevated chase view that pulls back so the whole scene reads at once
-    // (the sensor blind-spot ring sits in the foreground).
-    const eye = center.clone().add(new THREE.Vector3(-1.4, 1.17, 0).multiplyScalar(radius));
-    const look = center.clone().add(new THREE.Vector3(0.8, -0.1, 0).multiplyScalar(radius));
+    // eye up and behind the sensor and aim it forward at the road ahead, an
+    // elevated chase view that pulls back so the whole scene reads at once (the
+    // sensor blind-spot ring sits in the foreground). The eye sits above the
+    // target, so the view still looks down even with a level aim point.
+    // Offsets are round multiples of 0.1 so that, at sceneRadius 0.5, the eye
+    // and target land on clean values in the HUD readout.
+    const eye = center.clone().add(new THREE.Vector3(-1.4, 1.2, 0).multiplyScalar(radius));
+    const look = center.clone().add(new THREE.Vector3(0.8, 0, 0).multiplyScalar(radius));
     camera.position.copy(eye);
     controls.target.copy(look);
     camera.near = radius / 100;
