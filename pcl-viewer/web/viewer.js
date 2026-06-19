@@ -157,6 +157,11 @@ export function createViewer(canvas, { modelUrl = './models/Zaghetto.pcd' } = {}
     dispose() {
       cancelAnimationFrame(raf);
       window.removeEventListener('resize', resize);
+      controls.dispose();
+      if (points) {
+        points.geometry.dispose();
+        points.material.dispose();
+      }
       renderer.dispose();
     },
   };
