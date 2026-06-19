@@ -48,11 +48,12 @@ export function createViewer(canvas, { modelUrl = './models/kitti-velodyne-00000
     const center = box.getCenter(new THREE.Vector3());
     const radius = sceneRadius; // ignore far stray returns so the scene fills the view
     // Axis convention after normalizeGeometry: +X is forward (down the road),
-    // +Y is up, +Z is right, and the sensor sits at the cloud center. Put the
-    // eye just above the sensor and aim it forward and slightly down at the road
-    // ahead, so it reads like an onboard camera looking straight down the street.
-    const eye = center.clone().add(new THREE.Vector3(0, 0.25, 0).multiplyScalar(radius));
-    const look = center.clone().add(new THREE.Vector3(1.4, -0.15, 0).multiplyScalar(radius));
+    // +Y is up, +Z is right, and the sensor sits at the cloud center. Pull the
+    // eye up and behind the sensor and aim it forward and down at the road ahead,
+    // an elevated chase view that pulls back so the whole scene reads at once
+    // (the sensor blind-spot ring sits in the foreground).
+    const eye = center.clone().add(new THREE.Vector3(-1.4, 1.17, 0).multiplyScalar(radius));
+    const look = center.clone().add(new THREE.Vector3(0.8, -0.1, 0).multiplyScalar(radius));
     camera.position.copy(eye);
     controls.target.copy(look);
     camera.near = radius / 100;
@@ -154,9 +155,13 @@ export function createViewer(canvas, { modelUrl = './models/kitti-velodyne-00000
     setColorMode(mode) { applyColorMode(mode); },
     resetCamera() { if (points) frameCamera(); },
     getStats() {
+      const e = camera.position, t = controls.target;
+      const vec = (v) => ({ x: v.x, y: v.y, z: v.z }); // snapshot, don't leak the live Vector3
       return {
         pointCount: state.pointCount,
-        cameraDistance: camera.position.distanceTo(controls.target),
+        cameraDistance: e.distanceTo(t),
+        eye: vec(e),
+        target: vec(t),
       };
     },
     // e2e helper: count non-background pixels in the rendered frame.
