@@ -40,13 +40,6 @@ def test_color_mode_toggle(server_url, page):
     page.wait_for_function("() => window.__PCL.settings.colorMode === 'flat'")
 
 
-def test_helpers_toggle(server_url, page):
-    page.goto(server_url + "/")
-    _wait_ready(page)
-    page.get_by_test_id("helpers").check()
-    page.wait_for_function("() => window.__PCL.settings.helpers === true")
-
-
 def test_reset_camera(server_url, page):
     page.goto(server_url + "/")
     _wait_ready(page)

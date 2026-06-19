@@ -10,7 +10,7 @@ Python server, never a CDN at test time). Preact renders via `htm` — no JSX/tr
 
 ## Component boundaries
 - `viewer.js` — `createViewer(canvas)` returns an imperative handle
-  (`setPointSize`, `setColorMode`, `resetCamera`, `toggleHelpers`, `getStats`,
+  (`setPointSize`, `setColorMode`, `resetCamera`, `getStats`,
   `visiblePixelCount`, `dispose`). Owns all three.js state. No Preact.
 - `app.js` — pure Preact UI; owns control state and drives the handle. No three.js
   internals.
@@ -43,7 +43,6 @@ rings sweep to the horizon and cars/walls/poles stand up along the street.
 |---------------|-----------------------------------------------------|
 | Point size    | `PointsMaterial.size` (0.002–0.05)                  |
 | Color mode    | flat material color vs. per-vertex color-by-height  |
-| Show helpers  | toggles `Box3Helper` + `AxesHelper`                 |
 | Reset camera  | re-frames the low forward-facing view down the road  |
 | Stats overlay | point count, rolling FPS, camera distance           |
 

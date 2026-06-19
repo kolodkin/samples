@@ -25,14 +25,11 @@ export function createViewer(canvas, { modelUrl = './models/kitti-velodyne-00000
   let points = null;
   let baseColors = null; // Float32Array of height-mapped colors
   let sceneRadius = 1; // robust horizontal radius of the scan, in normalized units
-  const helpers = new THREE.Group();
-  helpers.visible = false;
-  scene.add(helpers);
 
   const state = {
     ready: false,
     pointCount: 0,
-    settings: { pointSize: 0.004, colorMode: 'height', helpers: false },
+    settings: { pointSize: 0.004, colorMode: 'height' },
     framesRendered: 0,
   };
   window.__PCL = state;
@@ -100,14 +97,6 @@ export function createViewer(canvas, { modelUrl = './models/kitti-velodyne-00000
     points.material.needsUpdate = true;
   }
 
-  function buildHelpers() {
-    helpers.clear();
-    const box = new THREE.Box3().setFromObject(points);
-    helpers.add(new THREE.Box3Helper(box, 0xffaa00));
-    const size = box.getSize(new THREE.Vector3()).length();
-    helpers.add(new THREE.AxesHelper(size * 0.5));
-  }
-
   // Normalize an arbitrary cloud into the viewer's working frame: KITTI scans
   // are z-up and ~80 m across, so rotate them y-up, center on the origin and
   // scale to ~unit size. This keeps the camera framing and the point-size
@@ -142,7 +131,6 @@ export function createViewer(canvas, { modelUrl = './models/kitti-velodyne-00000
     baseColors = computeHeightColors(points.geometry);
     applyColorMode(state.settings.colorMode); // height ramp by default
     state.pointCount = points.geometry.getAttribute('position').count;
-    buildHelpers();
     resize();
     frameCamera();
     state.ready = true;
@@ -165,7 +153,6 @@ export function createViewer(canvas, { modelUrl = './models/kitti-velodyne-00000
     },
     setColorMode(mode) { applyColorMode(mode); },
     resetCamera() { if (points) frameCamera(); },
-    toggleHelpers(on) { helpers.visible = on; state.settings.helpers = on; },
     getStats() {
       return {
         pointCount: state.pointCount,

@@ -11,7 +11,6 @@ function App() {
   const viewerRef = useRef(null);
   const [pointSize, setPointSize] = useState(0.004);
   const [colorMode, setColorMode] = useState('height');
-  const [showHelpers, setShowHelpers] = useState(false);
   const [stats, setStats] = useState({ pointCount: 0, fps: 0, cameraDistance: 0 });
 
   useEffect(() => {
@@ -41,9 +40,6 @@ function App() {
   const onColor = (e) => {
     setColorMode(e.target.value); viewerRef.current.setColorMode(e.target.value);
   };
-  const onHelpers = (e) => {
-    setShowHelpers(e.target.checked); viewerRef.current.toggleHelpers(e.target.checked);
-  };
   const onReset = () => viewerRef.current.resetCamera();
 
   return html`
@@ -58,11 +54,6 @@ function App() {
         <option value="flat">Flat</option>
         <option value="height">By height</option>
       </select>
-      <div class="toggle">
-        <input type="checkbox" id="helpers" data-testid="helpers"
-               checked=${showHelpers} onChange=${onHelpers} />
-        <label for="helpers" style="margin:0">Show box + axes</label>
-      </div>
       <div class="row">
         <button data-testid="reset" onClick=${onReset}>Reset camera</button>
       </div>
