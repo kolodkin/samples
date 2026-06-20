@@ -25,7 +25,8 @@ the road as concentric scan rings with parked cars, walls, poles and vegetation
 rising out of it. Source: the KITTI dataset (Geiger et al., CVPR 2012), via the
 `Qjizhi/kitti-velodyne-viewer` repo's pre-converted PCDs. KITTI is licensed
 **CC BY-NC-SA 3.0** (non-commercial, attribution, share-alike) — fine for this demo,
-but note it is *not* permissively licensed like the rest of the project.
+but note it is *not* permissively licensed like the rest of the project. Full
+source, license terms and citation are in `web/models/ATTRIBUTION.md`.
 
 KITTI uses a z-up vehicle frame in metres, so on load the viewer reorients it
 (z-up → three.js y-up), centers it, and scales by a **robust** horizontal radius
