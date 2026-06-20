@@ -12,6 +12,7 @@ is third-party data redistributed here under its original terms.
 - **Obtained via:** the [`Qjizhi/kitti-velodyne-viewer`](https://github.com/Qjizhi/kitti-velodyne-viewer)
   repository's pre-converted PCD files.
 - **Project page:** https://www.cvlibs.net/datasets/kitti/
+- **Raw data (Velodyne):** https://www.cvlibs.net/datasets/kitti/raw_data.php
 
 ## License
 
