@@ -29,6 +29,8 @@ export function createViewer(canvas) {
   const dracoLoader = new DRACOLoader();
   dracoLoader.setDecoderPath('./vendor/draco/');
   dracoLoader.setDecoderConfig({ type: 'wasm' });
+  dracoLoader.preload(); // warm the WASM worker at startup so the first movie
+                         // frame doesn't pay cold-compile cost mid-playback
 
   let points = null;       // the live THREE.Points object
   let baseColors = null;   // Float32Array height-mapped colors for the current geometry

@@ -84,3 +84,53 @@ def test_screenshot_capture(server_url, page, tmp_path):
     out = tmp_path / "pcl-viewer.png"
     page.screenshot(path=str(out))
     assert out.stat().st_size > 5000
+
+
+def test_static_scene_from_url(server_url, page):
+    # Point the "table" scene at the locally-served model so the static URL path
+    # is tested offline (same loadStatic code path as the real PCL table scene).
+    page.goto(server_url + "/?pclUrl=/models/kitti-velodyne-000000.pcd")
+    _wait_ready(page)
+    page.get_by_test_id("menu-toggle").click()
+    page.get_by_test_id("scene").select_option("table")
+    page.wait_for_function("() => window.__PCL.scene === 'table' && window.__PCL.ready === true",
+                           timeout=20000)
+    visible = page.evaluate("() => window.__PCL.handle.visiblePixelCount()")
+    assert visible > 1000
+
+
+def test_movie_scene_plays_and_pauses(server_url, page):
+    page.goto(server_url + "/?movieBase=/fixtures/movie/&movieCount=4")
+    _wait_ready(page)
+    page.get_by_test_id("menu-toggle").click()
+    page.get_by_test_id("scene").select_option("movie")
+    page.wait_for_function(
+        "() => window.__PCL.scene === 'movie' && window.__PCL.ready === true && window.__PCL.frameCount === 4",
+        timeout=30000)
+    # It auto-plays: the frame index advances.
+    page.wait_for_function("() => window.__PCL.playing === true")
+    start = page.evaluate("() => window.__PCL.frameIndex")
+    page.wait_for_function(f"() => window.__PCL.frameIndex !== {start}", timeout=5000)
+    # The cloud renders.
+    assert page.evaluate("() => window.__PCL.handle.visiblePixelCount()") > 500
+    # Pause stops advancement.
+    page.get_by_test_id("play-pause").click()
+    page.wait_for_function("() => window.__PCL.playing === false")
+    frozen = page.evaluate("() => window.__PCL.frameIndex")
+    page.wait_for_timeout(700)
+    assert page.evaluate("() => window.__PCL.frameIndex") == frozen
+
+
+def test_scene_switch_back_stops_movie(server_url, page):
+    page.goto(server_url + "/?movieBase=/fixtures/movie/&movieCount=4")
+    _wait_ready(page)
+    page.get_by_test_id("menu-toggle").click()
+    page.get_by_test_id("scene").select_option("movie")
+    page.wait_for_function("() => window.__PCL.scene === 'movie' && window.__PCL.ready === true")
+    page.get_by_test_id("scene").select_option("city")
+    page.wait_for_function("() => window.__PCL.scene === 'city' && window.__PCL.ready === true",
+                           timeout=20000)
+    # Movie timer torn down: not playing, frameCount reset.
+    assert page.evaluate("() => window.__PCL.playing") is False
+    assert page.evaluate("() => window.__PCL.frameCount") == 0
+    assert page.evaluate("() => window.__PCL.pointCount") == 115385
