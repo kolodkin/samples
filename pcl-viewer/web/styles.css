@@ -29,3 +29,5 @@ html, body { margin: 0; height: 100%; background: #101418; color: #e6edf3;
 .hud div { margin: 2px 0; }
 .hud .vec { color: #9fb0c0; white-space: pre; }
 .hud b { color: #58a6ff; }
+
+.hud .err { color: #ff8080; max-width: 18rem; }
