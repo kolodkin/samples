@@ -13,6 +13,7 @@ def test_point_cloud_loads_and_renders(server_url, page):
 
     point_count = page.evaluate("() => window.__PCL.pointCount")
     assert point_count == 115385
+    assert page.evaluate("() => window.__PCL.scene") == "city"
 
     # Stats overlay reflects the loaded cloud.
     expect(page.get_by_test_id("point-count")).to_have_text("115,385")
