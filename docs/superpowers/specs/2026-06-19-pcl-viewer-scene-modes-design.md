@@ -120,9 +120,10 @@ A generator script (committed; **not run in CI**, run once to publish):
 1. Download KITTI raw drive 0005 sync zip from the public S3 mirror.
 2. Extract `velodyne_points/data/*.bin`, parse float32 `x,y,z,reflectance`.
 3. Voxel-grid downsample each frame to ~30k points.
-4. **Draco-encode** each frame (e.g. Python `DracoPy`) with **14-bit position**
-   quantization (~1 cm over the scene, below the LiDAR's own noise → effectively
-   lossless vs. the decimated frame) and **8-bit intensity** → `NNNNNN.drc`
+4. **Draco-encode** each frame (e.g. Python `DracoPy`) — **positions only**
+   (the viewer colors by height/flat, so KITTI reflectance is dropped) — with
+   **14-bit position** quantization (~1 cm over the scene, below the LiDAR's own
+   noise → effectively lossless vs. the decimated frame) → `NNNNNN.drc`
    (~60–90 KB/frame; ≈10–13 MB for ~150 frames, roughly 4× smaller than gzipped
    PCD). Draco output is already compressed — not gzipped again.
 5. Create/upload to a new public HF dataset (`kolodkin/pcl-viewer-kitti-movie`)
