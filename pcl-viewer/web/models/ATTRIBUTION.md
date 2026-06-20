@@ -18,6 +18,7 @@ is third-party data redistributed here under its original terms.
 
 **Creative Commons Attribution-NonCommercial-ShareAlike 3.0** (CC BY-NC-SA 3.0):
 
+- KITTI's own license declaration (project page footer): https://www.cvlibs.net/datasets/kitti/
 - License deed (summary): https://creativecommons.org/licenses/by-nc-sa/3.0/
 - Legal code (full text): https://creativecommons.org/licenses/by-nc-sa/3.0/legalcode
 
