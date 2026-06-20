@@ -22,10 +22,9 @@ Python server, never a CDN at test time). Preact renders via `htm` — no JSX/tr
 data: a single 360° street-level LiDAR scan (binary PCD, `FIELDS x y z intensity`,
 115,385 points, ~1.8 MB). It is a *city viewpoint* cloud — one sensor sweep showing
 the road as concentric scan rings with parked cars, walls, poles and vegetation
-rising out of it. Source: the KITTI dataset (Geiger et al., CVPR 2012), via the
-`Qjizhi/kitti-velodyne-viewer` repo's pre-converted PCDs. KITTI is licensed
-**CC BY-NC-SA 3.0** (non-commercial, attribution, share-alike) — fine for this demo,
-but note it is *not* permissively licensed like the rest of the project.
+rising out of it. It comes from the KITTI dataset and is licensed
+**CC BY-NC-SA 3.0** — *not* permissively licensed like the rest of the project; see
+`web/models/ATTRIBUTION.md` for the source, license terms, and citation.
 
 KITTI uses a z-up vehicle frame in metres, so on load the viewer reorients it
 (z-up → three.js y-up), centers it, and scales by a **robust** horizontal radius
