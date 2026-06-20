@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import socket
 import subprocess
 import threading
@@ -14,6 +15,19 @@ import pytest
 HERE = os.path.dirname(os.path.abspath(__file__))
 WEB = os.path.join(HERE, "web")
 VENDOR = os.path.join(WEB, "vendor")
+TESTS_FIXTURES = os.path.join(HERE, "tests", "fixtures")
+WEB_FIXTURES = os.path.join(WEB, "fixtures")
+
+
+def _stage_fixtures() -> None:
+    """Copy tests/fixtures/ into web/fixtures/ so the test server serves them
+    (e.g. /fixtures/movie/000000.drc). The served copy is gitignored."""
+    if os.path.exists(WEB_FIXTURES):
+        shutil.rmtree(WEB_FIXTURES)
+    shutil.copytree(
+        TESTS_FIXTURES, WEB_FIXTURES,
+        ignore=shutil.ignore_patterns("*.py", "__pycache__"),
+    )
 
 
 def _free_port() -> int:
@@ -29,6 +43,7 @@ def vendored():
     if not os.path.exists(sentinel):
         subprocess.run(["bash", os.path.join(HERE, "vendor.sh")], check=True)
     assert os.path.exists(sentinel), "vendor.sh did not populate web/vendor/"
+    _stage_fixtures()
 
 
 @pytest.fixture()

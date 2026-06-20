@@ -77,3 +77,6 @@ pcl-viewer/_site/
 
 # pcl-viewer Playwright test output (screenshots, traces)
 pcl-viewer/test-results/
+
+# pcl-viewer test fixtures staged into the served web/ dir (by conftest)
+pcl-viewer/web/fixtures/
