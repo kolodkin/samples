@@ -42,6 +42,18 @@ The camera sits low and forward-facing — just above the sensor's forward (+X) 
 looking down the road — so the scan reads like an onboard driving view: ground
 rings sweep to the horizon and cars/walls/poles stand up along the street.
 
+## Sphere-impostor points
+Points render as lit sphere impostors rather than the default flat square
+sprites. `PointsMaterial.onBeforeCompile` injects a snippet after
+`<color_fragment>` that clips each point quad to a circle (`discard` outside the
+unit disc), reconstructs a hemisphere normal from `gl_PointCoord`, and shades it
+with ambient + diffuse + a tight specular highlight, so every point reads as a
+tiny 3D ball. The light is fixed in **view space**, so highlights stay put as the
+cloud orbits. Going through `onBeforeCompile` (rather than a bespoke
+`ShaderMaterial`) keeps the size slider, `sizeAttenuation`, and per-vertex color
+ramps working unchanged — the shading multiplies into `diffuseColor`, whatever
+its source.
+
 ## Controls
 | Control       | Effect                                              |
 |---------------|-----------------------------------------------------|
