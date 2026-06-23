@@ -58,6 +58,21 @@ from .models import HFPublishResult, QualityIssues, RawProfile
 from .report import generate_report
 from .tmdb import enrich_with_tmdb, load_tmdb_dump, measure_enrichment
 
+_HF_TOKEN_REQUIRED_MSG = "publish_hf=True (--publish) requires the HF_TOKEN environment variable to be set"
+
+
+def _require_hf_token_if_publishing(publish_hf: bool) -> None:
+    """Enforce the ``publish_hf`` ⇒ ``HF_TOKEN`` invariant.
+
+    Called from both ``main()`` (the CLI registration entry, for fast feedback)
+    and the ``@job`` entry-point body (the authoritative execution-time gate): a
+    worker — or a catalog re-run — runs the entry point *without* going through
+    ``main()``, so the body must re-check rather than trust registration.
+    """
+    if publish_hf and not os.environ.get("HF_TOKEN"):
+        raise ValueError(_HF_TOKEN_REQUIRED_MSG)
+
+
 # =============================================================================
 # Tasks
 # =============================================================================
@@ -370,12 +385,8 @@ def imdb_dataset_pipeline(
     plots = enrich_with_tmdb(clean=clean, tmdb=tmdb)
     enrichment_stats = measure_enrichment(clean=clean, plots=plots)
 
-    if publish_hf:
-        if not os.environ.get("HF_TOKEN"):
-            raise ValueError("publish_hf=True (--publish) requires the HF_TOKEN environment variable to be set")
-        hf_result = publish_to_huggingface(enriched=plots)
-    else:
-        hf_result = None
+    _require_hf_token_if_publishing(publish_hf)
+    hf_result = publish_to_huggingface(enriched=plots) if publish_hf else None
 
     if publish_airtable:
         airtable_validation = validate_airtable_credentials()
@@ -417,8 +428,7 @@ async def main(**kwargs):
     registration path fails immediately (before a worker picks up the job),
     not just when the entry-point task runs.
     """
-    if kwargs.get("publish_hf") and not os.environ.get("HF_TOKEN"):
-        raise ValueError("publish_hf=True (--publish) requires the HF_TOKEN environment variable to be set")
+    _require_hf_token_if_publishing(bool(kwargs.get("publish_hf")))
     created_job = await imdb_dataset_pipeline(**kwargs)
     print(f"Registered job: {created_job.name} (ID: {created_job.id})")
     return created_job
