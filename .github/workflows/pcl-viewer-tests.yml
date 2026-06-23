@@ -1,0 +1,48 @@
+name: pcl-viewer-tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'pcl-viewer/**'
+      - '.github/workflows/pcl-viewer-tests.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'pcl-viewer/**'
+      - '.github/workflows/pcl-viewer-tests.yml'
+
+permissions:
+  contents: read
+
+# A newer push to the same ref supersedes an in-flight run.
+concurrency:
+  group: pcl-viewer-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pcl-viewer
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      # The `vendored` session fixture runs vendor.sh on demand, but do it here
+      # so a vendoring failure surfaces as its own step rather than a test error.
+      - name: Vendor frontend ES modules
+        run: ./vendor.sh
+
+      - name: Install Playwright Chromium (with OS deps)
+        run: uv run --group dev playwright install --with-deps chromium
+
+      - name: Run tests
+        run: uv run --group dev pytest -q
