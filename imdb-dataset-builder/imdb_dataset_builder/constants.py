@@ -33,7 +33,7 @@ IMDB_RAW_COLUMNS: dict[str, ColumnInfo] = {
 CLEAN_COLUMNS: dict[str, ColumnInfo] = {
     "tconst": ColumnInfo("String", description="IMDb title identifier (e.g. tt0000001)"),
     "primaryTitle": ColumnInfo("String", description="Popular title used for promotion"),
-    "startYear": ColumnInfo("String", description="Release year (>= 1980)"),
+    "startYear": ColumnInfo("String", description="Release year (>= 1950)"),
     "genres": ColumnInfo("Array(String)", description="Genre tags (no Adult)"),
     "runtimeMinutes": ColumnInfo("String", description="Runtime in minutes (40-300)"),
 }

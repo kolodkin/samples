@@ -2,11 +2,11 @@
 # IMDb Dataset Builder: load, curate, and profile IMDb title.basics data,
 # then optionally publish the clean dataset to Hugging Face.
 #
-# Usage: ./imdb-dataset-builder.sh [--full] [--year-from YEAR] [--publish] [--airtable]
+# Usage: ./imdb-dataset-builder.sh [--sample] [--year-from YEAR] [--publish] [--airtable]
 #
 # Options:
-#   --full              Run on the full ~10M row dataset (default: 500k row demo limit)
-#   --year-from YEAR    Earliest startYear to keep in the curated output (default: 1980)
+#   --sample            Run on a 500k row sample (default: full ~12.6M row dataset)
+#   --year-from YEAR    Earliest startYear to keep in the curated output (default: 1950)
 #   --publish           Publish the curated dataset to Hugging Face (default: off;
 #                       requires HF_TOKEN — registration fails if it is unset)
 #   --airtable          Publish the showcase sample to Airtable (default: off; also
@@ -30,9 +30,10 @@ mkdir -p tmp
 PARAMS_PARTS=()
 while [ $# -gt 0 ]; do
     case "$1" in
-        --full)
-            echo "Running on full IMDb dataset (~10M rows)..."
-            PARAMS_PARTS+=('"limit": null')
+        --sample)
+            echo "Running on 500k row sample..."
+            PARAMS_PARTS+=('"limit": 500000')
+            SAMPLE_MODE=1
             shift
             ;;
         --year-from)
@@ -51,14 +52,14 @@ while [ $# -gt 0 ]; do
             ;;
         *)
             echo "Unknown flag: $1" >&2
-            echo "Usage: $0 [--full] [--year-from YEAR] [--publish] [--airtable]" >&2
+            echo "Usage: $0 [--sample] [--year-from YEAR] [--publish] [--airtable]" >&2
             exit 1
             ;;
     esac
 done
 
-if [ ${#PARAMS_PARTS[@]} -eq 0 ]; then
-    echo "Running on 500k row demo (pass --full for complete dataset)..."
+if [ -z "${SAMPLE_MODE:-}" ]; then
+    echo "Running on full IMDb dataset (~12.6M rows; pass --sample for a 500k-row demo)..."
 fi
 
 PARAMS_ARG=""
