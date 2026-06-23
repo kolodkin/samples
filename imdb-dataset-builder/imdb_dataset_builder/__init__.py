@@ -16,8 +16,9 @@ loaded directly from the official IMDb datasets URL:
   - Inner join on tconst via Object.join (clean ⋈ tmdb)
   - Computed alias renames TMDB's `overview` → `plot` for the public schema
 - Hugging Face Publishing (optional, requires HF_TOKEN env var)
-- Airtable Showcase Publishing (optional, requires AIRTABLE_API_KEY +
-  AIRTABLE_BASE_ID; ~200-row sample stratified by genre)
+- Airtable Showcase Publishing (opt-in via publish_airtable=True, also
+  requires AIRTABLE_API_KEY + AIRTABLE_BASE_ID; ~200-row sample stratified
+  by genre)
 
 Data source: IMDb Non-Commercial Datasets (title.basics)
 https://datasets.imdbws.com/title.basics.tsv.gz
@@ -303,7 +304,7 @@ async def export_dataset(enriched: Object, formats: list[str], out_dir: str) -> 
 
 
 @job("imdb_dataset_builder")
-def imdb_dataset_pipeline(limit: int | None = 500_000, year_from: int = 1980):
+def imdb_dataset_pipeline(limit: int | None = 500_000, year_from: int = 1980, publish_airtable: bool = False):
     """
     IMDb Movie Dataset Builder Pipeline.
 
@@ -334,10 +335,14 @@ def imdb_dataset_pipeline(limit: int | None = 500_000, year_from: int = 1980):
         limit: Row limit for demo runs. Set to None for the full ~10M-row dataset.
         year_from: Earliest ``startYear`` to keep in the curated output. Defaults
             to 1980 — older entries have spottier metadata.
+        publish_airtable: Opt in to the Airtable showcase branch. Defaults to
+            ``False`` — even with ``AIRTABLE_API_KEY`` / ``AIRTABLE_BASE_ID`` set,
+            the Airtable tasks are skipped unless this is explicitly ``True``.
 
     Environment variables:
         HF_TOKEN              — publish curated dataset to Hugging Face Hub
         AIRTABLE_API_KEY      — publish a 200-row showcase to Airtable
+                                (also requires ``publish_airtable=True``)
         AIRTABLE_BASE_ID      — Airtable base id (required when AIRTABLE_API_KEY is set)
         AIRTABLE_TABLE_NAME   — Airtable table name (default "IMDB")
         IMDB_TMDB_URL         — override TMDB enrichment Parquet URL
@@ -358,9 +363,12 @@ def imdb_dataset_pipeline(limit: int | None = 500_000, year_from: int = 1980):
 
     hf_result = publish_to_huggingface(enriched=plots) if os.environ.get("HF_TOKEN") else None
 
-    airtable_validation = validate_airtable_credentials()
-    airtable_sample = sample_for_airtable(plots=plots, genre_balance=genre_balance, validation=airtable_validation)
-    airtable_result = publish_to_airtable(sample=airtable_sample, validation=airtable_validation)
+    if publish_airtable:
+        airtable_validation = validate_airtable_credentials()
+        airtable_sample = sample_for_airtable(plots=plots, genre_balance=genre_balance, validation=airtable_validation)
+        airtable_result = publish_to_airtable(sample=airtable_sample, validation=airtable_validation)
+    else:
+        airtable_result = None
 
     export_formats = [f.strip().lower() for f in os.environ.get("IMDB_DATASET_EXPORTS", "").split(",") if f.strip()]
     exports = (
