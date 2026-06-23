@@ -7,30 +7,36 @@ import { PCDLoader } from 'three/addons/loaders/PCDLoader.js';
 const BG = 0x101418;
 const FLAT_COLOR = 0x66ccff;
 
-// Render each point as a lit sphere impostor instead of the default flat square
-// sprite: clip the quad to a circle, rebuild a hemisphere normal from
-// gl_PointCoord, and shade it (ambient + diffuse + a tight specular highlight)
-// so every point reads as a tiny 3D ball. Injected into PointsMaterial via
-// onBeforeCompile so the size slider, size attenuation, and per-vertex color
-// ramps all keep working untouched. The light is fixed in view space, so the
-// highlights stay put as the cloud orbits — like a studio key light on the lens.
-function sphereImpostorShading(material) {
+// Render each point either as a lit sphere impostor ("ball", the default) or as
+// the plain flat square sprite ("square", three.js's stock point look). Both go
+// through PointsMaterial.onBeforeCompile so the size slider, size attenuation,
+// and per-vertex color ramps keep working untouched; a `uBall` uniform (1/0)
+// flips the fragment behavior at runtime with no recompile. For the ball: clip
+// the quad to a circle, rebuild a hemisphere normal from gl_PointCoord, and
+// shade it (ambient + diffuse + a tight specular highlight) so every point reads
+// as a tiny 3D ball. The light is fixed in view space, so the highlights stay
+// put as the cloud orbits — like a studio key light on the lens.
+function installPointShapeShading(material) {
+  material.userData.ballUniform = { value: 1 }; // 1 = ball, 0 = square
   material.onBeforeCompile = (shader) => {
-    shader.fragmentShader = shader.fragmentShader.replace(
+    shader.uniforms.uBall = material.userData.ballUniform;
+    shader.fragmentShader = 'uniform float uBall;\n' + shader.fragmentShader.replace(
       '#include <color_fragment>',
       `#include <color_fragment>
-      // gl_PointCoord is top-left origin; map to [-1,1] and flip Y so the
-      // light reads as coming from above-front. Outside the unit disc -> clip.
-      vec2 impostorUv = vec2(1.0, -1.0) * (2.0 * gl_PointCoord - 1.0);
-      float impostorR2 = dot(impostorUv, impostorUv);
-      if (impostorR2 > 1.0) discard;
-      vec3 impostorN = vec3(impostorUv, sqrt(1.0 - impostorR2));
-      vec3 impostorL = normalize(vec3(0.35, 0.55, 0.75));
-      float impostorDiff = max(dot(impostorN, impostorL), 0.0);
-      float impostorSpec = pow(max(
-        dot(reflect(-impostorL, impostorN), vec3(0.0, 0.0, 1.0)), 0.0), 24.0);
-      float impostorShade = 0.35 + 0.75 * impostorDiff;
-      diffuseColor.rgb = diffuseColor.rgb * impostorShade + vec3(impostorSpec) * 0.5;`,
+      if (uBall > 0.5) {
+        // gl_PointCoord is top-left origin; map to [-1,1] and flip Y so the
+        // light reads as coming from above-front. Outside the unit disc -> clip.
+        vec2 impostorUv = vec2(1.0, -1.0) * (2.0 * gl_PointCoord - 1.0);
+        float impostorR2 = dot(impostorUv, impostorUv);
+        if (impostorR2 > 1.0) discard;
+        vec3 impostorN = vec3(impostorUv, sqrt(1.0 - impostorR2));
+        vec3 impostorL = normalize(vec3(0.35, 0.55, 0.75));
+        float impostorDiff = max(dot(impostorN, impostorL), 0.0);
+        float impostorSpec = pow(max(
+          dot(reflect(-impostorL, impostorN), vec3(0.0, 0.0, 1.0)), 0.0), 24.0);
+        float impostorShade = 0.35 + 0.75 * impostorDiff;
+        diffuseColor.rgb = diffuseColor.rgb * impostorShade + vec3(impostorSpec) * 0.5;
+      }`,
     );
   };
 }
@@ -57,7 +63,7 @@ export function createViewer(canvas, { modelUrl = './models/kitti-velodyne-00000
   const state = {
     ready: false,
     pointCount: 0,
-    settings: { pointSize: 0.004, colorMode: 'height' },
+    settings: { pointSize: 0.004, colorMode: 'height', pointShape: 'ball' },
     framesRendered: 0,
   };
   window.__PCL = state;
@@ -182,7 +188,7 @@ export function createViewer(canvas, { modelUrl = './models/kitti-velodyne-00000
       color: FLAT_COLOR,
       sizeAttenuation: true,
     });
-    sphereImpostorShading(points.material); // round, lit "3D ball" per point
+    installPointShapeShading(points.material); // ball (default) or square sprite
     scene.add(points);
     colorBuffers = computeColorBuffers(points.geometry);
     applyColorMode(state.settings.colorMode); // height ramp by default
@@ -208,6 +214,13 @@ export function createViewer(canvas, { modelUrl = './models/kitti-velodyne-00000
       if (points) { points.material.size = n; points.material.needsUpdate = true; }
     },
     setColorMode(mode) { applyColorMode(mode); },
+    setPointShape(shape) {
+      state.settings.pointShape = shape === 'square' ? 'square' : 'ball';
+      if (points) {
+        points.material.userData.ballUniform.value =
+          state.settings.pointShape === 'ball' ? 1 : 0;
+      }
+    },
     resetCamera() { if (points) frameCamera(); },
     getStats() {
       const e = camera.position, t = controls.target;

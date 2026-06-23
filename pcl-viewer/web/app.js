@@ -11,6 +11,7 @@ function App() {
   const viewerRef = useRef(null);
   const [pointSize, setPointSize] = useState(0.004);
   const [colorMode, setColorMode] = useState('height');
+  const [pointShape, setPointShape] = useState('ball');
   const [menuOpen, setMenuOpen] = useState(false);
   const origin = { x: 0, y: 0, z: 0 }; // placeholder until the first stats tick
   const [stats, setStats] = useState({
@@ -47,6 +48,9 @@ function App() {
   const onColor = (e) => {
     setColorMode(e.target.value); viewerRef.current.setColorMode(e.target.value);
   };
+  const onShape = (e) => {
+    setPointShape(e.target.value); viewerRef.current.setPointShape(e.target.value);
+  };
   const onReset = () => viewerRef.current.resetCamera();
   const fmt = (v) => `${v.x.toFixed(2)}  ${v.y.toFixed(2)}  ${v.z.toFixed(2)}`;
 
@@ -61,6 +65,11 @@ function App() {
       <div class="backdrop" data-testid="backdrop" onClick=${() => setMenuOpen(false)}></div>
       <div class="panel controls" data-testid="controls">
         <h1>PCL Viewer</h1>
+        <label>Point shape</label>
+        <select data-testid="point-shape" value=${pointShape} onChange=${onShape}>
+          <option value="ball">Ball (3D)</option>
+          <option value="square">Square</option>
+        </select>
         <label>Point size: ${pointSize.toFixed(3)}</label>
         <input type="range" min="0.002" max="0.05" step="0.001"
                value=${pointSize} data-testid="point-size" onInput=${onSize} />

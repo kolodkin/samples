@@ -50,6 +50,22 @@ def test_color_mode_toggle(server_url, page):
         assert page.evaluate("() => window.__PCL.handle.visiblePixelCount()") > 1000
 
 
+def test_point_shape_toggle(server_url, page):
+    page.goto(server_url + "/")
+    _wait_ready(page)
+    # Points render as 3D balls by default.
+    assert page.evaluate("() => window.__PCL.settings.pointShape") == "ball"
+    page.get_by_test_id("menu-toggle").click()  # controls live in a modal
+    # Switching to the older square sprite takes effect and keeps rendering.
+    page.get_by_test_id("point-shape").select_option("square")
+    page.wait_for_function("() => window.__PCL.settings.pointShape === 'square'")
+    assert page.evaluate("() => window.__PCL.handle.visiblePixelCount()") > 1000
+    # And back to balls.
+    page.get_by_test_id("point-shape").select_option("ball")
+    page.wait_for_function("() => window.__PCL.settings.pointShape === 'ball'")
+    assert page.evaluate("() => window.__PCL.handle.visiblePixelCount()") > 1000
+
+
 def test_reset_camera(server_url, page):
     page.goto(server_url + "/")
     _wait_ready(page)
