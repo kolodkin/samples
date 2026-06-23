@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# Local (non-Docker) PostgreSQL setup, aaiclick-ready.
+#
+# No CI workflow uses Postgres today; this provisions a local server matching
+# aaiclick's own POSTGRES_* connection defaults so the orchestration backend
+# works out of the box. Installs and starts PostgreSQL via apt, creates the
+# aaiclick role + database, and runs the aaiclick migrations so the
+# orchestration tables (jobs, ...) exist.
+#
+# Connection contract (override via env):
+#   host      localhost
+#   port      5432             (POSTGRES_PORT)
+#   user      aaiclick         (POSTGRES_USER)
+#   password  secret           (POSTGRES_PASSWORD)
+#   database  aaiclick         (POSTGRES_DB)
+#
+# After running, point aaiclick at it with:
+#   export AAICLICK_SQL_URL="postgresql+asyncpg://aaiclick:secret@localhost:5432/aaiclick"
+#
+# Usage:
+#   scripts/setup_postgres
+#   POSTGRES_PASSWORD=hunter2 scripts/setup_postgres
+#
+# Verify:
+#   psql "postgresql://aaiclick:secret@localhost:5432/aaiclick" -c '\dt'
+
+set -euo pipefail
+
+PG_PORT="${POSTGRES_PORT:-5432}"
+PG_USER="${POSTGRES_USER:-aaiclick}"
+PG_PASSWORD="${POSTGRES_PASSWORD:-secret}"
+PG_DB="${POSTGRES_DB:-aaiclick}"
+
+SUDO=""
+AS_PG=(sudo -u postgres)
+if [ "$(id -u)" -eq 0 ]; then
+    # Already root: no sudo needed, and switch to the postgres OS user with
+    # runuser (peer auth lets only the postgres user log in as the superuser).
+    AS_PG=(runuser -u postgres --)
+else
+    SUDO="sudo"
+fi
+
+echo "Installing PostgreSQL..."
+if ! command -v psql &>/dev/null; then
+    export DEBIAN_FRONTEND=noninteractive
+    $SUDO apt-get install -y -qq postgresql postgresql-client >/dev/null 2>&1
+fi
+
+echo "Starting PostgreSQL cluster..."
+# Prefer the Debian service wrapper; fall back to pg_ctlcluster for the
+# default cluster in container/no-init environments.
+$SUDO service postgresql start >/dev/null 2>&1 || true
+if ! $SUDO pg_isready -q -p "$PG_PORT" 2>/dev/null; then
+    cluster_ver="$(ls /etc/postgresql 2>/dev/null | sort -V | tail -1 || true)"
+    if [ -n "$cluster_ver" ]; then
+        $SUDO pg_ctlcluster "$cluster_ver" main start >/dev/null 2>&1 || true
+    fi
+fi
+
+echo "Waiting for PostgreSQL to accept connections..."
+for _ in $(seq 1 30); do
+    $SUDO pg_isready -q -p "$PG_PORT" 2>/dev/null && break
+    sleep 1
+done
+if ! $SUDO pg_isready -q -p "$PG_PORT" 2>/dev/null; then
+    echo "ERROR: PostgreSQL did not become ready on port ${PG_PORT}" >&2
+    exit 1
+fi
+
+psql_super() { "${AS_PG[@]}" psql -p "$PG_PORT" -v ON_ERROR_STOP=1 "$@"; }
+
+echo "Ensuring role '${PG_USER}' and database '${PG_DB}'..."
+# Role: create if missing, always (re)set the password so it matches the contract.
+if [ "$(psql_super -tAc "SELECT 1 FROM pg_roles WHERE rolname='${PG_USER}'")" = "1" ]; then
+    psql_super -c "ALTER ROLE \"${PG_USER}\" WITH LOGIN PASSWORD '${PG_PASSWORD}';" >/dev/null
+else
+    psql_super -c "CREATE ROLE \"${PG_USER}\" WITH LOGIN PASSWORD '${PG_PASSWORD}';" >/dev/null
+fi
+# Database: create if missing, owned by the role.
+if [ "$(psql_super -tAc "SELECT 1 FROM pg_database WHERE datname='${PG_DB}'")" != "1" ]; then
+    psql_super -c "CREATE DATABASE \"${PG_DB}\" OWNER \"${PG_USER}\";" >/dev/null
+fi
+
+SQL_URL="postgresql+asyncpg://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${PG_DB}"
+
+echo "Running aaiclick migrations..."
+# Self-contained uv env so this does not depend on any project's venv.
+# alembic (sync) needs a sync driver; the runtime uses asyncpg.
+AAICLICK_SQL_URL="$SQL_URL" \
+POSTGRES_HOST=localhost POSTGRES_PORT="$PG_PORT" POSTGRES_USER="$PG_USER" \
+POSTGRES_PASSWORD="$PG_PASSWORD" POSTGRES_DB="$PG_DB" \
+    uv run --with aaiclick --with asyncpg --with psycopg2-binary \
+        python -m aaiclick migrate upgrade head
+
+echo
+echo "PostgreSQL is ready. Point aaiclick at it with:"
+echo "  export AAICLICK_SQL_URL=\"${SQL_URL}\""
