@@ -22,6 +22,31 @@ cd "$SCRIPT_DIR"
 
 PYTHON="${PYTHON:-uv run python}"
 
+# ---------------------------------------------------------------------------
+# Distributed backend (default): real ClickHouse server + PostgreSQL
+# orchestration, instead of embedded chdb + SQLite. This is the correct fit
+# for the worker-process execution model below (chdb + SQLite is single-process
+# and the orchestration schema lives in Postgres via migrations). Connection
+# contracts match scripts/setup_clickhouse and scripts/setup_postgres; override
+# either URL to point at an existing cluster.
+# ---------------------------------------------------------------------------
+export AAICLICK_SQL_URL="${AAICLICK_SQL_URL:-postgresql+asyncpg://aaiclick:secret@localhost:5432/aaiclick}"
+export AAICLICK_CH_URL="${AAICLICK_CH_URL:-clickhouse://default:benchmark@localhost:8123/default}"
+
+# Auto-provision the databases (idempotent — both scripts skip work already
+# done). setup_postgres also runs `aaiclick migrate`, so the orchestration
+# schema exists; no `aaiclick setup` (local-mode bootstrap) is needed.
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+if [ -x "$REPO_ROOT/scripts/setup_clickhouse" ] && [ -x "$REPO_ROOT/scripts/setup_postgres" ]; then
+    echo "Provisioning distributed backend (ClickHouse + PostgreSQL)..."
+    "$REPO_ROOT/scripts/setup_clickhouse"
+    "$REPO_ROOT/scripts/setup_postgres"
+    echo
+else
+    echo "WARNING: scripts/setup_{clickhouse,postgres} not found — assuming a" >&2
+    echo "         distributed backend is already running at the URLs above." >&2
+fi
+
 WORKER_LOG="tmp/imdb_worker.log"
 export AAICLICK_REPORT_FILE="tmp/imdb_report.md"
 mkdir -p tmp

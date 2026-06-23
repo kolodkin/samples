@@ -1,7 +1,7 @@
 IMDb Dataset Builder
 ---
 
-Large-scale data curation pipeline that loads IMDb title.basics (~10M rows) from the official dataset URL, profiles raw data, filters to quality movies (1950+, 40–300 min runtime, non-adult), normalizes genres via explode, enriches each title with Wikipedia plot text via Wikidata `P345` title resolution plus an `AggregatingMergeTree` merge against the Hugging Face `wikimedia/wikipedia` Parquet dump, and optionally publishes a curated Parquet dataset to Hugging Face.
+Large-scale data curation pipeline that loads IMDb title.basics (~10M rows) from the official dataset URL, profiles raw data, filters to quality movies (1950+, 40–300 min runtime, non-adult), normalizes genres via explode, enriches each title with Wikipedia plot text via Wikidata `P345` title resolution plus an `AggregatingMergeTree` merge against the Hugging Face `wikimedia/wikipedia` Parquet dump, and optionally publishes a curated Parquet dataset to Hugging Face. Runs on a distributed backend by default (local ClickHouse server + PostgreSQL orchestration), auto-provisioned via the repo's `scripts/setup_clickhouse` and `scripts/setup_postgres`; override `AAICLICK_CH_URL` / `AAICLICK_SQL_URL` to target an existing cluster.
 
 ```bash
 # Full dataset (~12.6M rows, default)
