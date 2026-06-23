@@ -54,7 +54,45 @@ the point count and that non-background pixels were drawn
 `preserveDrawingBuffer`), exercises each control through the `window.__PCL.settings`
 hook, and captures a screenshot (compatible with `/e2e-screenshots-report`).
 
+## Scenes
+
+| Scene            | Source                                                | Transport                       |
+|------------------|-------------------------------------------------------|---------------------------------|
+| KITTI city view  | `web/models/kitti-velodyne-000000.pcd` (committed)    | same-origin PCD                 |
+| PCL table scene  | `PointCloudLibrary/data` `table_scene_lms400.pcd`     | raw.githubusercontent (CORS)    |
+| KITTI movie      | `kolodkin/pcl-viewer-kitti-movie` (HF dataset)        | HF resolve (CORS), Draco `.drc` |
+
+`web/config.js` holds the scene URLs and the movie frame count, each overridable
+via `?pclUrl=`, `?movieBase=`, `?movieCount=` (used by e2e to point at local
+fixtures). `viewer.js` exposes `loadScene(id)` — `loadStatic` (PCDLoader) for
+city/table, `loadMovie` (DRACOLoader) for the movie. The movie shares one
+normalization transform (computed from frame 0) so points don't pulse; it plays
+at 10 fps and loops, with play/pause. The Draco WASM decoder is vendored into
+`web/vendor/draco/` by `vendor.sh` and preloaded at startup, so playback and the
+offline e2e need no CDN.
+
+### Movie pipeline (`scripts/build_movie_dataset.py`, one-shot)
+
+KITTI raw drive `2011_09_26_drive_0005` → per-frame Velodyne `.bin` →
+voxel-downsample to ~30k points (positions only; the viewer colors by
+height/flat, so reflectance is dropped) → Draco encode (14-bit position
+quantization, ~73 KB/frame, 154 frames) → upload to the HF dataset with a dataset
+card. Frame data is **not** in git; the browser fetches `.drc` at runtime. Tiny
+committed fixtures (`tests/fixtures/movie/*.drc`, built by
+`tests/fixtures/build_fixtures.py`) drive the offline movie e2e — conftest stages
+them into `web/fixtures/`.
+
+### Licensing
+
+KITTI is **CC BY-NC-SA 3.0**. Both the committed city frame and the derived movie
+dataset retain that license with attribution (Geiger et al., IJRR 2013 / CVPR
+2012); the HF dataset card declares `license: cc-by-nc-sa-3.0` and carries the
+citation per the BY + SA terms. The PCL table scene is **BSD-3-Clause**
+(PointCloudLibrary).
+
 ## Run
 - Viewer: `./pcl-viewer.sh` (set `PORT` to override 8000).
 - Tests: `uv run --group dev playwright install chromium` once, then
   `uv run --group dev pytest`.
+- Regenerate the movie dataset (one-shot, needs `HF_TOKEN` with write on the
+  dataset): `uv run --group gen python scripts/build_movie_dataset.py`.
