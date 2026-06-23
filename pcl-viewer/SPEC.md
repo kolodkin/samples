@@ -42,9 +42,24 @@ The camera sits low and forward-facing — just above the sensor's forward (+X) 
 looking down the road — so the scan reads like an onboard driving view: ground
 rings sweep to the horizon and cars/walls/poles stand up along the street.
 
+## Point shape (ball vs. square)
+Points render as lit sphere impostors by default, with the older flat square
+sprite selectable via the **Point shape** control. `PointsMaterial.onBeforeCompile`
+injects a snippet after `<color_fragment>`, gated on a `uBall` uniform (1 = ball,
+0 = square): when on, it clips each point quad to a circle (`discard` outside the
+unit disc), reconstructs a hemisphere normal from `gl_PointCoord`, and shades it
+with ambient + diffuse + a tight specular highlight, so every point reads as a
+tiny 3D ball; when off, the stock square sprite is left untouched. The light is
+fixed in **view space**, so highlights stay put as the cloud orbits. The toggle
+flips the uniform at runtime — no shader recompile. Going through `onBeforeCompile`
+(rather than a bespoke `ShaderMaterial`) keeps the size slider, `sizeAttenuation`,
+and per-vertex color ramps working unchanged — the shading multiplies into
+`diffuseColor`, whatever its source.
+
 ## Controls
 | Control       | Effect                                              |
 |---------------|-----------------------------------------------------|
+| Point shape   | lit sphere impostor ("ball", default) vs. flat square sprite |
 | Point size    | `PointsMaterial.size` (0.002–0.05)                  |
 | Color mode    | flat vs. per-vertex ramp by height / distance / intensity |
 | Reset camera  | re-frames the low forward-facing view down the road  |
