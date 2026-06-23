@@ -2,16 +2,18 @@
 # IMDb Dataset Builder: load, curate, and profile IMDb title.basics data,
 # then optionally publish the clean dataset to Hugging Face.
 #
-# Usage: ./imdb-dataset-builder.sh [--full] [--year-from YEAR] [--airtable]
+# Usage: ./imdb-dataset-builder.sh [--full] [--year-from YEAR] [--publish] [--airtable]
 #
 # Options:
 #   --full              Run on the full ~10M row dataset (default: 500k row demo limit)
 #   --year-from YEAR    Earliest startYear to keep in the curated output (default: 1980)
+#   --publish           Publish the curated dataset to Hugging Face (default: off;
+#                       requires HF_TOKEN — registration fails if it is unset)
 #   --airtable          Publish the showcase sample to Airtable (default: off; also
 #                       requires AIRTABLE_API_KEY + AIRTABLE_BASE_ID)
 #
 # Environment:
-#   HF_TOKEN  — Hugging Face token for dataset publishing (optional)
+#   HF_TOKEN  — Hugging Face token, required when --publish is passed
 
 set -e
 
@@ -37,6 +39,11 @@ while [ $# -gt 0 ]; do
             PARAMS_PARTS+=("\"year_from\": $2")
             shift 2
             ;;
+        --publish)
+            echo "Hugging Face publishing enabled..."
+            PARAMS_PARTS+=('"publish_hf": true')
+            shift
+            ;;
         --airtable)
             echo "Airtable showcase publishing enabled..."
             PARAMS_PARTS+=('"publish_airtable": true')
@@ -44,7 +51,7 @@ while [ $# -gt 0 ]; do
             ;;
         *)
             echo "Unknown flag: $1" >&2
-            echo "Usage: $0 [--full] [--year-from YEAR] [--airtable]" >&2
+            echo "Usage: $0 [--full] [--year-from YEAR] [--publish] [--airtable]" >&2
             exit 1
             ;;
     esac

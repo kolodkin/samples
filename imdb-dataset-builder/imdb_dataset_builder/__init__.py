@@ -15,7 +15,7 @@ loaded directly from the official IMDb datasets URL:
     cross-references IMDb's tconst directly — no SPARQL needed
   - Inner join on tconst via Object.join (clean ⋈ tmdb)
   - Computed alias renames TMDB's `overview` → `plot` for the public schema
-- Hugging Face Publishing (optional, requires HF_TOKEN env var)
+- Hugging Face Publishing (opt-in via publish_hf=True, requires HF_TOKEN env var)
 - Airtable Showcase Publishing (opt-in via publish_airtable=True, also
   requires AIRTABLE_API_KEY + AIRTABLE_BASE_ID; ~200-row sample stratified
   by genre)
@@ -304,7 +304,12 @@ async def export_dataset(enriched: Object, formats: list[str], out_dir: str) -> 
 
 
 @job("imdb_dataset_builder")
-def imdb_dataset_pipeline(limit: int | None = 500_000, year_from: int = 1980, publish_airtable: bool = False):
+def imdb_dataset_pipeline(
+    limit: int | None = 500_000,
+    year_from: int = 1980,
+    publish_hf: bool = False,
+    publish_airtable: bool = False,
+):
     """
     IMDb Movie Dataset Builder Pipeline.
 
@@ -335,12 +340,16 @@ def imdb_dataset_pipeline(limit: int | None = 500_000, year_from: int = 1980, pu
         limit: Row limit for demo runs. Set to None for the full ~10M-row dataset.
         year_from: Earliest ``startYear`` to keep in the curated output. Defaults
             to 1980 — older entries have spottier metadata.
+        publish_hf: Opt in to Hugging Face publishing. Defaults to ``False``.
+            When ``True``, ``HF_TOKEN`` is *required* — registration fails fast
+            with a clear error if it is unset (rather than silently skipping).
         publish_airtable: Opt in to the Airtable showcase branch. Defaults to
             ``False`` — even with ``AIRTABLE_API_KEY`` / ``AIRTABLE_BASE_ID`` set,
             the Airtable tasks are skipped unless this is explicitly ``True``.
 
     Environment variables:
         HF_TOKEN              — publish curated dataset to Hugging Face Hub
+                                (required when ``publish_hf=True``)
         AIRTABLE_API_KEY      — publish a 200-row showcase to Airtable
                                 (also requires ``publish_airtable=True``)
         AIRTABLE_BASE_ID      — Airtable base id (required when AIRTABLE_API_KEY is set)
@@ -361,7 +370,12 @@ def imdb_dataset_pipeline(limit: int | None = 500_000, year_from: int = 1980, pu
     plots = enrich_with_tmdb(clean=clean, tmdb=tmdb)
     enrichment_stats = measure_enrichment(clean=clean, plots=plots)
 
-    hf_result = publish_to_huggingface(enriched=plots) if os.environ.get("HF_TOKEN") else None
+    if publish_hf:
+        if not os.environ.get("HF_TOKEN"):
+            raise ValueError("publish_hf=True (--publish) requires the HF_TOKEN environment variable to be set")
+        hf_result = publish_to_huggingface(enriched=plots)
+    else:
+        hf_result = None
 
     if publish_airtable:
         airtable_validation = validate_airtable_credentials()
@@ -398,7 +412,13 @@ async def main(**kwargs):
 
     ``**kwargs`` are forwarded to ``imdb_dataset_pipeline`` (e.g. ``limit``,
     ``year_from``) so the shell runner can pass tuning via ``--params``.
+
+    The ``publish_hf`` / ``HF_TOKEN`` invariant is checked here too so the CLI
+    registration path fails immediately (before a worker picks up the job),
+    not just when the entry-point task runs.
     """
+    if kwargs.get("publish_hf") and not os.environ.get("HF_TOKEN"):
+        raise ValueError("publish_hf=True (--publish) requires the HF_TOKEN environment variable to be set")
     created_job = await imdb_dataset_pipeline(**kwargs)
     print(f"Registered job: {created_job.name} (ID: {created_job.id})")
     return created_job
