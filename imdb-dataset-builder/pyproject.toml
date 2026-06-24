@@ -5,7 +5,9 @@ description = "Large-scale IMDb data curation pipeline with optional Hugging Fac
 requires-python = ">=3.10"
 
 dependencies = [
-    "aaiclick",
+    # [distributed] brings the PostgreSQL (asyncpg/psycopg2) + ClickHouse-server
+    # (clickhouse-connect) drivers the default distributed backend needs.
+    "aaiclick[distributed]",
     "huggingface_hub>=0.20.0",
     "pandas>=2.0.0",
     "pyarrow>=14.0.0",

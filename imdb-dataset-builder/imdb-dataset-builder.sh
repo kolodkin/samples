@@ -2,11 +2,11 @@
 # IMDb Dataset Builder: load, curate, and profile IMDb title.basics data,
 # then optionally publish the clean dataset to Hugging Face.
 #
-# Usage: ./imdb-dataset-builder.sh [--full] [--year-from YEAR] [--publish] [--airtable]
+# Usage: ./imdb-dataset-builder.sh [--sample] [--year-from YEAR] [--publish] [--airtable]
 #
 # Options:
-#   --full              Run on the full ~10M row dataset (default: 500k row demo limit)
-#   --year-from YEAR    Earliest startYear to keep in the curated output (default: 1980)
+#   --sample            Run on a 500k row sample (default: full ~12.6M row dataset)
+#   --year-from YEAR    Earliest startYear to keep in the curated output (default: 1950)
 #   --publish           Publish the curated dataset to Hugging Face (default: off;
 #                       requires HF_TOKEN — registration fails if it is unset)
 #   --airtable          Publish the showcase sample to Airtable (default: off; also
@@ -22,6 +22,31 @@ cd "$SCRIPT_DIR"
 
 PYTHON="${PYTHON:-uv run python}"
 
+# ---------------------------------------------------------------------------
+# Distributed backend (default): real ClickHouse server + PostgreSQL
+# orchestration, instead of embedded chdb + SQLite. This is the correct fit
+# for the worker-process execution model below (chdb + SQLite is single-process
+# and the orchestration schema lives in Postgres via migrations). Connection
+# contracts match scripts/setup_clickhouse and scripts/setup_postgres; override
+# either URL to point at an existing cluster.
+# ---------------------------------------------------------------------------
+export AAICLICK_SQL_URL="${AAICLICK_SQL_URL:-postgresql+asyncpg://aaiclick:secret@localhost:5432/aaiclick}"
+export AAICLICK_CH_URL="${AAICLICK_CH_URL:-clickhouse://default:benchmark@localhost:8123/default}"
+
+# Auto-provision the databases (idempotent — both scripts skip work already
+# done). setup_postgres also runs `aaiclick migrate`, so the orchestration
+# schema exists; no `aaiclick setup` (local-mode bootstrap) is needed.
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+if [ -x "$REPO_ROOT/scripts/setup_clickhouse" ] && [ -x "$REPO_ROOT/scripts/setup_postgres" ]; then
+    echo "Provisioning distributed backend (ClickHouse + PostgreSQL)..."
+    "$REPO_ROOT/scripts/setup_clickhouse"
+    "$REPO_ROOT/scripts/setup_postgres"
+    echo
+else
+    echo "WARNING: scripts/setup_{clickhouse,postgres} not found — assuming a" >&2
+    echo "         distributed backend is already running at the URLs above." >&2
+fi
+
 WORKER_LOG="tmp/imdb_worker.log"
 export AAICLICK_REPORT_FILE="tmp/imdb_report.md"
 mkdir -p tmp
@@ -30,9 +55,10 @@ mkdir -p tmp
 PARAMS_PARTS=()
 while [ $# -gt 0 ]; do
     case "$1" in
-        --full)
-            echo "Running on full IMDb dataset (~10M rows)..."
-            PARAMS_PARTS+=('"limit": null')
+        --sample)
+            echo "Running on 500k row sample..."
+            PARAMS_PARTS+=('"limit": 500000')
+            SAMPLE_MODE=1
             shift
             ;;
         --year-from)
@@ -51,14 +77,14 @@ while [ $# -gt 0 ]; do
             ;;
         *)
             echo "Unknown flag: $1" >&2
-            echo "Usage: $0 [--full] [--year-from YEAR] [--publish] [--airtable]" >&2
+            echo "Usage: $0 [--sample] [--year-from YEAR] [--publish] [--airtable]" >&2
             exit 1
             ;;
     esac
 done
 
-if [ ${#PARAMS_PARTS[@]} -eq 0 ]; then
-    echo "Running on 500k row demo (pass --full for complete dataset)..."
+if [ -z "${SAMPLE_MODE:-}" ]; then
+    echo "Running on full IMDb dataset (~12.6M rows; pass --sample for a 500k-row demo)..."
 fi
 
 PARAMS_ARG=""

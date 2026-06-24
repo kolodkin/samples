@@ -91,7 +91,7 @@ async def load_raw_data(limit: int | None = None) -> Object:
     format treats \\N as a literal string, not NULL.
 
     Args:
-        limit: Optional row limit for fast demos. Set to None for full ~10M rows.
+        limit: Optional row limit for fast demos. Set to None for full ~12.6M rows.
     """
     # Force all columns as String — TSV \N values must remain as the
     # literal string r"\N", not be cast to NULL or int by type inference.
@@ -174,7 +174,7 @@ async def filter_movies(raw: Object) -> Object:
 
 
 @task
-async def detect_quality_issues(movies: Object, year_from: int = 1980) -> QualityIssues:
+async def detect_quality_issues(movies: Object, year_from: int = 1950) -> QualityIssues:
     """
     Detect data quality issues in the movie subset.
 
@@ -241,7 +241,7 @@ async def analyze_genre_balance(exploded: Object) -> Object:
 
 
 @task
-async def build_clean_dataset(movies: Object, year_from: int = 1980) -> Object:
+async def build_clean_dataset(movies: Object, year_from: int = 1950) -> Object:
     """
     Build the final curated dataset ready for publishing.
 
@@ -320,8 +320,8 @@ async def export_dataset(enriched: Object, formats: list[str], out_dir: str) -> 
 
 @job("imdb_dataset_builder")
 def imdb_dataset_pipeline(
-    limit: int | None = 500_000,
-    year_from: int = 1980,
+    limit: int | None = None,
+    year_from: int = 1950,
     publish_hf: bool = False,
     publish_airtable: bool = False,
 ):
@@ -352,9 +352,11 @@ def imdb_dataset_pipeline(
         All terminal tasks fan in to generate_report.
 
     Args:
-        limit: Row limit for demo runs. Set to None for the full ~10M-row dataset.
+        limit: Optional row limit. Defaults to ``None`` — the full ~12.6M-row
+            dataset. Pass a value (e.g. ``500_000``) for a quick sample run.
         year_from: Earliest ``startYear`` to keep in the curated output. Defaults
-            to 1980 — older entries have spottier metadata.
+            to 1950 — older entries have spottier metadata, and pre-1950 titles
+            add only ~33k movies (~8%) on top of the 1950 cutoff.
         publish_hf: Opt in to Hugging Face publishing. Defaults to ``False``.
             When ``True``, ``HF_TOKEN`` is *required* — registration fails fast
             with a clear error if it is unset (rather than silently skipping).

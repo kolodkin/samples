@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# Local (non-Docker) ClickHouse setup, aligned with CI.
+#
+# CI provisions ClickHouse as a GitHub Actions service container
+# (clickhouse/clickhouse-server) with password "benchmark" on ports
+# 8123/9000. This script installs and starts a ClickHouse server locally via
+# apt and configures the same connection contract, so code and tests behave
+# identically on a dev machine and in CI.
+#
+# Connection contract (override via env):
+#   host      localhost
+#   HTTP      8123
+#   native    9000
+#   user      default
+#   password  benchmark        (CH_PASSWORD)
+#   version   latest           (CH_VERSION)
+#
+# Usage:
+#   scripts/setup_clickhouse
+#   CH_PASSWORD=secret scripts/setup_clickhouse
+#
+# Verify:
+#   clickhouse client --password "$CH_PASSWORD" -q 'SELECT version()'
+
+set -euo pipefail
+
+CH_VERSION="${CH_VERSION:-latest}"
+CH_PASSWORD="${CH_PASSWORD:-benchmark}"
+
+SUDO=""
+AS_CH=(sudo -u clickhouse)
+if [ "$(id -u)" -eq 0 ]; then
+    AS_CH=(runuser -u clickhouse --)
+else
+    SUDO="sudo"
+fi
+
+echo "Installing ClickHouse (${CH_VERSION})..."
+if ! command -v clickhouse &>/dev/null; then
+    export DEBIAN_FRONTEND=noninteractive
+    $SUDO apt-get install -y -qq apt-transport-https ca-certificates gpg curl >/dev/null 2>&1
+    curl -fsSL 'https://packages.clickhouse.com/rpm/lts/repodata/repomd.xml.key' \
+        | $SUDO gpg --dearmor -o /usr/share/keyrings/clickhouse-keyring.gpg
+    echo "deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb stable main" \
+        | $SUDO tee /etc/apt/sources.list.d/clickhouse.list >/dev/null
+    $SUDO apt-get update -qq >/dev/null 2>&1
+    $SUDO apt-get install -y -qq clickhouse-server clickhouse-client >/dev/null 2>&1
+fi
+
+# Align the `default` user with CI: set a password and enable access
+# management. Dropped into users.d so it merges over the packaged defaults
+# (which ship a password-less `default` user) and survives package upgrades.
+echo "Configuring 'default' user (password + access management)..."
+$SUDO tee /etc/clickhouse-server/users.d/aaiclick-default.xml >/dev/null <<EOF
+<clickhouse>
+    <users>
+        <default>
+            <password>${CH_PASSWORD}</password>
+            <access_management>1</access_management>
+        </default>
+    </users>
+</clickhouse>
+EOF
+
+echo "Starting ClickHouse server..."
+# Prefer the packaged init script (runs as the clickhouse user); fall back to
+# launching the binary directly as the clickhouse user for container/no-init
+# environments. ClickHouse refuses to run as root.
+$SUDO clickhouse stop &>/dev/null || true
+if [ -x /etc/init.d/clickhouse-server ]; then
+    $SUDO /etc/init.d/clickhouse-server start >/dev/null 2>&1 || true
+fi
+
+if ! curl -sf "http://localhost:8123/ping" &>/dev/null; then
+    "${AS_CH[@]}" clickhouse-server \
+        --config-file=/etc/clickhouse-server/config.xml \
+        --daemon >/dev/null 2>&1 || true
+fi
+
+echo "Waiting for ClickHouse to start..."
+for _ in $(seq 1 30); do
+    if curl -sf "http://localhost:8123/ping" &>/dev/null; then
+        version=$(clickhouse client --password "$CH_PASSWORD" -q 'SELECT version()')
+        echo "ClickHouse ${version} is ready (user=default, password=${CH_PASSWORD}, ports 8123/9000)."
+        exit 0
+    fi
+    sleep 1
+done
+
+echo "ERROR: ClickHouse failed to start within 30 seconds" >&2
+exit 1
