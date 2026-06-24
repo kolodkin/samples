@@ -8,7 +8,8 @@ import { CITY_URL, PCL_URL, MOVIE_COUNT, frameUrl } from './config.js';
 
 const BG = 0x101418;
 const FLAT_COLOR = 0x66ccff;
-const MOVIE_FPS = 10;
+const MOVIE_FPS = 15;
+const MOVIE_DECODE_CONCURRENCY = 4; // frames decoded in flight via the worker queue
 
 // Render each point either as a lit sphere impostor ("ball", the default) or as
 // the plain flat square sprite ("square", three.js's stock point look). Both go
@@ -251,7 +252,7 @@ export function createViewer(canvas) {
   function stopMovie() {
     if (movie) {
       if (movie.timer) clearInterval(movie.timer);
-      for (const f of movie.frames) f.geometry.dispose();
+      for (const f of movie.frames) if (f) f.geometry.dispose();
     }
     movie = null;
     state.playing = false;
@@ -290,42 +291,82 @@ export function createViewer(canvas) {
     return new Promise((res, rej) => dracoLoader.load(url, (g) => res(g), undefined, rej));
   }
 
+  // Decode one frame off the queue: Draco decode (in DRACOLoader's WASM worker) →
+  // normalize against the shared transform → precompute color buffers. Returns the
+  // slot, or null if the load was cancelled (stale token).
+  async function decodeFrame(i, shared, token) {
+    const geom = await dracoLoad(frameUrl(i));
+    if (token !== loadToken) { geom.dispose(); return null; }
+    normalizeMovieFrame(geom, shared);
+    return { geometry: geom, buffers: computeColorBuffers(geom) };
+  }
+
+  // Stream the movie: decode frame 0 first (it defines the shared normalization
+  // transform), start playback immediately, then fill the remaining slots through a
+  // bounded-concurrency worker queue while playback runs (hold-on-stall covers any
+  // frame the playhead reaches before it is decoded).
   async function loadMovie(count) {
     const token = loadToken;
     state.loading = true;
     state.loadProgress = { loaded: 0, total: count };
-    const frames = [];
+    const frames = new Array(count).fill(null);
     const shared = { ready: false };
-    for (let i = 0; i < count; i++) {
-      let geom;
-      try {
-        geom = await dracoLoad(frameUrl(i));
-      } catch (e) {
-        if (token !== loadToken) return;
-        state.loading = false;
-        state.error = `Failed to load movie frame ${i}: ${e.message || e}`;
-        for (const f of frames) f.geometry.dispose();
-        return;
-      }
-      if (token !== loadToken) { geom.dispose(); return; }
-      normalizeMovieFrame(geom, shared);
-      frames.push({ geometry: geom, buffers: computeColorBuffers(geom) });
-      state.loadProgress = { loaded: i + 1, total: count };
+
+    let first;
+    try {
+      first = await decodeFrame(0, shared, token);
+    } catch (e) {
+      if (token !== loadToken) return;
+      state.loading = false;
+      state.error = `Failed to load movie frame 0: ${e.message || e}`;
+      return;
     }
-    if (token !== loadToken) { for (const f of frames) f.geometry.dispose(); return; }
-    movie = { frames, timer: null, index: 0 };
-    state.frameCount = frames.length;
+    if (token !== loadToken) { if (first) first.geometry.dispose(); return; }
+    frames[0] = first;
+    movie = { frames, timer: null, index: 0, failed: new Set() };
+    state.frameCount = count;
     state.frameIndex = 0;
-    installGeometry(frames[0].geometry, frames[0].buffers);
+    state.loadProgress = { loaded: 1, total: count };
+    installGeometry(first.geometry, first.buffers);
     resize();
     frameCamera();
-    state.loading = false;
     state.ready = true;
     play();
+
+    // Worker queue: N concurrent workers pull the next undecoded index off a shared
+    // cursor until the movie is fully loaded (or the load is cancelled).
+    let next = 1;
+    let decoded = 1;
+    const worker = async () => {
+      while (next < count) {
+        const i = next++;
+        let slot;
+        try {
+          slot = await decodeFrame(i, shared, token);
+        } catch (e) {
+          if (token !== loadToken) return;
+          // One frame failing shouldn't kill the whole stream: mark it so
+          // playback skips it, surface the error, and keep decoding the rest.
+          movie.failed.add(i);
+          state.error = `Failed to load movie frame ${i}: ${e.message || e}`;
+          continue;
+        }
+        if (token !== loadToken) { if (slot) slot.geometry.dispose(); return; }
+        frames[i] = slot;
+        decoded++;
+        state.loadProgress = { loaded: decoded, total: count };
+      }
+    };
+    const workers = [];
+    for (let w = 0; w < Math.min(MOVIE_DECODE_CONCURRENCY, count - 1); w++) {
+      workers.push(worker());
+    }
+    await Promise.all(workers);
+    if (token === loadToken) state.loading = false;
   }
 
   function showFrame(i) {
-    if (!movie) return;
+    if (!movie || !movie.frames[i]) return;
     movie.index = i;
     state.frameIndex = i;
     installGeometry(movie.frames[i].geometry, movie.frames[i].buffers);
@@ -335,8 +376,34 @@ export function createViewer(canvas) {
     if (!movie || movie.timer) return;
     state.playing = true;
     movie.timer = setInterval(() => {
-      showFrame((movie.index + 1) % movie.frames.length);
+      const count = movie.frames.length;
+      let next = (movie.index + 1) % count;
+      // Skip frames that permanently failed to decode (rare network errors)...
+      let guard = 0;
+      while (!movie.frames[next] && movie.failed.has(next) && guard < count) {
+        next = (next + 1) % count;
+        guard++;
+      }
+      // ...but hold-on-stall for ones the queue simply hasn't reached yet: stay on
+      // the current frame rather than skipping or erroring.
+      if (movie.frames[next]) showFrame(next);
     }, 1000 / MOVIE_FPS);
+  }
+
+  // Pause and reset to the first frame.
+  function stop() {
+    pause();
+    showFrame(0);
+  }
+
+  // Pause and step one frame (delta ±1), wrapping, but only if that frame is
+  // already decoded — otherwise the step is a no-op.
+  function stepFrame(delta) {
+    if (!movie) return;
+    pause();
+    const count = movie.frames.length;
+    const target = (movie.index + delta + count) % count;
+    if (movie.frames[target]) showFrame(target);
   }
 
   function pause() {
@@ -372,6 +439,8 @@ export function createViewer(canvas) {
     loadScene,
     play,
     pause,
+    stop,
+    stepFrame,
     setPointSize(n) {
       state.settings.pointSize = n;
       if (points) { points.material.size = n; points.material.needsUpdate = true; }

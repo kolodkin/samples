@@ -68,6 +68,8 @@ function App() {
     if (viewerRef.current.getStats().playing) viewerRef.current.pause();
     else viewerRef.current.play();
   };
+  const onStop = () => viewerRef.current.stop();
+  const onStep = (delta) => viewerRef.current.stepFrame(delta);
   const onReset = () => viewerRef.current.resetCamera();
   const fmt = (v) => `${v.x.toFixed(2)}  ${v.y.toFixed(2)}  ${v.z.toFixed(2)}`;
 
@@ -96,6 +98,13 @@ function App() {
             <button data-testid="play-pause" onClick=${onPlayPause}>
               ${stats.playing ? 'Pause' : 'Play'}
             </button>
+            <button data-testid="stop" onClick=${onStop}>Stop</button>
+          </div>
+          <div class="row">
+            <button data-testid="frame-prev" aria-label="Previous frame"
+                    onClick=${() => onStep(-1)}>−</button>
+            <button data-testid="frame-next" aria-label="Next frame"
+                    onClick=${() => onStep(1)}>+</button>
           </div>
         `}
         <label>Point shape</label>
