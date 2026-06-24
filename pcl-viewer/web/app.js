@@ -8,7 +8,7 @@ const html = htm.bind(h);
 
 const SCENES = [
   { id: 'city', label: 'KITTI city view' },
-  { id: 'table', label: 'PCL table scene' },
+  { id: 'face', label: 'PCL face scan (BIWI)' },
   { id: 'movie', label: 'KITTI movie' },
 ];
 
