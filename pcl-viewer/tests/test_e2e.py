@@ -41,6 +41,30 @@ def test_color_mode_toggle(server_url, page):
     page.get_by_test_id("menu-toggle").click()  # controls live in a modal
     page.get_by_test_id("color-mode").select_option("flat")
     page.wait_for_function("() => window.__PCL.settings.colorMode === 'flat'")
+    # Each scalar ramp mode applies and keeps the cloud rendering. Intensity
+    # only resolves if the loader actually parsed the PCD's `intensity` field;
+    # falling back to flat would leave colorMode == 'flat' and fail this loop.
+    for mode in ("distance", "intensity", "height"):
+        page.get_by_test_id("color-mode").select_option(mode)
+        page.wait_for_function(
+            f"() => window.__PCL.settings.colorMode === '{mode}'")
+        assert page.evaluate("() => window.__PCL.handle.visiblePixelCount()") > 1000
+
+
+def test_point_shape_toggle(server_url, page):
+    page.goto(server_url + "/")
+    _wait_ready(page)
+    # Points render as 3D balls by default.
+    assert page.evaluate("() => window.__PCL.settings.pointShape") == "ball"
+    page.get_by_test_id("menu-toggle").click()  # controls live in a modal
+    # Switching to the older square sprite takes effect and keeps rendering.
+    page.get_by_test_id("point-shape").select_option("square")
+    page.wait_for_function("() => window.__PCL.settings.pointShape === 'square'")
+    assert page.evaluate("() => window.__PCL.handle.visiblePixelCount()") > 1000
+    # And back to balls.
+    page.get_by_test_id("point-shape").select_option("ball")
+    page.wait_for_function("() => window.__PCL.settings.pointShape === 'ball'")
+    assert page.evaluate("() => window.__PCL.handle.visiblePixelCount()") > 1000
 
 
 def test_reset_camera(server_url, page):
@@ -104,9 +128,11 @@ def test_movie_scene_plays_and_pauses(server_url, page):
     _wait_ready(page)
     page.get_by_test_id("menu-toggle").click()
     page.get_by_test_id("scene").select_option("movie")
+    # Generous timeout: the first Draco decode pays a one-time WASM-compile cost
+    # that can be slow on cold CI runners / chrome-headless-shell.
     page.wait_for_function(
         "() => window.__PCL.scene === 'movie' && window.__PCL.ready === true && window.__PCL.frameCount === 4",
-        timeout=30000)
+        timeout=60000)
     # It auto-plays: the frame index advances.
     page.wait_for_function("() => window.__PCL.playing === true")
     start = page.evaluate("() => window.__PCL.frameIndex")
@@ -126,7 +152,8 @@ def test_scene_switch_back_stops_movie(server_url, page):
     _wait_ready(page)
     page.get_by_test_id("menu-toggle").click()
     page.get_by_test_id("scene").select_option("movie")
-    page.wait_for_function("() => window.__PCL.scene === 'movie' && window.__PCL.ready === true")
+    page.wait_for_function("() => window.__PCL.scene === 'movie' && window.__PCL.ready === true",
+                           timeout=60000)  # cold Draco WASM compile can be slow
     page.get_by_test_id("scene").select_option("city")
     page.wait_for_function("() => window.__PCL.scene === 'city' && window.__PCL.ready === true",
                            timeout=20000)

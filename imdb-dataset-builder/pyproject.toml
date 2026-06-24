@@ -1,0 +1,19 @@
+[project]
+name = "imdb-dataset-builder"
+version = "0.1.0"
+description = "Large-scale IMDb data curation pipeline with optional Hugging Face publishing"
+requires-python = ">=3.10"
+
+dependencies = [
+    "aaiclick",
+    "huggingface_hub>=0.20.0",
+    "pandas>=2.0.0",
+    "pyarrow>=14.0.0",
+    "transformers>=4.37.0",
+    "peft>=0.8.0",
+    "torch>=2.1.0",
+    "evaluate>=0.4.0",
+    "accelerate>=0.26.0",
+    "datasets>=2.16.0",
+    "scikit-learn>=1.3.0",
+]

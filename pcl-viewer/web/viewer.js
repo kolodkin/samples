@@ -10,6 +10,40 @@ const BG = 0x101418;
 const FLAT_COLOR = 0x66ccff;
 const MOVIE_FPS = 10;
 
+// Render each point either as a lit sphere impostor ("ball", the default) or as
+// the plain flat square sprite ("square", three.js's stock point look). Both go
+// through PointsMaterial.onBeforeCompile so the size slider, size attenuation,
+// and per-vertex color ramps keep working untouched; a `uBall` uniform (1/0)
+// flips the fragment behavior at runtime with no recompile. For the ball: clip
+// the quad to a circle, rebuild a hemisphere normal from gl_PointCoord, and
+// shade it (ambient + diffuse + a tight specular highlight) so every point reads
+// as a tiny 3D ball. The light is fixed in view space, so the highlights stay
+// put as the cloud orbits — like a studio key light on the lens.
+function installPointShapeShading(material) {
+  material.userData.ballUniform = { value: 1 }; // 1 = ball, 0 = square
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uBall = material.userData.ballUniform;
+    shader.fragmentShader = 'uniform float uBall;\n' + shader.fragmentShader.replace(
+      '#include <color_fragment>',
+      `#include <color_fragment>
+      if (uBall > 0.5) {
+        // gl_PointCoord is top-left origin; map to [-1,1] and flip Y so the
+        // light reads as coming from above-front. Outside the unit disc -> clip.
+        vec2 impostorUv = vec2(1.0, -1.0) * (2.0 * gl_PointCoord - 1.0);
+        float impostorR2 = dot(impostorUv, impostorUv);
+        if (impostorR2 > 1.0) discard;
+        vec3 impostorN = vec3(impostorUv, sqrt(1.0 - impostorR2));
+        vec3 impostorL = normalize(vec3(0.35, 0.55, 0.75));
+        float impostorDiff = max(dot(impostorN, impostorL), 0.0);
+        float impostorSpec = pow(max(
+          dot(reflect(-impostorL, impostorN), vec3(0.0, 0.0, 1.0)), 0.0), 24.0);
+        float impostorShade = 0.35 + 0.75 * impostorDiff;
+        diffuseColor.rgb = diffuseColor.rgb * impostorShade + vec3(impostorSpec) * 0.5;
+      }`,
+    );
+  };
+}
+
 export function createViewer(canvas) {
   const renderer = new THREE.WebGLRenderer({
     canvas,
@@ -33,11 +67,11 @@ export function createViewer(canvas) {
                          // frame doesn't pay cold-compile cost mid-playback
 
   let points = null;       // the live THREE.Points object
-  let baseColors = null;   // Float32Array height-mapped colors for the current geometry
-  let sceneRadius = 0.5;   // normalized robust radius
+  let colorBuffers = {};   // mode name -> Float32Array of per-point ramp colors
+  let sceneRadius = 0.5;   // normalized robust radius of the scan
 
   // Movie state
-  let movie = null;        // { frames: [{geometry, colors}], timer, index }
+  let movie = null;        // { frames: [{geometry, buffers}], timer, index }
   let loadToken = 0;       // increments on each loadScene to cancel stale async loads
 
   const state = {
@@ -50,7 +84,7 @@ export function createViewer(canvas) {
     loading: false,
     loadProgress: { loaded: 0, total: 0 },
     error: null,
-    settings: { pointSize: 0.004, colorMode: 'height' },
+    settings: { pointSize: 0.004, colorMode: 'height', pointShape: 'ball' },
     framesRendered: 0,
   };
   window.__PCL = state;
@@ -67,9 +101,17 @@ export function createViewer(canvas) {
   function frameCamera() {
     const box = new THREE.Box3().setFromObject(points);
     const center = box.getCenter(new THREE.Vector3());
-    const radius = sceneRadius;
-    const eye = center.clone().add(new THREE.Vector3(-1.4, 1.17, 0).multiplyScalar(radius));
-    const look = center.clone().add(new THREE.Vector3(0.8, -0.1, 0).multiplyScalar(radius));
+    const radius = sceneRadius; // ignore far stray returns so the scene fills the view
+    // Axis convention after normalization: +X is forward (down the road),
+    // +Y is up, +Z is right, and the sensor sits at the cloud center. Pull the
+    // eye up and behind the sensor and aim it forward at the road ahead, an
+    // elevated chase view that pulls back so the whole scene reads at once (the
+    // sensor blind-spot ring sits in the foreground). The eye sits above the
+    // target, so the view still looks down even with a level aim point.
+    // Offsets are round multiples of 0.1 so that, at sceneRadius 0.5, the eye
+    // and target land on clean values in the HUD readout.
+    const eye = center.clone().add(new THREE.Vector3(-1.4, 1.2, 0).multiplyScalar(radius));
+    const look = center.clone().add(new THREE.Vector3(0.8, 0, 0).multiplyScalar(radius));
     camera.position.copy(eye);
     controls.target.copy(look);
     camera.near = radius / 100;
@@ -78,16 +120,19 @@ export function createViewer(canvas) {
     controls.update();
   }
 
-  function computeHeightColors(geometry) {
-    const pos = geometry.getAttribute('position');
-    const ys = Float32Array.from({ length: pos.count }, (_, i) => pos.getY(i)).sort();
-    const minY = ys[Math.floor(pos.count * 0.02)];
-    const span = (ys[Math.floor(pos.count * 0.98)] - minY) || 1;
-    const colors = new Float32Array(pos.count * 3);
+  // Map a per-point scalar field onto the blue->red HSL ramp. Robust 2nd..98th
+  // percentile clamp so a handful of outliers don't compress the whole ramp
+  // into one hue (low values stay blue, high values climb through green to red).
+  function rampColors(values) {
+    const n = values.length;
+    const sorted = Float32Array.from(values).sort();
+    const min = sorted[Math.floor(n * 0.02)];
+    const span = (sorted[Math.floor(n * 0.98)] - min) || 1;
+    const colors = new Float32Array(n * 3);
     const c = new THREE.Color();
-    for (let i = 0; i < pos.count; i++) {
-      const t = Math.min(1, Math.max(0, (pos.getY(i) - minY) / span));
-      c.setHSL(0.7 - 0.7 * t, 0.9, 0.5);
+    for (let i = 0; i < n; i++) {
+      const t = Math.min(1, Math.max(0, (values[i] - min) / span));
+      c.setHSL(0.7 - 0.7 * t, 0.9, 0.5); // blue (low) -> red (high)
       colors[i * 3] = c.r;
       colors[i * 3 + 1] = c.g;
       colors[i * 3 + 2] = c.b;
@@ -95,11 +140,36 @@ export function createViewer(canvas) {
     return colors;
   }
 
+  // Precompute a ramp buffer for every scalar mode the cloud can supply:
+  // height (y), radial distance from the sensor (origin), and laser intensity
+  // (only if the source carried an `intensity` field — Draco movie frames are
+  // positions-only, so they get height + distance, and intensity falls back).
+  function computeColorBuffers(geometry) {
+    const pos = geometry.getAttribute('position');
+    const n = pos.count;
+    const height = new Float32Array(n);
+    const distance = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      height[i] = pos.getY(i);
+      distance[i] = Math.hypot(pos.getX(i), pos.getY(i), pos.getZ(i));
+    }
+    const buffers = { height: rampColors(height), distance: rampColors(distance) };
+    const intensity = geometry.getAttribute('intensity');
+    if (intensity) {
+      const vals = Float32Array.from({ length: n }, (_, i) => intensity.getX(i));
+      buffers.intensity = rampColors(vals);
+    }
+    return buffers;
+  }
+
   function applyColorMode(mode) {
     if (!points) return;
-    state.settings.colorMode = mode;
-    if (mode === 'height') {
-      points.geometry.setAttribute('color', new THREE.BufferAttribute(baseColors, 3));
+    const buffer = mode === 'flat' ? null : colorBuffers[mode];
+    // A scalar mode the cloud can't supply (e.g. intensity-free data) falls
+    // back to flat shading rather than rendering nothing.
+    state.settings.colorMode = mode === 'flat' || buffer ? mode : 'flat';
+    if (buffer) {
+      points.geometry.setAttribute('color', new THREE.BufferAttribute(buffer, 3));
       points.material.vertexColors = true;
       points.material.color.set(0xffffff);
     } else {
@@ -110,43 +180,77 @@ export function createViewer(canvas) {
     points.material.needsUpdate = true;
   }
 
-  // Compute a normalization transform (rotation handled by caller) for a geometry:
-  // center + scale so the robust horizontal radius maps to 0.5 units. Returns the
-  // {center, scale} so a movie can reuse one transform across all frames.
-  function computeTransform(geom) {
+  // Normalize a static cloud into the viewer's working frame: rotate z-up
+  // (KITTI vehicle frame) to three.js y-up, center on the origin, and scale by a
+  // robust horizontal radius (90th percentile of distance from the sensor) so
+  // the dense scene fills the frame instead of being shrunk by a few stray
+  // returns. Keeps camera framing and the point-size slider meaningful across
+  // datasets.
+  function normalizeGeometry(geom) {
+    geom.rotateX(-Math.PI / 2);
     geom.computeBoundingBox();
     const center = geom.boundingBox.getCenter(new THREE.Vector3());
+    geom.translate(-center.x, -center.y, -center.z);
     const pos = geom.getAttribute('position');
     const radii = Float32Array.from(
-      { length: pos.count }, (_, i) => Math.hypot(pos.getX(i) - center.x, pos.getZ(i) - center.z)).sort();
+      { length: pos.count }, (_, i) => Math.hypot(pos.getX(i), pos.getZ(i))).sort();
     const r = radii[Math.floor(pos.count * 0.9)] || 1;
-    return { center, scale: 0.5 / r };
+    geom.scale(0.5 / r, 0.5 / r, 0.5 / r);
+    sceneRadius = 0.5;
   }
 
-  function applyTransform(geom, t) {
-    geom.translate(-t.center.x, -t.center.y, -t.center.z);
-    geom.scale(t.scale, t.scale, t.scale);
+  // Movie frames must share ONE transform (computed from frame 0) so the world
+  // stays put and only the moving objects/ego flow between frames — per-frame
+  // normalization would make everything pulse. `shared` is computed on the first
+  // frame and reused for the rest.
+  function normalizeMovieFrame(geom, shared) {
+    geom.rotateX(-Math.PI / 2);
+    if (!shared.ready) {
+      geom.computeBoundingBox();
+      shared.center = geom.boundingBox.getCenter(new THREE.Vector3());
+      geom.translate(-shared.center.x, -shared.center.y, -shared.center.z);
+      const pos = geom.getAttribute('position');
+      const radii = Float32Array.from(
+        { length: pos.count }, (_, i) => Math.hypot(pos.getX(i), pos.getZ(i))).sort();
+      const r = radii[Math.floor(pos.count * 0.9)] || 1;
+      shared.scale = 0.5 / r;
+      geom.scale(shared.scale, shared.scale, shared.scale);
+      shared.ready = true;
+    } else {
+      geom.translate(-shared.center.x, -shared.center.y, -shared.center.z);
+      geom.scale(shared.scale, shared.scale, shared.scale);
+    }
+    sceneRadius = 0.5;
   }
 
-  // Build / swap the live Points object from a normalized geometry + its colors.
-  function installGeometry(geometry, colors) {
+  function makeMaterial() {
+    const m = new THREE.PointsMaterial({
+      size: state.settings.pointSize,
+      color: FLAT_COLOR,
+      sizeAttenuation: true,
+    });
+    installPointShapeShading(m); // ball (default) or square sprite
+    m.userData.ballUniform.value = state.settings.pointShape === 'ball' ? 1 : 0;
+    return m;
+  }
+
+  // Install (or swap to) a normalized geometry + its precomputed ramp buffers.
+  // The material persists across movie frame swaps so point size/shape stick.
+  function installGeometry(geometry, buffers) {
     if (!points) {
-      points = new THREE.Points(
-        geometry,
-        new THREE.PointsMaterial({ size: state.settings.pointSize, color: FLAT_COLOR, sizeAttenuation: true }),
-      );
+      points = new THREE.Points(geometry, makeMaterial());
       scene.add(points);
     } else {
       points.geometry = geometry;
     }
-    baseColors = colors;
+    colorBuffers = buffers;
     applyColorMode(state.settings.colorMode);
     state.pointCount = geometry.getAttribute('position').count;
   }
 
   function stopMovie() {
-    if (movie && movie.timer) clearInterval(movie.timer);
     if (movie) {
+      if (movie.timer) clearInterval(movie.timer);
       for (const f of movie.frames) f.geometry.dispose();
     }
     movie = null;
@@ -159,26 +263,24 @@ export function createViewer(canvas) {
     const wasMovie = movie !== null;
     stopMovie();
     if (points) {
-      // Movie frames are disposed by stopMovie(); for static scenes dispose here.
+      // Movie frame geometries are disposed by stopMovie(); for static scenes
+      // the current geometry is owned here.
       if (!wasMovie) points.geometry.dispose();
       scene.remove(points);
       points.material.dispose();
       points = null;
     }
-    baseColors = null;
+    colorBuffers = {};
   }
 
-  // Load a single static cloud (city / table). z-up (KITTI) and arbitrary clouds
-  // both get rotated to y-up then normalized.
-  async function loadStatic(url, { rotate = true } = {}) {
+  async function loadStatic(url) {
     const token = loadToken;
-    const geom = await new Promise((res, rej) => pcdLoader.load(url, (p) => res(p.geometry), undefined, rej));
-    if (token !== loadToken) { geom.dispose(); return; } // superseded
-    if (rotate) geom.rotateX(-Math.PI / 2);
-    const t = computeTransform(geom);
-    applyTransform(geom, t);
-    sceneRadius = 0.5;
-    installGeometry(geom, computeHeightColors(geom));
+    const loaded = await new Promise((res, rej) => pcdLoader.load(url, (p) => res(p), undefined, rej));
+    if (token !== loadToken) { loaded.geometry.dispose(); loaded.material.dispose(); return; }
+    loaded.material.dispose(); // we build our own (shape-shaded) material
+    const geom = loaded.geometry;
+    normalizeGeometry(geom);
+    installGeometry(geom, computeColorBuffers(geom));
     resize();
     frameCamera();
     state.ready = true;
@@ -193,7 +295,7 @@ export function createViewer(canvas) {
     state.loading = true;
     state.loadProgress = { loaded: 0, total: count };
     const frames = [];
-    let transform = null;
+    const shared = { ready: false };
     for (let i = 0; i < count; i++) {
       let geom;
       try {
@@ -206,18 +308,15 @@ export function createViewer(canvas) {
         return;
       }
       if (token !== loadToken) { geom.dispose(); return; }
-      geom.rotateX(-Math.PI / 2);
-      if (!transform) transform = computeTransform(geom);
-      applyTransform(geom, transform);
-      frames.push({ geometry: geom, colors: computeHeightColors(geom) });
+      normalizeMovieFrame(geom, shared);
+      frames.push({ geometry: geom, buffers: computeColorBuffers(geom) });
       state.loadProgress = { loaded: i + 1, total: count };
     }
     if (token !== loadToken) { for (const f of frames) f.geometry.dispose(); return; }
-    sceneRadius = 0.5;
     movie = { frames, timer: null, index: 0 };
     state.frameCount = frames.length;
     state.frameIndex = 0;
-    installGeometry(frames[0].geometry, frames[0].colors);
+    installGeometry(frames[0].geometry, frames[0].buffers);
     resize();
     frameCamera();
     state.loading = false;
@@ -229,7 +328,7 @@ export function createViewer(canvas) {
     if (!movie) return;
     movie.index = i;
     state.frameIndex = i;
-    installGeometry(movie.frames[i].geometry, movie.frames[i].colors);
+    installGeometry(movie.frames[i].geometry, movie.frames[i].buffers);
   }
 
   function play() {
@@ -253,8 +352,8 @@ export function createViewer(canvas) {
     state.error = null;
     state.scene = id;
     teardownScene();
-    if (id === 'city') await loadStatic(CITY_URL, { rotate: true });
-    else if (id === 'table') await loadStatic(PCL_URL, { rotate: true });
+    if (id === 'city') await loadStatic(CITY_URL);
+    else if (id === 'table') await loadStatic(PCL_URL);
     else if (id === 'movie') await loadMovie(MOVIE_COUNT);
   }
 
@@ -278,10 +377,17 @@ export function createViewer(canvas) {
       if (points) { points.material.size = n; points.material.needsUpdate = true; }
     },
     setColorMode(mode) { applyColorMode(mode); },
+    setPointShape(shape) {
+      state.settings.pointShape = shape === 'square' ? 'square' : 'ball';
+      if (points) {
+        points.material.userData.ballUniform.value =
+          state.settings.pointShape === 'ball' ? 1 : 0;
+      }
+    },
     resetCamera() { if (points) frameCamera(); },
     getStats() {
       const e = camera.position, t = controls.target;
-      const vec = (v) => ({ x: v.x, y: v.y, z: v.z });
+      const vec = (v) => ({ x: v.x, y: v.y, z: v.z }); // snapshot, don't leak the live Vector3
       return {
         pointCount: state.pointCount,
         cameraDistance: e.distanceTo(t),

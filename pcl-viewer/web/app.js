@@ -17,6 +17,7 @@ function App() {
   const viewerRef = useRef(null);
   const [pointSize, setPointSize] = useState(0.004);
   const [colorMode, setColorMode] = useState('height');
+  const [pointShape, setPointShape] = useState('ball');
   const [sceneId, setSceneId] = useState('city');
   const [menuOpen, setMenuOpen] = useState(false);
   const origin = { x: 0, y: 0, z: 0 }; // placeholder until the first stats tick
@@ -52,6 +53,9 @@ function App() {
   };
   const onColor = (e) => {
     setColorMode(e.target.value); viewerRef.current.setColorMode(e.target.value);
+  };
+  const onShape = (e) => {
+    setPointShape(e.target.value); viewerRef.current.setPointShape(e.target.value);
   };
   const onScene = (e) => {
     const id = e.target.value;
@@ -90,6 +94,11 @@ function App() {
             </button>
           </div>
         `}
+        <label>Point shape</label>
+        <select data-testid="point-shape" value=${pointShape} onChange=${onShape}>
+          <option value="ball">Ball (3D)</option>
+          <option value="square">Square</option>
+        </select>
         <label>Point size: ${pointSize.toFixed(3)}</label>
         <input type="range" min="0.002" max="0.05" step="0.001"
                value=${pointSize} data-testid="point-size" onInput=${onSize} />
@@ -97,6 +106,8 @@ function App() {
         <select data-testid="color-mode" value=${colorMode} onChange=${onColor}>
           <option value="flat">Flat</option>
           <option value="height">By height</option>
+          <option value="distance">By distance</option>
+          <option value="intensity">By intensity</option>
         </select>
         <div class="row">
           <button data-testid="reset" onClick=${onReset}>Reset camera</button>
