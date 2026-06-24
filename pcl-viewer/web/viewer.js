@@ -390,22 +390,6 @@ export function createViewer(canvas) {
     }, 1000 / MOVIE_FPS);
   }
 
-  // Pause and reset to the first frame.
-  function stop() {
-    pause();
-    showFrame(0);
-  }
-
-  // Pause and step one frame (delta ±1), wrapping, but only if that frame is
-  // already decoded — otherwise the step is a no-op.
-  function stepFrame(delta) {
-    if (!movie) return;
-    pause();
-    const count = movie.frames.length;
-    const target = (movie.index + delta + count) % count;
-    if (movie.frames[target]) showFrame(target);
-  }
-
   function pause() {
     if (!movie || !movie.timer) return;
     clearInterval(movie.timer);
@@ -439,8 +423,6 @@ export function createViewer(canvas) {
     loadScene,
     play,
     pause,
-    stop,
-    stepFrame,
     setPointSize(n) {
       state.settings.pointSize = n;
       if (points) { points.material.size = n; points.material.needsUpdate = true; }

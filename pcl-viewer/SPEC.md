@@ -63,7 +63,7 @@ and per-vertex color ramps working unchanged — the shading multiplies into
 | Point shape   | lit sphere impostor ("ball", default) vs. flat square sprite |
 | Point size    | `PointsMaterial.size` (0.002–0.05)                  |
 | Color mode    | flat vs. per-vertex ramp by height / distance / intensity |
-| Movie (movie scene only) | play/pause, stop (→ first frame, paused), and −/+ single-frame step |
+| Movie (movie scene only) | play/pause (the sequence loops continuously) |
 | Reset camera  | re-frames the low forward-facing view down the road  |
 | Stats overlay | point count, rolling FPS, camera distance           |
 
@@ -92,12 +92,10 @@ other frame reuses, so points don't pulse), then playback starts immediately
 while the remaining frames decode through a **bounded-concurrency worker queue**
 (`MOVIE_DECODE_CONCURRENCY = 4` in flight — DRACOLoader's WASM worker does the
 decode, the queue just keeps several requests outstanding instead of one). It
-plays at 15 fps and loops; if the playhead reaches a frame the queue hasn't
-decoded yet it **holds** the current frame (no skip) rather than stalling.
-Transport controls are play/pause, stop (pause + reset to frame 0), and −/+
-single-frame step (each pauses, then steps to the neighbouring frame if it is
-decoded). The Draco WASM decoder is vendored into `web/vendor/draco/` by
-`vendor.sh` and preloaded at startup, so playback and the offline e2e need no
+plays at 15 fps and loops continuously, with play/pause; if the playhead reaches
+a frame the queue hasn't decoded yet it **holds** the current frame (no skip)
+rather than stalling. The Draco WASM decoder is vendored into `web/vendor/draco/`
+by `vendor.sh` and preloaded at startup, so playback and the offline e2e need no
 CDN.
 
 ### Movie pipeline (`scripts/build_movie_dataset.py`, one-shot)

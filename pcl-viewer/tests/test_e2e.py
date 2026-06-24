@@ -147,40 +147,6 @@ def test_movie_scene_plays_and_pauses(server_url, page):
     assert page.evaluate("() => window.__PCL.frameIndex") == frozen
 
 
-def test_movie_frame_step_and_stop(server_url, page):
-    page.goto(server_url + "/?movieBase=/fixtures/movie/&movieCount=4")
-    _wait_ready(page)
-    page.get_by_test_id("menu-toggle").click()
-    page.get_by_test_id("scene").select_option("movie")
-    page.wait_for_function(
-        "() => window.__PCL.scene === 'movie' && window.__PCL.ready === true && window.__PCL.frameCount === 4",
-        timeout=60000)
-    # Wait for the worker queue to decode every fixture frame so stepping never
-    # lands on an undecoded (no-op) slot.
-    page.wait_for_function(
-        "() => window.__PCL.loadProgress.loaded === window.__PCL.loadProgress.total",
-        timeout=60000)
-
-    # Stepping forward pauses playback and advances exactly one frame.
-    page.get_by_test_id("frame-next").click()
-    page.wait_for_function("() => window.__PCL.playing === false")
-    page.get_by_test_id("frame-next").click()
-    one = page.evaluate("() => window.__PCL.frameIndex")
-    page.get_by_test_id("frame-next").click()
-    page.wait_for_function(f"() => window.__PCL.frameIndex === {(one + 1) % 4}")
-    # Stepping back returns to the previous frame.
-    page.get_by_test_id("frame-prev").click()
-    page.wait_for_function(f"() => window.__PCL.frameIndex === {one}")
-
-    # Stop resets to the first frame and stays paused.
-    page.get_by_test_id("stop").click()
-    page.wait_for_function(
-        "() => window.__PCL.frameIndex === 0 && window.__PCL.playing === false")
-    page.wait_for_timeout(400)
-    assert page.evaluate("() => window.__PCL.frameIndex") == 0
-    assert page.evaluate("() => window.__PCL.handle.visiblePixelCount()") > 500
-
-
 def test_scene_switch_back_stops_movie(server_url, page):
     page.goto(server_url + "/?movieBase=/fixtures/movie/&movieCount=4")
     _wait_ready(page)
