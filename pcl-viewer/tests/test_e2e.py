@@ -1,4 +1,6 @@
 """End-to-end test of the PCL viewer using Playwright (Chromium)."""
+import time
+
 from playwright.sync_api import expect
 
 
@@ -21,6 +23,24 @@ def test_point_cloud_loads_and_renders(server_url, page):
     # The canvas actually drew the cloud (non-background pixels present).
     visible = page.evaluate("() => window.__PCL.handle.visiblePixelCount()")
     assert visible > 1000
+
+
+def test_boot_loader_shows_until_first_render(server_url, page):
+    # Until the first frame renders, the canvas is just background colour. With no
+    # feedback that reads as a broken/black screen, so a boot loader must cover the
+    # gap from page open to first render — for the static initial scene too, which
+    # otherwise reports no loading state at all.
+    def _delay_model(route):
+        time.sleep(1.0)  # hold the city PCD so the not-ready window is observable
+        route.continue_()
+
+    page.route("**/kitti-velodyne-000000.pcd", _delay_model)
+    page.goto(server_url + "/")
+    # Before the cloud is ready, the boot loader is on screen.
+    expect(page.get_by_test_id("boot-loading")).to_be_visible()
+    _wait_ready(page)
+    # Once the first render has happened, it clears.
+    expect(page.get_by_test_id("boot-loading")).to_have_count(0)
 
 
 def test_point_size_control(server_url, page):
@@ -161,3 +181,24 @@ def test_scene_switch_back_stops_movie(server_url, page):
     assert page.evaluate("() => window.__PCL.playing") is False
     assert page.evaluate("() => window.__PCL.frameCount") == 0
     assert page.evaluate("() => window.__PCL.pointCount") == 115385
+
+
+def test_scene_switch_mid_load_clears_loading_indicator(server_url, page):
+    # Switching scenes while the movie is still streaming must not leave the
+    # "Loading X / Y…" indicator stuck on the now-superseded load: the static
+    # scene that supersedes it never managed `loading`, so a stale movie load
+    # used to freeze the HUD spinner forever even though the new scene is ready.
+    page.goto(server_url + "/?movieBase=/fixtures/movie/&movieCount=4")
+    _wait_ready(page)  # city ready
+    page.get_by_test_id("menu-toggle").click()
+    # Kick off the movie load, then immediately switch back before it finishes
+    # streaming all frames — this leaves a movie load in flight (loading == true).
+    page.get_by_test_id("scene").select_option("movie")
+    page.get_by_test_id("scene").select_option("city")
+    page.wait_for_function(
+        "() => window.__PCL.scene === 'city' && window.__PCL.ready === true",
+        timeout=20000)
+    # The superseded movie load's loading flag must be cleared, and the HUD must
+    # not show a leftover "Loading…" line.
+    assert page.evaluate("() => window.__PCL.loading") is False
+    expect(page.get_by_test_id("loading")).to_have_count(0)

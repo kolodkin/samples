@@ -22,7 +22,7 @@ function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const origin = { x: 0, y: 0, z: 0 }; // placeholder until the first stats tick
   const [stats, setStats] = useState({
-    pointCount: 0, fps: 0, cameraDistance: 0, eye: origin, target: origin,
+    ready: false, pointCount: 0, fps: 0, cameraDistance: 0, eye: origin, target: origin,
     scene: 'city', frameIndex: 0, frameCount: 0, playing: false,
     loading: false, loadProgress: { loaded: 0, total: 0 }, error: null,
   });
@@ -72,12 +72,26 @@ function App() {
   const fmt = (v) => `${v.x.toFixed(2)}  ${v.y.toFixed(2)}  ${v.z.toFixed(2)}`;
 
   const isMovie = sceneId === 'movie';
-  const loadingText = stats.loading
+  const progressText = stats.loadProgress.total
     ? `Loading ${stats.loadProgress.loaded} / ${stats.loadProgress.total}…`
-    : null;
+    : 'Loading…';
+  // Until the first frame is on screen the canvas is just background colour — a
+  // blank black screen with no feedback. A boot loader covers that gap for every
+  // scene (the static initial load reports no `loading` state of its own).
+  const booting = !stats.ready && !stats.error;
+  // The corner line is only for work that continues *after* first render — i.e.
+  // the movie streaming its remaining frames while it already plays.
+  const loadingText = stats.loading && stats.ready ? progressText : null;
 
   return html`
     <canvas id="scene" ref=${canvasRef}></canvas>
+
+    ${booting && html`
+      <div class="boot" data-testid="boot-loading">
+        <div class="spinner"></div>
+        <div>${progressText}</div>
+      </div>
+    `}
 
     <button class="menu-toggle" data-testid="menu-toggle"
             aria-label=${menuOpen ? 'Close controls' : 'Open controls'}

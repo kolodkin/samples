@@ -31,3 +31,12 @@ html, body { margin: 0; height: 100%; background: #101418; color: #e6edf3;
 .hud b { color: #58a6ff; }
 
 .hud .err { color: #ff8080; max-width: 18rem; }
+
+/* Boot loader: centered over the blank canvas until the first frame renders. */
+.boot { position: absolute; inset: 0; z-index: 15; display: flex;
+  flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px; color: #9fb0c0; font-size: 13px; pointer-events: none; }
+.boot .spinner { width: 36px; height: 36px; border-radius: 50%;
+  border: 3px solid #2a3340; border-top-color: #58a6ff;
+  animation: boot-spin 0.8s linear infinite; }
+@keyframes boot-spin { to { transform: rotate(360deg); } }

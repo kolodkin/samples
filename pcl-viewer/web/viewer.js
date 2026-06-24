@@ -401,6 +401,13 @@ export function createViewer(canvas) {
     loadToken++;
     state.ready = false;
     state.error = null;
+    // Clear any in-flight movie load's progress: switching scenes bumps
+    // loadToken (cancelling the movie's decode workers), but the superseded load
+    // bails out via its stale-token guards without ever resetting these, and the
+    // static loaders never touch them — so a half-streamed movie would otherwise
+    // leave the HUD's "Loading X / Y…" spinner stuck on forever over the new scene.
+    state.loading = false;
+    state.loadProgress = { loaded: 0, total: 0 };
     state.scene = id;
     teardownScene();
     if (id === 'city') await loadStatic(CITY_URL);
@@ -440,6 +447,7 @@ export function createViewer(canvas) {
       const e = camera.position, t = controls.target;
       const vec = (v) => ({ x: v.x, y: v.y, z: v.z }); // snapshot, don't leak the live Vector3
       return {
+        ready: state.ready,
         pointCount: state.pointCount,
         cameraDistance: e.distanceTo(t),
         eye: vec(e),
