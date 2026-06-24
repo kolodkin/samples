@@ -63,6 +63,7 @@ and per-vertex color ramps working unchanged — the shading multiplies into
 | Point shape   | lit sphere impostor ("ball", default) vs. flat square sprite |
 | Point size    | `PointsMaterial.size` (0.002–0.05)                  |
 | Color mode    | flat vs. per-vertex ramp by height / distance / intensity |
+| Movie (movie scene only) | play/pause (the sequence loops continuously) |
 | Reset camera  | re-frames the low forward-facing view down the road  |
 | Stats overlay | point count, rolling FPS, camera distance           |
 
@@ -85,11 +86,17 @@ hook, and captures a screenshot (compatible with `/e2e-screenshots-report`).
 `web/config.js` holds the scene URLs and the movie frame count, each overridable
 via `?pclUrl=`, `?movieBase=`, `?movieCount=` (used by e2e to point at local
 fixtures). `viewer.js` exposes `loadScene(id)` — `loadStatic` (PCDLoader) for
-city/table, `loadMovie` (DRACOLoader) for the movie. The movie shares one
-normalization transform (computed from frame 0) so points don't pulse; it plays
-at 10 fps and loops, with play/pause. The Draco WASM decoder is vendored into
-`web/vendor/draco/` by `vendor.sh` and preloaded at startup, so playback and the
-offline e2e need no CDN.
+city/table, `loadMovie` (DRACOLoader) for the movie. The movie **streams**:
+frame 0 is decoded first (it defines the shared normalization transform every
+other frame reuses, so points don't pulse), then playback starts immediately
+while the remaining frames decode through a **bounded-concurrency worker queue**
+(`MOVIE_DECODE_CONCURRENCY = 4` in flight — DRACOLoader's WASM worker does the
+decode, the queue just keeps several requests outstanding instead of one). It
+plays at 15 fps and loops continuously, with play/pause; if the playhead reaches
+a frame the queue hasn't decoded yet it **holds** the current frame (no skip)
+rather than stalling. The Draco WASM decoder is vendored into `web/vendor/draco/`
+by `vendor.sh` and preloaded at startup, so playback and the offline e2e need no
+CDN.
 
 ### Movie pipeline (`scripts/build_movie_dataset.py`, one-shot)
 
