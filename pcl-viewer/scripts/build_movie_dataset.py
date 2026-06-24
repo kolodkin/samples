@@ -25,6 +25,9 @@ DRIVE_ZIP = (
     "2011_09_26_drive_0005/2011_09_26_drive_0005_sync.zip"
 )
 VELO_DIR = "2011_09_26/2011_09_26_drive_0005_sync/velodyne_points/data/"
+DRIVE = "2011_09_26_drive_0005"
+TARGET_POINTS = 30000
+QUANT_BITS = 14
 
 CARD = """\
 ---
@@ -59,6 +62,40 @@ the **same license (CC BY-NC-SA 3.0)** per the ShareAlike term.
 > Vision Benchmark Suite.* CVPR, 2012.
 
 Non-commercial use only.
+"""
+
+ANNOTATIONS = """\
+# Annotations
+
+**This dataset is geometry only — it carries no labels.** KITTI's own
+annotations (3D object tracklets, semantic/instance segmentation) are **not**
+included or derived here. Each frame is a downsampled, position-only LiDAR sweep
+intended for visual playback in the
+[pcl-viewer](https://github.com/kolodkin/samples) demo's "KITTI movie" scene.
+
+## Frame index
+
+| File         | Source                                                      |
+|--------------|-------------------------------------------------------------|
+| `NNNNNN.drc` | `{drive}` Velodyne sweep `NNNNNN`, in capture order         |
+
+- Frames: **{count}** (`000000.drc` … `{last:06d}.drc`), in capture order.
+- Format: Draco-encoded point **positions only** (`x y z`), {bits}-bit position
+  quantization. No color, intensity, normals, or per-point labels.
+- Each sweep is voxel-downsampled to ~{target:,} points before encoding, so a
+  point in a frame does **not** correspond to a fixed physical return across
+  frames (downsampling is independent per frame).
+
+## Coordinate frame
+
+Points are stored in the KITTI Velodyne frame (metres, z-up, sensor at the
+origin). The viewer reorients to y-up and centers/scales at load time; the
+stored `.drc` data is left in the source frame.
+
+## License & attribution
+
+See `README.md`. Source: KITTI (CC BY-NC-SA 3.0); this derivative is released
+under the same license. Non-commercial use only.
 """
 
 
@@ -105,13 +142,19 @@ def main() -> None:
     count = 0
     for i, name in enumerate(bins):
         raw = np.frombuffer(zf.read(name), dtype=np.float32).reshape(-1, 4)
-        xyz = downsample_to_target(raw[:, :3].copy(), 30000)
-        buf = DracoPy.encode(xyz.astype(np.float32), quantization_bits=14)
+        xyz = downsample_to_target(raw[:, :3].copy(), TARGET_POINTS)
+        buf = DracoPy.encode(xyz.astype(np.float32), quantization_bits=QUANT_BITS)
         (out / f"{i:06d}.drc").write_bytes(buf)
         count += 1
         if i % 20 == 0:
             print(f"  frame {i}: {len(xyz)} pts -> {len(buf)} bytes")
     (out / "README.md").write_text(CARD)
+    (out / "annotations.md").write_text(
+        ANNOTATIONS.format(
+            drive=DRIVE, count=count, last=max(count - 1, 0),
+            bits=QUANT_BITS, target=TARGET_POINTS,
+        )
+    )
     print(f"wrote {count} frames to {out}")
 
     if args.no_upload:

@@ -97,7 +97,9 @@ KITTI raw drive `2011_09_26_drive_0005` → per-frame Velodyne `.bin` →
 voxel-downsample to ~30k points (positions only; the viewer colors by
 height/flat, so reflectance is dropped) → Draco encode (14-bit position
 quantization, ~73 KB/frame, 154 frames) → upload to the HF dataset with a dataset
-card. Frame data is **not** in git; the browser fetches `.drc` at runtime. Tiny
+card (`README.md`) and an `annotations.md` noting the frames are **geometry only**
+(positions, no KITTI object/semantic labels). Frame data is **not** in git; the
+browser fetches `.drc` at runtime. Tiny
 committed fixtures (`tests/fixtures/movie/*.drc`, built by
 `tests/fixtures/build_fixtures.py`) drive the offline movie e2e — conftest stages
 them into `web/fixtures/`.
