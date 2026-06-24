@@ -3,9 +3,12 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { PCDLoader } from 'three/addons/loaders/PCDLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { CITY_URL, PCL_URL, MOVIE_COUNT, frameUrl } from './config.js';
 
 const BG = 0x101418;
 const FLAT_COLOR = 0x66ccff;
+const MOVIE_FPS = 10;
 
 // Render each point either as a lit sphere impostor ("ball", the default) or as
 // the plain flat square sprite ("square", three.js's stock point look). Both go
@@ -41,7 +44,7 @@ function installPointShapeShading(material) {
   };
 }
 
-export function createViewer(canvas, { modelUrl = './models/kitti-velodyne-000000.pcd' } = {}) {
+export function createViewer(canvas) {
   const renderer = new THREE.WebGLRenderer({
     canvas,
     antialias: true,
@@ -56,13 +59,31 @@ export function createViewer(canvas, { modelUrl = './models/kitti-velodyne-00000
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
 
-  let points = null;
-  let colorBuffers = {}; // mode name -> Float32Array of per-point ramp colors
-  let sceneRadius = 1; // robust horizontal radius of the scan, in normalized units
+  const pcdLoader = new PCDLoader();
+  const dracoLoader = new DRACOLoader();
+  dracoLoader.setDecoderPath('./vendor/draco/');
+  dracoLoader.setDecoderConfig({ type: 'wasm' });
+  dracoLoader.preload(); // warm the WASM worker at startup so the first movie
+                         // frame doesn't pay cold-compile cost mid-playback
+
+  let points = null;       // the live THREE.Points object
+  let colorBuffers = {};   // mode name -> Float32Array of per-point ramp colors
+  let sceneRadius = 0.5;   // normalized robust radius of the scan
+
+  // Movie state
+  let movie = null;        // { frames: [{geometry, buffers}], timer, index }
+  let loadToken = 0;       // increments on each loadScene to cancel stale async loads
 
   const state = {
     ready: false,
+    scene: null,
     pointCount: 0,
+    frameIndex: 0,
+    frameCount: 0,
+    playing: false,
+    loading: false,
+    loadProgress: { loaded: 0, total: 0 },
+    error: null,
     settings: { pointSize: 0.004, colorMode: 'height', pointShape: 'ball' },
     framesRendered: 0,
   };
@@ -81,7 +102,7 @@ export function createViewer(canvas, { modelUrl = './models/kitti-velodyne-00000
     const box = new THREE.Box3().setFromObject(points);
     const center = box.getCenter(new THREE.Vector3());
     const radius = sceneRadius; // ignore far stray returns so the scene fills the view
-    // Axis convention after normalizeGeometry: +X is forward (down the road),
+    // Axis convention after normalization: +X is forward (down the road),
     // +Y is up, +Z is right, and the sensor sits at the cloud center. Pull the
     // eye up and behind the sensor and aim it forward at the road ahead, an
     // elevated chase view that pulls back so the whole scene reads at once (the
@@ -121,7 +142,8 @@ export function createViewer(canvas, { modelUrl = './models/kitti-velodyne-00000
 
   // Precompute a ramp buffer for every scalar mode the cloud can supply:
   // height (y), radial distance from the sensor (origin), and laser intensity
-  // (only if the source PCD carried an `intensity` field).
+  // (only if the source carried an `intensity` field — Draco movie frames are
+  // positions-only, so they get height + distance, and intensity falls back).
   function computeColorBuffers(geometry) {
     const pos = geometry.getAttribute('position');
     const n = pos.count;
@@ -158,45 +180,182 @@ export function createViewer(canvas, { modelUrl = './models/kitti-velodyne-00000
     points.material.needsUpdate = true;
   }
 
-  // Normalize an arbitrary cloud into the viewer's working frame: KITTI scans
-  // are z-up and ~80 m across, so rotate them y-up, center on the origin and
-  // scale to ~unit size. This keeps the camera framing and the point-size
-  // slider range meaningful regardless of the source dataset's units.
+  // Normalize a static cloud into the viewer's working frame: rotate z-up
+  // (KITTI vehicle frame) to three.js y-up, center on the origin, and scale by a
+  // robust horizontal radius (90th percentile of distance from the sensor) so
+  // the dense scene fills the frame instead of being shrunk by a few stray
+  // returns. Keeps camera framing and the point-size slider meaningful across
+  // datasets.
   function normalizeGeometry(geom) {
-    geom.rotateX(-Math.PI / 2); // z-up (vehicle frame) -> three.js y-up
+    geom.rotateX(-Math.PI / 2);
     geom.computeBoundingBox();
     const center = geom.boundingBox.getCenter(new THREE.Vector3());
     geom.translate(-center.x, -center.y, -center.z);
-    // Scale by a robust horizontal radius (90th percentile of distance from the
-    // sensor) rather than the absolute max, so the dense street scene fills the
-    // frame instead of being shrunk by a few 80 m stray returns.
     const pos = geom.getAttribute('position');
     const radii = Float32Array.from(
       { length: pos.count }, (_, i) => Math.hypot(pos.getX(i), pos.getZ(i))).sort();
     const r = radii[Math.floor(pos.count * 0.9)] || 1;
-    const s = 0.5 / r; // characteristic radius -> 0.5 units
-    geom.scale(s, s, s);
+    geom.scale(0.5 / r, 0.5 / r, 0.5 / r);
     sceneRadius = 0.5;
   }
 
-  const loader = new PCDLoader();
-  loader.load(modelUrl, (loaded) => {
-    points = loaded;
-    normalizeGeometry(points.geometry);
-    points.material = new THREE.PointsMaterial({
+  // Movie frames must share ONE transform (computed from frame 0) so the world
+  // stays put and only the moving objects/ego flow between frames — per-frame
+  // normalization would make everything pulse. `shared` is computed on the first
+  // frame and reused for the rest.
+  function normalizeMovieFrame(geom, shared) {
+    geom.rotateX(-Math.PI / 2);
+    if (!shared.ready) {
+      geom.computeBoundingBox();
+      shared.center = geom.boundingBox.getCenter(new THREE.Vector3());
+      geom.translate(-shared.center.x, -shared.center.y, -shared.center.z);
+      const pos = geom.getAttribute('position');
+      const radii = Float32Array.from(
+        { length: pos.count }, (_, i) => Math.hypot(pos.getX(i), pos.getZ(i))).sort();
+      const r = radii[Math.floor(pos.count * 0.9)] || 1;
+      shared.scale = 0.5 / r;
+      geom.scale(shared.scale, shared.scale, shared.scale);
+      shared.ready = true;
+    } else {
+      geom.translate(-shared.center.x, -shared.center.y, -shared.center.z);
+      geom.scale(shared.scale, shared.scale, shared.scale);
+    }
+    sceneRadius = 0.5;
+  }
+
+  function makeMaterial() {
+    const m = new THREE.PointsMaterial({
       size: state.settings.pointSize,
       color: FLAT_COLOR,
       sizeAttenuation: true,
     });
-    installPointShapeShading(points.material); // ball (default) or square sprite
-    scene.add(points);
-    colorBuffers = computeColorBuffers(points.geometry);
-    applyColorMode(state.settings.colorMode); // height ramp by default
-    state.pointCount = points.geometry.getAttribute('position').count;
+    installPointShapeShading(m); // ball (default) or square sprite
+    m.userData.ballUniform.value = state.settings.pointShape === 'ball' ? 1 : 0;
+    return m;
+  }
+
+  // Install (or swap to) a normalized geometry + its precomputed ramp buffers.
+  // The material persists across movie frame swaps so point size/shape stick.
+  function installGeometry(geometry, buffers) {
+    if (!points) {
+      points = new THREE.Points(geometry, makeMaterial());
+      scene.add(points);
+    } else {
+      points.geometry = geometry;
+    }
+    colorBuffers = buffers;
+    applyColorMode(state.settings.colorMode);
+    state.pointCount = geometry.getAttribute('position').count;
+  }
+
+  function stopMovie() {
+    if (movie) {
+      if (movie.timer) clearInterval(movie.timer);
+      for (const f of movie.frames) f.geometry.dispose();
+    }
+    movie = null;
+    state.playing = false;
+    state.frameCount = 0;
+    state.frameIndex = 0;
+  }
+
+  function teardownScene() {
+    const wasMovie = movie !== null;
+    stopMovie();
+    if (points) {
+      // Movie frame geometries are disposed by stopMovie(); for static scenes
+      // the current geometry is owned here.
+      if (!wasMovie) points.geometry.dispose();
+      scene.remove(points);
+      points.material.dispose();
+      points = null;
+    }
+    colorBuffers = {};
+  }
+
+  async function loadStatic(url) {
+    const token = loadToken;
+    const loaded = await new Promise((res, rej) => pcdLoader.load(url, (p) => res(p), undefined, rej));
+    if (token !== loadToken) { loaded.geometry.dispose(); loaded.material.dispose(); return; }
+    loaded.material.dispose(); // we build our own (shape-shaded) material
+    const geom = loaded.geometry;
+    normalizeGeometry(geom);
+    installGeometry(geom, computeColorBuffers(geom));
     resize();
     frameCamera();
     state.ready = true;
-  });
+  }
+
+  function dracoLoad(url) {
+    return new Promise((res, rej) => dracoLoader.load(url, (g) => res(g), undefined, rej));
+  }
+
+  async function loadMovie(count) {
+    const token = loadToken;
+    state.loading = true;
+    state.loadProgress = { loaded: 0, total: count };
+    const frames = [];
+    const shared = { ready: false };
+    for (let i = 0; i < count; i++) {
+      let geom;
+      try {
+        geom = await dracoLoad(frameUrl(i));
+      } catch (e) {
+        if (token !== loadToken) return;
+        state.loading = false;
+        state.error = `Failed to load movie frame ${i}: ${e.message || e}`;
+        for (const f of frames) f.geometry.dispose();
+        return;
+      }
+      if (token !== loadToken) { geom.dispose(); return; }
+      normalizeMovieFrame(geom, shared);
+      frames.push({ geometry: geom, buffers: computeColorBuffers(geom) });
+      state.loadProgress = { loaded: i + 1, total: count };
+    }
+    if (token !== loadToken) { for (const f of frames) f.geometry.dispose(); return; }
+    movie = { frames, timer: null, index: 0 };
+    state.frameCount = frames.length;
+    state.frameIndex = 0;
+    installGeometry(frames[0].geometry, frames[0].buffers);
+    resize();
+    frameCamera();
+    state.loading = false;
+    state.ready = true;
+    play();
+  }
+
+  function showFrame(i) {
+    if (!movie) return;
+    movie.index = i;
+    state.frameIndex = i;
+    installGeometry(movie.frames[i].geometry, movie.frames[i].buffers);
+  }
+
+  function play() {
+    if (!movie || movie.timer) return;
+    state.playing = true;
+    movie.timer = setInterval(() => {
+      showFrame((movie.index + 1) % movie.frames.length);
+    }, 1000 / MOVIE_FPS);
+  }
+
+  function pause() {
+    if (!movie || !movie.timer) return;
+    clearInterval(movie.timer);
+    movie.timer = null;
+    state.playing = false;
+  }
+
+  async function loadScene(id) {
+    loadToken++;
+    state.ready = false;
+    state.error = null;
+    state.scene = id;
+    teardownScene();
+    if (id === 'city') await loadStatic(CITY_URL);
+    else if (id === 'table') await loadStatic(PCL_URL);
+    else if (id === 'movie') await loadMovie(MOVIE_COUNT);
+  }
 
   let raf = 0;
   function tick() {
@@ -207,8 +366,12 @@ export function createViewer(canvas, { modelUrl = './models/kitti-velodyne-00000
   }
   resize();
   tick();
+  loadScene('city');
 
   const handle = {
+    loadScene,
+    play,
+    pause,
     setPointSize(n) {
       state.settings.pointSize = n;
       if (points) { points.material.size = n; points.material.needsUpdate = true; }
@@ -230,6 +393,13 @@ export function createViewer(canvas, { modelUrl = './models/kitti-velodyne-00000
         cameraDistance: e.distanceTo(t),
         eye: vec(e),
         target: vec(t),
+        scene: state.scene,
+        frameIndex: state.frameIndex,
+        frameCount: state.frameCount,
+        playing: state.playing,
+        loading: state.loading,
+        loadProgress: state.loadProgress,
+        error: state.error,
       };
     },
     // e2e helper: count non-background pixels in the rendered frame.
@@ -250,10 +420,8 @@ export function createViewer(canvas, { modelUrl = './models/kitti-velodyne-00000
       cancelAnimationFrame(raf);
       window.removeEventListener('resize', resize);
       controls.dispose();
-      if (points) {
-        points.geometry.dispose();
-        points.material.dispose();
-      }
+      teardownScene();
+      dracoLoader.dispose();
       renderer.dispose();
     },
   };
