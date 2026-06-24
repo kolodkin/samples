@@ -161,3 +161,24 @@ def test_scene_switch_back_stops_movie(server_url, page):
     assert page.evaluate("() => window.__PCL.playing") is False
     assert page.evaluate("() => window.__PCL.frameCount") == 0
     assert page.evaluate("() => window.__PCL.pointCount") == 115385
+
+
+def test_scene_switch_mid_load_clears_loading_indicator(server_url, page):
+    # Switching scenes while the movie is still streaming must not leave the
+    # "Loading X / Y…" indicator stuck on the now-superseded load: the static
+    # scene that supersedes it never managed `loading`, so a stale movie load
+    # used to freeze the HUD spinner forever even though the new scene is ready.
+    page.goto(server_url + "/?movieBase=/fixtures/movie/&movieCount=4")
+    _wait_ready(page)  # city ready
+    page.get_by_test_id("menu-toggle").click()
+    # Kick off the movie load, then immediately switch back before it finishes
+    # streaming all frames — this leaves a movie load in flight (loading == true).
+    page.get_by_test_id("scene").select_option("movie")
+    page.get_by_test_id("scene").select_option("city")
+    page.wait_for_function(
+        "() => window.__PCL.scene === 'city' && window.__PCL.ready === true",
+        timeout=20000)
+    # The superseded movie load's loading flag must be cleared, and the HUD must
+    # not show a leftover "Loading…" line.
+    assert page.evaluate("() => window.__PCL.loading") is False
+    expect(page.get_by_test_id("loading")).to_have_count(0)
