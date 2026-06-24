@@ -447,6 +447,7 @@ export function createViewer(canvas) {
       const e = camera.position, t = controls.target;
       const vec = (v) => ({ x: v.x, y: v.y, z: v.z }); // snapshot, don't leak the live Vector3
       return {
+        ready: state.ready,
         pointCount: state.pointCount,
         cameraDistance: e.distanceTo(t),
         eye: vec(e),
