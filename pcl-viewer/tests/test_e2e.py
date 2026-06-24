@@ -36,8 +36,8 @@ def test_point_size_control(server_url, page):
 def test_color_mode_toggle(server_url, page):
     page.goto(server_url + "/")
     _wait_ready(page)
-    # Default mode is the height ramp; toggling to flat must take effect.
-    assert page.evaluate("() => window.__PCL.settings.colorMode") == "height"
+    # Default mode is the distance ramp; toggling to flat must take effect.
+    assert page.evaluate("() => window.__PCL.settings.colorMode") == "distance"
     page.get_by_test_id("menu-toggle").click()  # controls live in a modal
     page.get_by_test_id("color-mode").select_option("flat")
     page.wait_for_function("() => window.__PCL.settings.colorMode === 'flat'")

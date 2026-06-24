@@ -31,13 +31,13 @@ KITTI uses a z-up vehicle frame in metres, so on load the viewer reorients it
 (z-up → three.js y-up), centers it, and scales by a **robust** horizontal radius
 (90th percentile of distance from the sensor, not the absolute max) so the dense
 scene fills the view instead of being shrunk by a few 80 m stray returns. The
-**default** "by height" mode colors per-vertex along the vertical axis (blue → red),
-with the range clamped to the 2nd–98th height percentile so ground reads blue and
-cars/walls climb through to red. The same ramp (and the same robust percentile
-clamp) also drives "by distance" (radial range from the sensor, which lights up the
-concentric scan rings) and "by intensity" (the PCD's per-point laser reflectance,
-which picks out road markings and signs); "flat" mode (a single material color) is a
-toggle. The ramp buffers are precomputed once per cloud and swapped on the geometry,
+**default** "by distance" mode colors per-vertex by radial range from the sensor
+(blue → red), with the range clamped to the 2nd–98th percentile so the near rings
+read blue and the far returns climb through to red, lighting up the concentric scan
+rings. The same ramp (and the same robust percentile clamp) also drives "by height"
+(along the vertical axis, so ground reads blue and cars/walls climb to red) and "by
+intensity" (the PCD's per-point laser reflectance, which picks out road markings and
+signs); "flat" mode (a single material color) is a toggle. The ramp buffers are precomputed once per cloud and swapped on the geometry,
 and a scalar mode the source lacks (e.g. an intensity-free PCD) falls back to flat.
 The camera sits low and forward-facing — just above the sensor's forward (+X) axis,
 looking down the road — so the scan reads like an onboard driving view: ground

@@ -85,7 +85,7 @@ export function createViewer(canvas) {
     loading: false,
     loadProgress: { loaded: 0, total: 0 },
     error: null,
-    settings: { pointSize: 0.004, colorMode: 'height', pointShape: 'ball' },
+    settings: { pointSize: 0.004, colorMode: 'distance', pointShape: 'ball' },
     framesRendered: 0,
   };
   window.__PCL = state;

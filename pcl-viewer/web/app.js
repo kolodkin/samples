@@ -16,7 +16,7 @@ function App() {
   const canvasRef = useRef(null);
   const viewerRef = useRef(null);
   const [pointSize, setPointSize] = useState(0.004);
-  const [colorMode, setColorMode] = useState('height');
+  const [colorMode, setColorMode] = useState('distance');
   const [pointShape, setPointShape] = useState('ball');
   const [sceneId, setSceneId] = useState('city');
   const [menuOpen, setMenuOpen] = useState(false);
