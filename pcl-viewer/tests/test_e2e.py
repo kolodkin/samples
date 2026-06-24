@@ -167,6 +167,39 @@ def test_movie_scene_plays_and_pauses(server_url, page):
     assert page.evaluate("() => window.__PCL.frameIndex") == frozen
 
 
+def test_movie_step_and_seek(server_url, page):
+    page.goto(server_url + "/?movieBase=/fixtures/movie/&movieCount=4")
+    _wait_ready(page)
+    page.get_by_test_id("menu-toggle").click()
+    page.get_by_test_id("scene").select_option("movie")
+    # Wait for every frame to decode so stepping/seeking has real frames to land on.
+    page.wait_for_function(
+        "() => window.__PCL.scene === 'movie' && window.__PCL.frameCount === 4"
+        " && window.__PCL.loadProgress.loaded === 4",
+        timeout=60000)
+
+    # Seek to a known frame first so stepping starts from a deterministic spot
+    # (the movie auto-plays, so the playhead could otherwise be anywhere).
+    page.get_by_test_id("frame-select").evaluate(
+        "el => { el.value = '1'; el.dispatchEvent(new Event('input', {bubbles:true})); }")
+    # Seeking pauses playback and lands on the chosen frame.
+    page.wait_for_function("() => window.__PCL.frameIndex === 1 && window.__PCL.playing === false")
+
+    # Stepping forward advances exactly one frame (still paused).
+    page.get_by_test_id("step-forward").click()
+    page.wait_for_function("() => window.__PCL.frameIndex === 2 && window.__PCL.playing === false")
+
+    # Stepping back retreats exactly one frame.
+    page.get_by_test_id("step-back").click()
+    page.wait_for_function("() => window.__PCL.frameIndex === 1")
+
+    # The slider can jump straight to the last frame, and the cloud still renders.
+    page.get_by_test_id("frame-select").evaluate(
+        "el => { el.value = '3'; el.dispatchEvent(new Event('input', {bubbles:true})); }")
+    page.wait_for_function("() => window.__PCL.frameIndex === 3")
+    assert page.evaluate("() => window.__PCL.handle.visiblePixelCount()") > 500
+
+
 def test_scene_switch_back_stops_movie(server_url, page):
     page.goto(server_url + "/?movieBase=/fixtures/movie/&movieCount=4")
     _wait_ready(page)

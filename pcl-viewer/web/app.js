@@ -20,6 +20,7 @@ function App() {
   const [pointShape, setPointShape] = useState('ball');
   const [sceneId, setSceneId] = useState('city');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [frame, setFrame] = useState(0);
   const origin = { x: 0, y: 0, z: 0 }; // placeholder until the first stats tick
   const [stats, setStats] = useState({
     ready: false, pointCount: 0, fps: 0, cameraDistance: 0, eye: origin, target: origin,
@@ -47,6 +48,10 @@ function App() {
     return () => { cancelAnimationFrame(raf); viewer.dispose(); };
   }, []);
 
+  // Mirror the playhead into local state so the frame-select slider tracks
+  // playback (and scene resets to 0) between manual seeks.
+  useEffect(() => { setFrame(stats.frameIndex); }, [stats.frameIndex]);
+
   const onSize = (e) => {
     const v = parseFloat(e.target.value);
     setPointSize(v); viewerRef.current.setPointSize(v);
@@ -67,6 +72,15 @@ function App() {
     // read a stale `playing` and call the wrong action.
     if (viewerRef.current.getStats().playing) viewerRef.current.pause();
     else viewerRef.current.play();
+  };
+  const onStep = (delta) => {
+    viewerRef.current.step(delta);
+    setFrame(viewerRef.current.getStats().frameIndex);
+  };
+  const onSeek = (e) => {
+    const i = parseInt(e.target.value, 10);
+    setFrame(i); // keep the slider responsive ahead of the throttled stats tick
+    viewerRef.current.seek(i);
   };
   const onReset = () => viewerRef.current.resetCamera();
   const fmt = (v) => `${v.x.toFixed(2)}  ${v.y.toFixed(2)}  ${v.z.toFixed(2)}`;
@@ -105,11 +119,18 @@ function App() {
         <select data-testid="scene" value=${sceneId} onChange=${onScene}>
           ${SCENES.map((s) => html`<option value=${s.id}>${s.label}</option>`)}
         </select>
-        ${isMovie && html`
+        ${isMovie && stats.frameCount > 0 && html`
+          <label>Frame: ${frame + 1} / ${stats.frameCount}</label>
+          <input type="range" min="0" max=${stats.frameCount - 1} step="1"
+                 value=${frame} data-testid="frame-select" onInput=${onSeek} />
           <div class="row">
+            <button data-testid="step-back" aria-label="Previous frame"
+                    onClick=${() => onStep(-1)}>−</button>
             <button data-testid="play-pause" onClick=${onPlayPause}>
               ${stats.playing ? 'Pause' : 'Play'}
             </button>
+            <button data-testid="step-forward" aria-label="Next frame"
+                    onClick=${() => onStep(1)}>+</button>
           </div>
         `}
         <label>Point shape</label>
