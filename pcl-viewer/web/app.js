@@ -62,7 +62,11 @@ function App() {
     setSceneId(id); viewerRef.current.loadScene(id);
   };
   const onPlayPause = () => {
-    if (stats.playing) viewerRef.current.pause(); else viewerRef.current.play();
+    // Decide from the viewer's live state, not the 500ms-throttled `stats`
+    // snapshot — otherwise a click landing before the next stats tick can
+    // read a stale `playing` and call the wrong action.
+    if (viewerRef.current.getStats().playing) viewerRef.current.pause();
+    else viewerRef.current.play();
   };
   const onReset = () => viewerRef.current.resetCamera();
   const fmt = (v) => `${v.x.toFixed(2)}  ${v.y.toFixed(2)}  ${v.z.toFixed(2)}`;
