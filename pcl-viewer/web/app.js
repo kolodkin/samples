@@ -82,6 +82,14 @@ function App() {
     setFrame(i); // keep the slider responsive ahead of the throttled stats tick
     viewerRef.current.seek(i);
   };
+  const onFrameInput = (e) => {
+    // The input is 1-based to match the readout; seek() is 0-based and clamps.
+    const v = parseInt(e.target.value, 10);
+    if (Number.isNaN(v)) return;
+    const i = v - 1;
+    setFrame(i);
+    viewerRef.current.seek(i);
+  };
   const onReset = () => viewerRef.current.resetCamera();
   const fmt = (v) => `${v.x.toFixed(2)}  ${v.y.toFixed(2)}  ${v.z.toFixed(2)}`;
 
@@ -120,7 +128,12 @@ function App() {
           ${SCENES.map((s) => html`<option value=${s.id}>${s.label}</option>`)}
         </select>
         ${isMovie && stats.frameCount > 0 && html`
-          <label>Frame: ${frame + 1} / ${stats.frameCount}</label>
+          <label>Frame</label>
+          <div class="frame-jump">
+            <input type="number" min="1" max=${stats.frameCount} step="1"
+                   value=${frame + 1} data-testid="frame-input" onInput=${onFrameInput} />
+            <span>/ ${stats.frameCount}</span>
+          </div>
           <input type="range" min="0" max=${stats.frameCount - 1} step="1"
                  value=${frame} data-testid="frame-select" onInput=${onSeek} />
           <div class="row">

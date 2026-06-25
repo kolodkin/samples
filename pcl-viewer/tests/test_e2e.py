@@ -199,6 +199,15 @@ def test_movie_step_and_seek(server_url, page):
     page.wait_for_function("() => window.__PCL.frameIndex === 3")
     assert page.evaluate("() => window.__PCL.handle.visiblePixelCount()") > 500
 
+    # Typing a (1-based) frame number into the editable field jumps to it.
+    page.get_by_test_id("frame-input").evaluate(
+        "el => { el.value = '2'; el.dispatchEvent(new Event('input', {bubbles:true})); }")
+    page.wait_for_function("() => window.__PCL.frameIndex === 1 && window.__PCL.playing === false")
+    # Out-of-range entries clamp instead of breaking.
+    page.get_by_test_id("frame-input").evaluate(
+        "el => { el.value = '99'; el.dispatchEvent(new Event('input', {bubbles:true})); }")
+    page.wait_for_function("() => window.__PCL.frameIndex === 3")
+
 
 def test_scene_switch_back_stops_movie(server_url, page):
     page.goto(server_url + "/?movieBase=/fixtures/movie/&movieCount=4")
