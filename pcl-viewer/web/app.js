@@ -8,7 +8,7 @@ const html = htm.bind(h);
 
 const SCENES = [
   { id: 'city', label: 'KITTI city view' },
-  { id: 'table', label: 'PCL table scene' },
+  { id: 'lucy', label: 'Stanford Lucy' },
   { id: 'movie', label: 'KITTI movie' },
 ];
 

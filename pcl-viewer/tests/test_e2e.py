@@ -130,17 +130,19 @@ def test_screenshot_capture(server_url, page, tmp_path):
     assert out.stat().st_size > 5000
 
 
-def test_static_scene_from_url(server_url, page):
-    # Point the "table" scene at the locally-served model so the static URL path
-    # is tested offline (same loadStatic code path as the real PCL table scene).
-    page.goto(server_url + "/?pclUrl=/models/kitti-velodyne-000000.pcd")
+def test_lucy_scene_loads_from_ply(server_url, page):
+    # Exercise the PLY loader + "object" normalization/framing path offline by
+    # pointing the Lucy scene at a local PLY fixture (same loadStatic code path as
+    # the real Stanford Lucy, which is hot-linked and so not fetched in tests).
+    page.goto(server_url + "/?lucyUrl=/fixtures/lucy/lucy_fixture.ply")
     _wait_ready(page)
     page.get_by_test_id("menu-toggle").click()
-    page.get_by_test_id("scene").select_option("table")
-    page.wait_for_function("() => window.__PCL.scene === 'table' && window.__PCL.ready === true",
+    page.get_by_test_id("scene").select_option("lucy")
+    page.wait_for_function("() => window.__PCL.scene === 'lucy' && window.__PCL.ready === true",
                            timeout=20000)
-    visible = page.evaluate("() => window.__PCL.handle.visiblePixelCount()")
-    assert visible > 1000
+    # The fixture's 4000 unique vertices render (index stripped, not per-face).
+    assert page.evaluate("() => window.__PCL.pointCount") == 4000
+    assert page.evaluate("() => window.__PCL.handle.visiblePixelCount()") > 1000
 
 
 def test_movie_scene_plays_and_pauses(server_url, page):
