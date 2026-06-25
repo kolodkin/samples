@@ -62,10 +62,11 @@ and per-vertex color ramps working unchanged — the shading multiplies into
 |---------------|-----------------------------------------------------|
 | Point shape   | lit sphere impostor ("ball", default) vs. flat square sprite |
 | Point size    | `PointsMaterial.size` (0.002–0.05)                  |
-| Color mode    | flat vs. per-vertex ramp by height / distance / intensity |
-| Movie (movie scene only) | play/pause (the sequence loops continuously) |
+| Color mode    | flat vs. per-vertex ramp by height / distance / intensity, or palette by class (seg scene) |
+| Movie (movie + seg scenes) | play/pause, frame step/seek (the sequence loops continuously) |
+| Show boxes (seg scene only) | toggle the per-instance 3D bounding boxes |
 | Reset camera  | re-frames the low forward-facing view down the road  |
-| Stats overlay | point count, rolling FPS, camera distance           |
+| Stats overlay | point count, rolling FPS, camera distance, box count |
 
 ## e2e strategy
 `conftest.py` ensures vendoring, then starts `serve.py` on a free port per test.
@@ -81,11 +82,16 @@ hook, and captures a screenshot (compatible with `/e2e-screenshots-report`).
 |------------------|-------------------------------------------------------|---------------------------------|
 | KITTI city view  | `web/models/kitti-velodyne-000000.pcd` (committed)    | same-origin PCD                 |
 | PCL table scene  | `PointCloudLibrary/data` `table_scene_lms400.pcd`     | raw.githubusercontent (CORS)    |
-| KITTI movie      | `kolodkin/pcl-viewer-kitti-movie` (HF dataset)        | HF resolve (CORS), Draco `.drc` |
+| KITTI movie      | `kolodkin/pcl-viewer-kitti-movie` `geometry/` (HF)    | HF resolve (CORS), Draco `.drc` |
+| KITTI seg        | `kolodkin/pcl-viewer-kitti-movie` `seg/` (HF)         | HF resolve (CORS), Draco `.drc` + `boxes.json` |
 
-`web/config.js` holds the scene URLs and the movie frame count, each overridable
-via `?pclUrl=`, `?movieBase=`, `?movieCount=` (used by e2e to point at local
-fixtures). `viewer.js` exposes `loadScene(id)` — `loadStatic` (PCDLoader) for
+The shared HF dataset holds both movies under sibling folders — `geometry/`
+(positions-only, from KITTI raw drive 0005) and `seg/` (SemanticKITTI, with
+per-point classes + `boxes.json`) — under one CC BY-NC-SA card.
+
+`web/config.js` holds the scene URLs and frame counts, each overridable via
+`?pclUrl=`, `?movieBase=`, `?movieCount=`, `?segMovieBase=`, `?segMovieCount=`,
+`?segBoxesUrl=` (used by e2e to point at local fixtures). `viewer.js` exposes `loadScene(id)` — `loadStatic` (PCDLoader) for
 city/table, `loadMovie` (DRACOLoader) for the movie. The movie **streams**:
 frame 0 is decoded first (it defines the shared normalization transform every
 other frame reuses, so points don't pulse), then playback starts immediately
@@ -111,13 +117,40 @@ committed fixtures (`tests/fixtures/movie/*.drc`, built by
 `tests/fixtures/build_fixtures.py`) drive the offline movie e2e — conftest stages
 them into `web/fixtures/`.
 
+### Seg scene (`loadSegMovie` + `scripts/build_seg_dataset.py`, one-shot)
+
+The seg scene reuses the streaming `loadMovie` path (a `urlFn`/`onFrame` options
+pair) but adds per-point **classes** and per-frame **3D boxes**:
+
+- **Class encoding.** Draco can't carry a side array (it may reorder/dedup points
+  on decode), so each point's **19-class learning id** is packed into the Draco
+  **color attribute's red channel** (`colors[:,0] = class_id`). It rides glued to
+  its point through decode; three.js exposes a normalized `color` attribute and
+  the viewer recovers `id = round(color.r * 255)`. `computeColorBuffers` maps each
+  id through `SEG_PALETTE` (the SemanticKITTI 19-class colors) into a `class`
+  buffer; "By class" is just another `applyColorMode` entry, so clouds without the
+  attribute fall back to flat. `loadSegMovie` defaults the mode to `class`.
+- **Boxes.** `boxes.json` (`{ "NNNNNN": [ {cls, center, size} ] }`, fetched once)
+  holds one **axis-aligned** box per thing instance (learning classes 1–8),
+  derived at build time from the SemanticKITTI instance ids (high 16 bits of the
+  `.label`). `onFrame` rebuilds a `LineSegments` box group each time the displayed
+  frame changes, transforming each box through the **same** rotate→translate→scale
+  normalization applied to the points (`buildBoxLines`), colored by class. A
+  **Show boxes** toggle flips `boxGroup.visible`.
+- **Pipeline.** `build_seg_dataset.py`: SemanticKITTI `velodyne` + `labels` →
+  remap to learning ids → joint voxel-downsample to ~30k (class carried, not
+  averaged) → derive boxes → Draco encode (class in color, 14-bit positions) →
+  write `boxes.json` → upload under `seg/`. Offline fixtures
+  (`tests/fixtures/seg/`, built by `build_seg_fixtures.py`) drive the seg e2e.
+
 ### Licensing
 
-KITTI is **CC BY-NC-SA 3.0**. Both the committed city frame and the derived movie
-dataset retain that license with attribution (Geiger et al., IJRR 2013 / CVPR
-2012); the HF dataset card declares `license: cc-by-nc-sa-3.0` and carries the
-citation per the BY + SA terms. The PCL table scene is **BSD-3-Clause**
-(PointCloudLibrary).
+KITTI / SemanticKITTI are **CC BY-NC-SA 3.0**. The committed city frame and both
+derived movies (`geometry/` and `seg/`) retain that license with attribution
+(Geiger et al., IJRR 2013 / CVPR 2012; Behley et al., ICCV 2019 for the seg
+labels); the single HF dataset card declares `license: cc-by-nc-sa-3.0` and
+carries the citations per the BY + SA terms. The PCL table scene is
+**BSD-3-Clause** (PointCloudLibrary).
 
 ## Run
 - Viewer: `./pcl-viewer.sh` (set `PORT` to override 8000).
@@ -125,3 +158,6 @@ citation per the BY + SA terms. The PCL table scene is **BSD-3-Clause**
   `uv run --group dev pytest`.
 - Regenerate the movie dataset (one-shot, needs `HF_TOKEN` with write on the
   dataset): `uv run --group gen python scripts/build_movie_dataset.py`.
+- Regenerate the seg dataset (one-shot, needs `HF_TOKEN` + a local SemanticKITTI
+  `dataset/sequences` tree via `SEMANTIC_KITTI_DIR`): `uv run --group gen python
+  scripts/build_seg_dataset.py --seq 08 --limit 150`.
