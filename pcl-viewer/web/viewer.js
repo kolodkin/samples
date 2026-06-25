@@ -11,6 +11,13 @@ const FLAT_COLOR = 0x66ccff;
 const MOVIE_FPS = 15;
 const MOVIE_DECODE_CONCURRENCY = 4; // frames decoded in flight via the worker queue
 
+// SemanticKITTI 19-class learning palette, indexed by class id (0 = unlabeled).
+const SEG_PALETTE = [
+  0x202830, 0x6496F5, 0x64E6F5, 0x1E3C96, 0x501EB4, 0x0000FF, 0xFF1E1E,
+  0xFF28C8, 0x961E5A, 0xFF00FF, 0xFF96FF, 0x4B004B, 0xAF004B, 0xFFC800,
+  0xFF7832, 0x00AF00, 0x873C00, 0x96F050, 0xFFF096, 0xFF0000,
+].map((hex) => new THREE.Color(hex));
+
 // Render each point either as a lit sphere impostor ("ball", the default) or as
 // the plain flat square sprite ("square", three.js's stock point look). Both go
 // through PointsMaterial.onBeforeCompile so the size slider, size attenuation,
@@ -159,6 +166,20 @@ export function createViewer(canvas) {
     if (intensity) {
       const vals = Float32Array.from({ length: n }, (_, i) => intensity.getX(i));
       buffers.intensity = rampColors(vals);
+    }
+    // Draco movie frames for the seg scene carry the per-point class id in the
+    // (normalized) red channel of the color attribute; map each id through the
+    // fixed palette to build the "by class" buffer. Other clouds lack it, so
+    // "by class" falls back to flat there via applyColorMode.
+    const klass = geometry.getAttribute('color');
+    if (klass) {
+      const out = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        const id = Math.round(klass.getX(i) * 255);
+        const c = SEG_PALETTE[id] || SEG_PALETTE[0];
+        out[i * 3] = c.r; out[i * 3 + 1] = c.g; out[i * 3 + 2] = c.b;
+      }
+      buffers.class = out;
     }
     return buffers;
   }
