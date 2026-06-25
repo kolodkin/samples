@@ -209,7 +209,9 @@ export function createViewer(canvas) {
     if (klass) {
       const out = new Float32Array(n * 3);
       for (let i = 0; i < n; i++) {
-        const id = Math.round(klass.getX(i) * 255);
+        // DRACOLoader hands the color attribute back as raw, un-normalized floats,
+        // so the red channel already IS the class id (not a 0..1 fraction).
+        const id = Math.round(klass.getX(i));
         const c = SEG_PALETTE[id] || SEG_PALETTE[0];
         out[i * 3] = c.r; out[i * 3 + 1] = c.g; out[i * 3 + 2] = c.b;
       }
@@ -367,7 +369,16 @@ export function createViewer(canvas) {
   }
 
   function dracoLoad(url) {
-    return new Promise((res, rej) => dracoLoader.load(url, (g) => res(g), undefined, rej));
+    // Decode via decodeDracoFile (not .load(), which hardcodes SRGBColorSpace) with
+    // a non-sRGB colorspace, so DRACOLoader SKIPS its convertSRGBToLinear pass over
+    // the color attribute. The seg scene smuggles the per-point class id in that
+    // attribute's red channel as a raw integer; the sRGB→linear curve would mangle
+    // any id > 1, so it must pass through untouched.
+    return fetch(url)
+      .then((r) => r.arrayBuffer())
+      .then((buf) => new Promise((res, rej) => {
+        dracoLoader.decodeDracoFile(buf, res, null, null, THREE.LinearSRGBColorSpace).catch(rej);
+      }));
   }
 
   // Decode one frame off the queue: Draco decode (in DRACOLoader's WASM worker) →
@@ -676,6 +687,23 @@ export function createViewer(canvas) {
       let n = 0;
       for (let i = 0; i < buf.length; i += 4) {
         if (Math.abs(buf[i] - br) + Math.abs(buf[i + 1] - bg) + Math.abs(buf[i + 2] - bb) > 24) n++;
+      }
+      return n;
+    },
+    // e2e helper: count saturated (chromatic) pixels — max−min channel spread.
+    // The seg palette is vivid (car blue, road magenta, building yellow), so a
+    // working "by class" render has many; the near-grey fallback color has none.
+    colorfulPixelCount(threshold = 40) {
+      const gl = renderer.getContext();
+      const w = renderer.domElement.width;
+      const h = renderer.domElement.height;
+      const buf = new Uint8Array(w * h * 4);
+      gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+      let n = 0;
+      for (let i = 0; i < buf.length; i += 4) {
+        const max = Math.max(buf[i], buf[i + 1], buf[i + 2]);
+        const min = Math.min(buf[i], buf[i + 1], buf[i + 2]);
+        if (max - min > threshold) n++;
       }
       return n;
     },

@@ -264,6 +264,10 @@ def test_seg_scene_classes_and_boxes(server_url, page):
     # By-class coloring is selected automatically and renders pixels.
     page.wait_for_function("() => window.__PCL.settings.colorMode === 'class'")
     assert page.evaluate("() => window.__PCL.handle.visiblePixelCount()") > 500
+    # ...and those pixels are actually the vivid class palette, not the near-grey
+    # fallback — guards the Draco color-channel class-id decode (regression: the
+    # sRGB→linear pass + a stray *255 collapsed every point to palette[0]).
+    assert page.evaluate("() => window.__PCL.handle.colorfulPixelCount()") > 100
     # Boxes render (the fixture has one car box per frame).
     page.wait_for_function("() => window.__PCL.handle.getStats().boxCount >= 1", timeout=5000)
     # The toggle hides them.
