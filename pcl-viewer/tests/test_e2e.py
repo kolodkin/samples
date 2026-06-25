@@ -270,8 +270,11 @@ def test_seg_scene_classes_and_boxes(server_url, page):
     assert page.evaluate("() => window.__PCL.handle.colorfulPixelCount()") > 100
     # Boxes render (the fixture has one car box per frame).
     page.wait_for_function("() => window.__PCL.handle.getStats().boxCount >= 1", timeout=5000)
-    # The toggle hides them.
+    # The toggle hides them...
     page.get_by_test_id("show-boxes").click()
     page.wait_for_function("() => window.__PCL.settings.showBoxes === false")
+    # ...and brings them back (also leaves boxes visible in the captured frame).
+    page.get_by_test_id("show-boxes").click()
+    page.wait_for_function("() => window.__PCL.settings.showBoxes === true")
     # Legend is shown for the seg scene.
     assert page.get_by_test_id("legend").is_visible()

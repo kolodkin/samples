@@ -162,8 +162,10 @@ pair) but adds per-point **classes** and per-frame **3D boxes**:
   all N of both (~6 GB for 150 frames). **process** remaps to learning ids → joint
   voxel-downsample to ~30k (class carried, not averaged) → derive boxes → Draco
   encode (class in color, 14-bit positions) → write `boxes.json`. **upload** pushes
-  `seg/` to HF. The live scene is sequence **00**, frames 0–149. Offline fixtures
-  (`tests/fixtures/seg/`, built by `build_seg_fixtures.py`) drive the seg e2e.
+  `seg/` to HF. The live scene is sequence **00**, frames 0–149. The offline seg
+  fixture (`tests/fixtures/seg/`) is the **first few real processed frames** sliced
+  out by `build_seg_fixtures.py`, so the e2e and screenshot report render at the
+  same density/classes/boxes as the live scene, just with a handful of frames.
 
 ### Licensing
 

@@ -1,65 +1,54 @@
-"""Build tiny seg movie fixtures from the committed KITTI frame.
+"""Build the committed seg movie fixture by slicing the first few frames of a
+*real* processed seg dataset — so the offline e2e and the screenshot report show
+the same density, classes, and boxes as the live HF scene, just with a handful of
+frames instead of 150.
 
-Run once (commit the outputs): produces 4 heavily-decimated .drc frames whose
-per-point COLOR attribute red channel carries a synthetic learning-class id, plus
-a boxes.json with one moving box per frame. Gives the seg e2e a real, light,
-offline sequence with both per-point classes and per-frame boxes.
+The heavy lifting (download SemanticKITTI + remap/downsample/encode) belongs to
+scripts/build_seg_dataset.py; this just copies the first N `.drc` frames and the
+matching boxes.json entries into tests/fixtures/seg/. Point --src at a processed
+dir (default: the build_seg_dataset.py --process output):
 
-    uv run --group gen python tests/fixtures/build_seg_fixtures.py
+    # produce a processed dataset once (downloads ~6 GB, writes ~/seg-proc)
+    uv run --group gen python scripts/build_seg_dataset.py --process \\
+        --src-dir /path/to/raw --out /tmp/seg-proc
+    # then slice the committed fixture from it
+    uv run --group gen python tests/fixtures/build_seg_fixtures.py --src /tmp/seg-proc
 """
 from __future__ import annotations
 
+import argparse
 import json
+import shutil
 from pathlib import Path
 
-import numpy as np
-import DracoPy
-
 HERE = Path(__file__).resolve().parent
-SRC = HERE.parent.parent / "web" / "models" / "kitti-velodyne-000000.pcd"
 OUT = HERE / "seg"
 
 
-def read_binary_pcd_xyz(path: Path) -> np.ndarray:
-    data = path.read_bytes()
-    marker = b"DATA binary\n"
-    header_end = data.index(marker) + len(marker)
-    header = data[:header_end].decode("ascii", "replace")
-    count = next(int(line.split()[1]) for line in header.splitlines() if line.startswith("POINTS"))
-    body = np.frombuffer(data[header_end:header_end + count * 16], dtype=np.float32).reshape(-1, 4)
-    return body[:, :3].copy()
-
-
-def voxel_downsample(pts: np.ndarray, voxel: float) -> np.ndarray:
-    keys = np.floor(pts / voxel).astype(np.int64)
-    _, idx = np.unique(keys, axis=0, return_index=True)
-    return pts[np.sort(idx)]
-
-
 def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--src", default="/tmp/kitti-seg",
+                    help="processed seg dataset dir (build_seg_dataset.py --out)")
+    ap.add_argument("--frames", type=int, default=4, help="how many frames to keep")
+    args = ap.parse_args()
+
+    src = Path(args.src)
+    drcs = sorted(src.glob("*.drc"))[:args.frames]
+    if len(drcs) < args.frames:
+        raise SystemExit(f"need {args.frames} .drc frames in {src}, found {len(drcs)}")
+    boxes_src = json.loads((src / "boxes.json").read_text())
+
     OUT.mkdir(parents=True, exist_ok=True)
-    xyz = read_binary_pcd_xyz(SRC)
-    base = voxel_downsample(xyz, 0.8)
-    # Synthetic per-point class: ground-ish (low z) -> road(9); high -> building(13);
-    # a small cluster near +x -> car(1) so "By class" shows >=3 colors.
+    for f in OUT.glob("*.drc"):
+        f.unlink()
     boxes = {}
-    for i in range(4):
-        frame = base + np.array([i * 0.5, 0.0, 0.0], dtype=np.float32)
-        cls = np.full(len(frame), 9, dtype=np.uint8)            # road default
-        cls[frame[:, 2] > np.median(frame[:, 2])] = 13          # building
-        near = (np.abs(frame[:, 0] - (3.0 + i * 0.5)) < 1.5) & (np.abs(frame[:, 1]) < 1.5)
-        cls[near] = 1                                           # car
-        colors = np.zeros((len(frame), 3), dtype=np.uint8)
-        colors[:, 0] = cls
-        buf = DracoPy.encode(frame.astype(np.float32), colors=colors, quantization_bits=14)
-        (OUT / f"{i:06d}.drc").write_bytes(buf)
-        # One car box that rolls forward with the frame, in the source velodyne frame.
-        boxes[f"{i:06d}"] = [
-            {"cls": 1, "center": [3.0 + i * 0.5, 0.0, -1.0], "size": [4.0, 2.0, 1.6]}
-        ]
-        print(f"wrote {OUT / f'{i:06d}.drc'}  ({len(buf)} bytes, {len(frame)} pts)")
+    for i, drc in enumerate(drcs):
+        key = f"{i:06d}"
+        shutil.copyfile(drc, OUT / f"{key}.drc")
+        boxes[key] = boxes_src.get(drc.stem, [])
+        print(f"{key}.drc  ({drc.stat().st_size} bytes, {len(boxes[key])} boxes)")
     (OUT / "boxes.json").write_text(json.dumps(boxes))
-    print(f"wrote {OUT / 'boxes.json'} ({len(boxes)} frames)")
+    print(f"wrote {len(drcs)} real frames + boxes.json to {OUT}")
 
 
 if __name__ == "__main__":
