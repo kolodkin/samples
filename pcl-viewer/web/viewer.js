@@ -13,6 +13,13 @@ import {
 const BG = 0x101418;
 const FLAT_COLOR = 0x66ccff;
 const MOVIE_FPS = 15;
+
+// All color modes in display order. "flat" is always available; the scalar/class
+// modes are offered only when the live cloud actually supplies the matching ramp
+// buffer (computeColorBuffers decides per scene), so the UI lists just the modes
+// that apply — e.g. "by class" only on the seg scene, "by intensity" only where
+// the source carried an intensity field.
+const COLOR_MODES = ['flat', 'class', 'height', 'distance', 'intensity'];
 const MOVIE_DECODE_CONCURRENCY = 4; // frames decoded in flight via the worker queue
 
 // Per-scene normalization + framing. KITTI clouds (city, movie, seg) are z-up
@@ -116,6 +123,7 @@ export function createViewer(canvas) {
     loadProgress: { loaded: 0, total: 0 },
     error: null,
     boxCount: 0,
+    colorModes: ['flat'], // modes the live cloud supports (drives the UI dropdown)
     settings: { pointSize: 0.004, colorMode: 'distance', pointShape: 'ball', showBoxes: true },
     framesRendered: 0,
   };
@@ -307,6 +315,8 @@ export function createViewer(canvas) {
       points.geometry = geometry;
     }
     colorBuffers = buffers;
+    // Offer "flat" plus whichever ramp/class buffers this cloud actually supplies.
+    state.colorModes = COLOR_MODES.filter((m) => m === 'flat' || colorBuffers[m]);
     applyColorMode(state.settings.colorMode);
     state.pointCount = geometry.getAttribute('position').count;
   }
@@ -674,6 +684,8 @@ export function createViewer(canvas) {
         loadProgress: state.loadProgress,
         error: state.error,
         boxCount: state.boxCount,
+        colorMode: state.settings.colorMode, // the mode actually applied (post-fallback)
+        colorModes: state.colorModes,         // modes the live cloud supports
       };
     },
     // e2e helper: count non-background pixels in the rendered frame.

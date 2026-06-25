@@ -71,6 +71,49 @@ def test_color_mode_toggle(server_url, page):
         assert page.evaluate("() => window.__PCL.handle.visiblePixelCount()") > 1000
 
 
+def _color_mode_options(page):
+    return page.get_by_test_id("color-mode").evaluate(
+        "el => Array.from(el.options).map(o => o.value)")
+
+
+def test_color_modes_match_scene(server_url, page):
+    # The color-mode dropdown must offer only the modes the live scene can supply,
+    # not a fixed five: the city PCD carries intensity but no per-point class, so
+    # "intensity" is offered and "class" is not.
+    page.goto(
+        server_url
+        + "/?segMovieBase=/fixtures/seg/&segMovieCount=4&segBoxesUrl=/fixtures/seg/boxes.json"
+    )
+    _wait_ready(page)
+    page.get_by_test_id("menu-toggle").click()
+    assert _color_mode_options(page) == ["flat", "height", "distance", "intensity"]
+
+    # The seg Draco frames carry per-point classes but no intensity, so the set
+    # flips: "class" appears, "intensity" drops.
+    page.get_by_test_id("scene").select_option("seg")
+    page.wait_for_function(
+        "() => window.__PCL.scene === 'seg' && window.__PCL.ready === true"
+        " && window.__PCL.frameCount === 4",
+        timeout=60000,
+    )
+    page.wait_for_function(
+        "() => JSON.stringify(window.__PCL.handle.getStats().colorModes)"
+        " === JSON.stringify(['flat','class','height','distance'])")
+    assert _color_mode_options(page) == ["flat", "class", "height", "distance"]
+    # Seg defaults to by-class, and the dropdown reflects that applied mode.
+    expect(page.get_by_test_id("color-mode")).to_have_value("class")
+
+    # Switching back to a scene without "class" drops the stranded mode to flat in
+    # both the viewer and the dropdown.
+    page.get_by_test_id("scene").select_option("city")
+    page.wait_for_function(
+        "() => window.__PCL.scene === 'city' && window.__PCL.ready === true",
+        timeout=20000)
+    page.wait_for_function("() => window.__PCL.settings.colorMode === 'flat'")
+    assert _color_mode_options(page) == ["flat", "height", "distance", "intensity"]
+    expect(page.get_by_test_id("color-mode")).to_have_value("flat")
+
+
 def test_point_shape_toggle(server_url, page):
     page.goto(server_url + "/")
     _wait_ready(page)

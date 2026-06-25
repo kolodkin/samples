@@ -13,6 +13,14 @@ const SCENES = [
   { id: 'seg', label: 'KITTI seg' },
 ];
 
+// Display labels for the color modes. Which modes are actually offered is decided
+// per scene by the viewer (it knows which ramp/class buffers the live cloud has)
+// and surfaced via stats.colorModes — the dropdown lists only those.
+const COLOR_MODE_LABELS = {
+  flat: 'Flat', class: 'By class', height: 'By height',
+  distance: 'By distance', intensity: 'By intensity',
+};
+
 // A few representative classes for the seg-scene legend (hex matches SEG_PALETTE).
 const SEG_LEGEND = [
   { name: 'car', hex: '6496F5' }, { name: 'person', hex: 'FF1E1E' },
@@ -36,6 +44,7 @@ function App() {
     ready: false, pointCount: 0, fps: 0, cameraDistance: 0, eye: origin, target: origin,
     scene: 'city', frameIndex: 0, frameCount: 0, playing: false,
     loading: false, loadProgress: { loaded: 0, total: 0 }, error: null,
+    colorMode: 'distance', colorModes: ['flat', 'height', 'distance', 'intensity'],
   });
 
   useEffect(() => {
@@ -61,6 +70,14 @@ function App() {
   // Mirror the playhead into local state so the frame-select slider tracks
   // playback (and scene resets to 0) between manual seeks.
   useEffect(() => { setFrame(stats.frameIndex); }, [stats.frameIndex]);
+
+  // Mirror the viewer's actually-applied color mode so the dropdown follows any
+  // fallback: switching to a scene that lacks the current mode (e.g. seg's "class"
+  // → city, or "intensity" → the movie) drops it to flat in the viewer, and the
+  // dropdown — now listing only the new scene's modes — must reflect that.
+  useEffect(() => {
+    if (stats.colorMode && stats.colorMode !== colorMode) setColorMode(stats.colorMode);
+  }, [stats.colorMode]);
 
   const onSize = (e) => {
     const v = parseFloat(e.target.value);
@@ -173,11 +190,8 @@ function App() {
                value=${pointSize} data-testid="point-size" onInput=${onSize} />
         <label>Color mode</label>
         <select data-testid="color-mode" value=${colorMode} onChange=${onColor}>
-          <option value="flat">Flat</option>
-          <option value="class">By class</option>
-          <option value="height">By height</option>
-          <option value="distance">By distance</option>
-          <option value="intensity">By intensity</option>
+          ${stats.colorModes.map((m) => html`
+            <option value=${m}>${COLOR_MODE_LABELS[m] || m}</option>`)}
         </select>
         ${isSeg && html`
           <label class="row">

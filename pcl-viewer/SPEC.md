@@ -37,8 +37,23 @@ read blue and the far returns climb through to red, lighting up the concentric s
 rings. The same ramp (and the same robust percentile clamp) also drives "by height"
 (along the vertical axis, so ground reads blue and cars/walls climb to red) and "by
 intensity" (the PCD's per-point laser reflectance, which picks out road markings and
-signs); "flat" mode (a single material color) is a toggle. The ramp buffers are precomputed once per cloud and swapped on the geometry,
-and a scalar mode the source lacks (e.g. an intensity-free PCD) falls back to flat.
+signs); "flat" mode (a single material color) is a toggle. The ramp buffers are precomputed once per cloud and swapped on the geometry.
+
+## Scene-dependent color modes
+The color-mode dropdown lists only the modes the live scene can actually supply,
+rather than a fixed five. `computeColorBuffers` builds a ramp/class buffer for each
+field the cloud carries — every cloud gets `height` and `distance`, the city PCD
+adds `intensity` (its `intensity` field), and the seg Draco frames add `class` (the
+per-point id smuggled in the color attribute). `installGeometry` then derives the
+offered set as `flat` plus whichever buffers exist (`state.colorModes`, in the fixed
+`COLOR_MODES` display order), and `getStats()` surfaces it (alongside `colorMode`,
+the mode actually applied) so `app.js` renders exactly those `<option>`s. The result
+per scene: **city** flat/height/distance/intensity, **Lucy** and **movie**
+flat/height/distance, **seg** flat/class/height/distance. Because the dropdown only
+offers supported modes, the picker can no longer select an unavailable one; the
+applyColorMode flat-fallback still backstops a *scene switch* that strands the
+current mode (e.g. leaving seg's "by class" for the city scan), and `app.js` mirrors
+the applied `colorMode` back from stats so the dropdown follows that fallback.
 The camera sits low and forward-facing — just above the sensor's forward (+X) axis,
 looking down the road — so the scan reads like an onboard driving view: ground
 rings sweep to the horizon and cars/walls/poles stand up along the street.
@@ -62,7 +77,7 @@ and per-vertex color ramps working unchanged — the shading multiplies into
 |---------------|-----------------------------------------------------|
 | Point shape   | lit sphere impostor ("ball", default) vs. flat square sprite |
 | Point size    | `PointsMaterial.size` (0.002–0.05)                  |
-| Color mode    | flat vs. per-vertex ramp by height / distance / intensity, or palette by class (seg scene) |
+| Color mode    | flat vs. per-vertex ramp by height / distance / intensity, or palette by class (seg scene). The dropdown lists only the modes the live scene supplies (see "Scene-dependent color modes") |
 | Movie (movie + seg scenes) | play/pause, frame step/seek (the sequence loops continuously) |
 | Show boxes (seg scene only) | toggle the per-instance 3D bounding boxes |
 | Reset camera  | re-frames the low forward-facing view down the road  |
