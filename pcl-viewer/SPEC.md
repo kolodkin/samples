@@ -77,11 +77,14 @@ and per-vertex color ramps working unchanged — the shading multiplies into
 |---------------|-----------------------------------------------------|
 | Point shape   | lit sphere impostor ("ball", default) vs. flat square sprite |
 | Point size    | `PointsMaterial.size` (0.002–0.05)                  |
-| Color mode    | flat vs. per-vertex ramp by height / distance / intensity, or palette by class (seg scene). The dropdown lists only the modes the live scene supplies (see "Scene-dependent color modes") |
+| Color mode    | flat vs. per-vertex ramp by height / distance / intensity, or palette by class (seg scene) |
 | Movie (movie + seg scenes) | play/pause, frame step/seek (the sequence loops continuously) |
 | Show boxes (seg scene only) | toggle the per-instance 3D bounding boxes |
 | Reset camera  | re-frames the low forward-facing view down the road  |
 | Stats overlay | point count, rolling FPS, camera distance, box count |
+
+The color-mode dropdown lists only the modes the live scene supplies — see
+"Scene-dependent color modes".
 
 ## e2e strategy
 `conftest.py` ensures vendoring, then starts `serve.py` on a free port per test.
