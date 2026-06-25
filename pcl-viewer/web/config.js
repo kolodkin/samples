@@ -15,7 +15,7 @@ export const PCL_URL = pick(
 
 export const MOVIE_BASE = pick(
   'movieBase',
-  'https://huggingface.co/datasets/kolodkin/pcl-viewer-kitti-movie/resolve/main/',
+  'https://huggingface.co/datasets/kolodkin/pcl-viewer-kitti-movie/resolve/main/geometry/',
 );
 
 export const MOVIE_COUNT = parseInt(pick('movieCount', '154'), 10);

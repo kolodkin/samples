@@ -148,7 +148,6 @@ def main() -> None:
         count += 1
         if i % 20 == 0:
             print(f"  frame {i}: {len(xyz)} pts -> {len(buf)} bytes")
-    (out / "README.md").write_text(CARD)
     (out / "annotations.md").write_text(
         ANNOTATIONS.format(
             drive=DRIVE, count=count, last=max(count - 1, 0),
@@ -162,8 +161,21 @@ def main() -> None:
     token = os.environ["HF_TOKEN"]
     api = HfApi(token=token)
     api.create_repo(args.repo_id, repo_type="dataset", exist_ok=True, private=False)
-    api.upload_folder(folder_path=str(out), repo_id=args.repo_id, repo_type="dataset")
-    print(f"uploaded to https://huggingface.co/datasets/{args.repo_id}  (frames: {count})")
+    # Frames + annotations live under geometry/ (the seg movie lives under seg/).
+    api.upload_folder(
+        folder_path=str(out),
+        path_in_repo="geometry",
+        repo_id=args.repo_id,
+        repo_type="dataset",
+    )
+    # The dataset card at the root describes both movies.
+    api.upload_file(
+        path_or_fileobj=CARD.encode(),
+        path_in_repo="README.md",
+        repo_id=args.repo_id,
+        repo_type="dataset",
+    )
+    print(f"uploaded geometry/ to https://huggingface.co/datasets/{args.repo_id}  (frames: {count})")
 
 
 if __name__ == "__main__":
