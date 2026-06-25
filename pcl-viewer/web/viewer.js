@@ -441,6 +441,48 @@ export function createViewer(canvas) {
     state.playing = false;
   }
 
+  // Step `delta` frames from the current one. Stepping is a paused-scrub gesture,
+  // so it always pauses first (otherwise the playback timer would overwrite the
+  // step on its next tick). Frames the worker queue hasn't decoded yet are
+  // skipped in the step direction so the playhead always lands on a real frame;
+  // if the edge is reached with nothing decoded beyond, it holds.
+  function step(delta) {
+    if (!movie) return;
+    pause();
+    const count = movie.frames.length;
+    const dir = delta < 0 ? -1 : 1;
+    let remaining = Math.abs(delta) || 1;
+    let target = movie.index;
+    while (remaining > 0) {
+      let next = target + dir;
+      while (next >= 0 && next < count && !movie.frames[next]) next += dir;
+      if (next < 0 || next >= count) break; // no decoded frame left this way
+      target = next;
+      remaining--;
+    }
+    showFrame(target);
+  }
+
+  // Jump to an arbitrary frame (the frame-select slider). Pauses like step, and
+  // if the exact frame isn't decoded yet it snaps to the nearest decoded one so a
+  // drag never lands on a blank frame.
+  function seek(i) {
+    if (!movie) return;
+    pause();
+    const count = movie.frames.length;
+    let target = Math.max(0, Math.min(count - 1, Math.round(i)));
+    if (!movie.frames[target]) {
+      let found = -1;
+      for (let d = 1; d < count && found < 0; d++) {
+        if (target - d >= 0 && movie.frames[target - d]) found = target - d;
+        else if (target + d < count && movie.frames[target + d]) found = target + d;
+      }
+      if (found < 0) return;
+      target = found;
+    }
+    showFrame(target);
+  }
+
   async function loadScene(id) {
     loadToken++;
     state.ready = false;
@@ -475,6 +517,8 @@ export function createViewer(canvas) {
     loadScene,
     play,
     pause,
+    step,
+    seek,
     setPointSize(n) {
       state.settings.pointSize = n;
       if (points) { points.material.size = n; points.material.needsUpdate = true; }
