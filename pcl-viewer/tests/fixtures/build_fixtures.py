@@ -34,6 +34,34 @@ def voxel_downsample(pts: np.ndarray, voxel: float) -> np.ndarray:
     return pts[np.sort(idx)]
 
 
+def build_lucy_fixture() -> None:
+    """Tiny PLY mesh fixture for the offline Lucy (object-profile) e2e.
+
+    A small Fibonacci sphere with throwaway triangle faces: enough to make the PLY
+    an *indexed mesh* (like the real Lucy), so the PLY loader path — index stripped,
+    unique vertices rendered as points — is exercised without committing the 1.9 MB
+    Lucy cloud."""
+    out = HERE / "lucy"
+    out.mkdir(parents=True, exist_ok=True)
+    n = 4000
+    i = np.arange(n)
+    y = 1.0 - 2.0 * (i + 0.5) / n
+    r = np.sqrt(np.maximum(0.0, 1.0 - y * y))
+    theta = np.pi * (3.0 - np.sqrt(5.0)) * i  # golden angle
+    verts = np.stack([r * np.cos(theta), y, r * np.sin(theta)], axis=1).astype(np.float32)
+    faces = [(a, a + 1, a + 2) for a in range(0, n - 2, 3)]
+    lines = [
+        "ply", "format ascii 1.0",
+        f"element vertex {n}", "property float x", "property float y", "property float z",
+        f"element face {len(faces)}", "property list uchar int vertex_indices", "end_header",
+    ]
+    lines += [f"{x:.5f} {yy:.5f} {z:.5f}" for x, yy, z in verts]
+    lines += [f"3 {a} {b} {c}" for a, b, c in faces]
+    path = out / "lucy_fixture.ply"
+    path.write_text("\n".join(lines) + "\n")
+    print(f"wrote {path}  ({path.stat().st_size} bytes, {n} verts, {len(faces)} faces)")
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     xyz = read_binary_pcd_xyz(SRC)
@@ -43,6 +71,7 @@ def main() -> None:
         buf = DracoPy.encode(frame.astype(np.float32), quantization_bits=14)
         (OUT / f"{i:06d}.drc").write_bytes(buf)
         print(f"wrote {OUT / f'{i:06d}.drc'}  ({len(buf)} bytes, {len(frame)} pts)")
+    build_lucy_fixture()
 
 
 if __name__ == "__main__":
