@@ -8,14 +8,6 @@ const pick = (key, def) => params.get(key) ?? cfg[key] ?? def;
 
 export const CITY_URL = './models/kitti-velodyne-000000.pcd';
 
-// The "PCL shape" scene: a BIWI face scan (100k points, binary PCD) hot-linked
-// from the PointCloudLibrary data repo — a recognizable 3D shape rather than a
-// flat tabletop. Overridable via ?pclUrl= (e2e points it at a local model).
-export const PCL_URL = pick(
-  'pclUrl',
-  'https://raw.githubusercontent.com/PointCloudLibrary/data/master/biwi_face_database/model.pcd',
-);
-
 export const MOVIE_BASE = pick(
   'movieBase',
   'https://huggingface.co/datasets/kolodkin/pcl-viewer-kitti-movie/resolve/main/',

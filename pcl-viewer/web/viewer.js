@@ -4,25 +4,12 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { PCDLoader } from 'three/addons/loaders/PCDLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { CITY_URL, PCL_URL, MOVIE_COUNT, frameUrl } from './config.js';
+import { CITY_URL, MOVIE_COUNT, frameUrl } from './config.js';
 
 const BG = 0x101418;
 const FLAT_COLOR = 0x66ccff;
 const MOVIE_FPS = 15;
 const MOVIE_DECODE_CONCURRENCY = 4; // frames decoded in flight via the worker queue
-
-// Per-scene normalization + framing. KITTI clouds (city, movie) are z-up sensor
-// frames spread across a wide ground plane: rotate to y-up, scale by a robust
-// *horizontal* radius so the dense scene fills the view, and frame from a low
-// chase camera looking down the road. The PCL face scan is a compact object that
-// is already y-up and faces +Z (nose protruding toward +Z, crown at +Y): skip the
-// rotation, scale by a robust *3D* radius so the whole head fits, and frame it
-// front-on. `radial` selects the scale metric; `camera` selects the framing.
-const PROFILES = {
-  kitti:  { upRotate: true,  radial: false, camera: 'chase' },
-  object: { upRotate: false, radial: true,  camera: 'front' },
-};
-const SCENE_PROFILE = { city: PROFILES.kitti, face: PROFILES.object, movie: PROFILES.kitti };
 
 // Render each point either as a lit sphere impostor ("ball", the default) or as
 // the plain flat square sprite ("square", three.js's stock point look). Both go
@@ -83,7 +70,6 @@ export function createViewer(canvas) {
   let points = null;       // the live THREE.Points object
   let colorBuffers = {};   // mode name -> Float32Array of per-point ramp colors
   let sceneRadius = 0.5;   // normalized robust radius of the scan
-  let activeProfile = PROFILES.kitti; // normalization/framing for the live scene
 
   // Movie state
   let movie = null;        // { frames: [{geometry, buffers}], timer, index }
@@ -113,30 +99,20 @@ export function createViewer(canvas) {
   }
   window.addEventListener('resize', resize);
 
-  function frameCamera(profile = activeProfile) {
+  function frameCamera() {
     const box = new THREE.Box3().setFromObject(points);
     const center = box.getCenter(new THREE.Vector3());
     const radius = sceneRadius; // ignore far stray returns so the scene fills the view
-    let eye, look;
-    if (profile.camera === 'front') {
-      // The face is centered, y-up, and faces +Z (nose toward +Z, crown at +Y).
-      // View it front-on from +Z, lifted slightly and pushed a touch to the right
-      // for a flattering near-frontal portrait; aim at the box center (just above
-      // the nose, around the eyes). Pulled back so the whole head fits the 45° FOV.
-      eye = center.clone().add(new THREE.Vector3(0.5, 0.35, 2.3).multiplyScalar(radius));
-      look = center.clone();
-    } else {
-      // Axis convention after normalization: +X is forward (down the road),
-      // +Y is up, +Z is right, and the sensor sits at the cloud center. Pull the
-      // eye up and behind the sensor and aim it forward at the road ahead, an
-      // elevated chase view that pulls back so the whole scene reads at once (the
-      // sensor blind-spot ring sits in the foreground). The eye sits above the
-      // target, so the view still looks down even with a level aim point.
-      // Offsets are round multiples of 0.1 so that, at sceneRadius 0.5, the eye
-      // and target land on clean values in the HUD readout.
-      eye = center.clone().add(new THREE.Vector3(-1.4, 1.2, 0).multiplyScalar(radius));
-      look = center.clone().add(new THREE.Vector3(0.8, 0, 0).multiplyScalar(radius));
-    }
+    // Axis convention after normalization: +X is forward (down the road),
+    // +Y is up, +Z is right, and the sensor sits at the cloud center. Pull the
+    // eye up and behind the sensor and aim it forward at the road ahead, an
+    // elevated chase view that pulls back so the whole scene reads at once (the
+    // sensor blind-spot ring sits in the foreground). The eye sits above the
+    // target, so the view still looks down even with a level aim point.
+    // Offsets are round multiples of 0.1 so that, at sceneRadius 0.5, the eye
+    // and target land on clean values in the HUD readout.
+    const eye = center.clone().add(new THREE.Vector3(-1.4, 1.2, 0).multiplyScalar(radius));
+    const look = center.clone().add(new THREE.Vector3(0.8, 0, 0).multiplyScalar(radius));
     camera.position.copy(eye);
     controls.target.copy(look);
     camera.near = radius / 100;
@@ -211,19 +187,14 @@ export function createViewer(canvas) {
   // the dense scene fills the frame instead of being shrunk by a few stray
   // returns. Keeps camera framing and the point-size slider meaningful across
   // datasets.
-  function normalizeGeometry(geom, profile) {
-    if (profile.upRotate) geom.rotateX(-Math.PI / 2); // z-up sensor frame -> y-up
+  function normalizeGeometry(geom) {
+    geom.rotateX(-Math.PI / 2);
     geom.computeBoundingBox();
     const center = geom.boundingBox.getCenter(new THREE.Vector3());
     geom.translate(-center.x, -center.y, -center.z);
     const pos = geom.getAttribute('position');
-    // KITTI scans fill a wide ground plane, so scale by a robust *horizontal*
-    // (x,z) radius; a compact object scales by a robust *3D* radius so its full
-    // vertical extent fits the frame.
     const radii = Float32Array.from(
-      { length: pos.count }, (_, i) => profile.radial
-        ? Math.hypot(pos.getX(i), pos.getY(i), pos.getZ(i))
-        : Math.hypot(pos.getX(i), pos.getZ(i))).sort();
+      { length: pos.count }, (_, i) => Math.hypot(pos.getX(i), pos.getZ(i))).sort();
     const r = radii[Math.floor(pos.count * 0.9)] || 1;
     geom.scale(0.5 / r, 0.5 / r, 0.5 / r);
     sceneRadius = 0.5;
@@ -303,16 +274,16 @@ export function createViewer(canvas) {
     colorBuffers = {};
   }
 
-  async function loadStatic(url, profile) {
+  async function loadStatic(url) {
     const token = loadToken;
     const loaded = await new Promise((res, rej) => pcdLoader.load(url, (p) => res(p), undefined, rej));
     if (token !== loadToken) { loaded.geometry.dispose(); loaded.material.dispose(); return; }
     loaded.material.dispose(); // we build our own (shape-shaded) material
     const geom = loaded.geometry;
-    normalizeGeometry(geom, profile);
+    normalizeGeometry(geom);
     installGeometry(geom, computeColorBuffers(geom));
     resize();
-    frameCamera(profile);
+    frameCamera();
     state.ready = true;
   }
 
@@ -438,10 +409,8 @@ export function createViewer(canvas) {
     state.loading = false;
     state.loadProgress = { loaded: 0, total: 0 };
     state.scene = id;
-    activeProfile = SCENE_PROFILE[id] || PROFILES.kitti;
     teardownScene();
-    if (id === 'city') await loadStatic(CITY_URL, activeProfile);
-    else if (id === 'face') await loadStatic(PCL_URL, activeProfile);
+    if (id === 'city') await loadStatic(CITY_URL);
     else if (id === 'movie') await loadMovie(MOVIE_COUNT);
   }
 
