@@ -9,12 +9,15 @@ regenerated on demand, so e2e runs offline (the browser fetches libs from the lo
 Python server, never a CDN at test time). Preact renders via `htm` — no JSX/transpile.
 
 ## Component boundaries
-- `viewer.js` — `createViewer(canvas)` returns an imperative handle
-  (`loadScene`, `play`, `pause`, `setPointSize`, `setColorMode`,
+- `viewer.js` — `createViewer(canvas, { onColorState })` returns an imperative
+  handle (`loadScene`, `play`, `pause`, `setPointSize`, `setColorMode`,
   `setPointShape`, `resetCamera`, `getStats`, `visiblePixelCount`, `dispose`).
-  Owns all three.js state. No Preact.
+  Owns all three.js state. No Preact. The optional `onColorState` callback pushes
+  color-mode changes back to the UI (see "Scene-dependent color modes").
 - `app.js` — pure Preact UI; owns control state and drives the handle. No three.js
   internals.
+- `colorModes.js` — shared, ordered `COLOR_MODES` list (`{id, label}`) imported by
+  both `viewer.js` and `app.js`.
 - `serve.py` — `ThreadingHTTPServer` serving `web/` with JS/`.pcd` MIME types and
   `Cache-Control: no-store`.
 
@@ -37,8 +40,32 @@ read blue and the far returns climb through to red, lighting up the concentric s
 rings. The same ramp (and the same robust percentile clamp) also drives "by height"
 (along the vertical axis, so ground reads blue and cars/walls climb to red) and "by
 intensity" (the PCD's per-point laser reflectance, which picks out road markings and
-signs); "flat" mode (a single material color) is a toggle. The ramp buffers are precomputed once per cloud and swapped on the geometry,
-and a scalar mode the source lacks (e.g. an intensity-free PCD) falls back to flat.
+signs); "flat" mode (a single material color) is a toggle. The ramp buffers are precomputed once per cloud and swapped on the geometry.
+
+## Scene-dependent color modes
+The color-mode dropdown lists only the modes the live scene can actually supply,
+rather than a fixed five. `web/colorModes.js` is the single source of truth — an
+ordered `COLOR_MODES` list of `{id, label}`, imported by both the viewer (ids) and
+the UI (labels). `computeColorBuffers` builds a ramp/class buffer for each field the
+cloud carries — every cloud gets `height` and `distance`, the city PCD adds
+`intensity` (its `intensity` field), and the seg Draco frames add `class` (the
+per-point id smuggled in the color attribute). At **scene load** (in `loadStatic` /
+`loadMovie`, not per movie frame) the offered set is derived once as `flat` plus
+whichever buffers exist (`offeredModes` → `state.colorModes`, in `COLOR_MODES`
+order). The result per scene: **city** flat/height/distance/intensity, **Lucy** and
+**movie** flat/height/distance, **seg** flat/class/height/distance.
+
+Color state is **pushed** to the UI rather than polled: `createViewer` takes an
+`onColorState({mode, modes})` callback that `applyColorMode` fires whenever the
+applied mode or the offered set changes (guarded against the per-frame movie
+re-installs, since `state.colorModes` is a stable array per scene). `app.js` holds
+`colorMode`/`colorModes` as local state updated by that callback and renders exactly
+those `<option>`s — so the dropdown follows the viewer immediately, including the
+`applyColorMode` flat-fallback that backstops a *scene switch* stranding the current
+mode (e.g. leaving seg's "by class" for the city scan). Per-scene **default** modes
+live in one `SCENE_DEFAULT_COLOR` map in the viewer (`{ seg: 'class' }`, applied in
+`loadScene`); scenes not listed carry the current mode into the new scene.
+`getStats()` also exposes `colorMode`/`colorModes` for e2e introspection.
 The camera sits low and forward-facing — just above the sensor's forward (+X) axis,
 looking down the road — so the scan reads like an onboard driving view: ground
 rings sweep to the horizon and cars/walls/poles stand up along the street.
@@ -67,6 +94,9 @@ and per-vertex color ramps working unchanged — the shading multiplies into
 | Show boxes (seg scene only) | toggle the per-instance 3D bounding boxes |
 | Reset camera  | re-frames the low forward-facing view down the road  |
 | Stats overlay | point count, rolling FPS, camera distance, box count |
+
+The color-mode dropdown lists only the modes the live scene supplies — see
+"Scene-dependent color modes".
 
 ## e2e strategy
 `conftest.py` ensures vendoring, then starts `serve.py` on a free port per test.
