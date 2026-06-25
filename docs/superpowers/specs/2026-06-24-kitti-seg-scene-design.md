@@ -35,16 +35,35 @@ Why not the alternatives:
 - *KITTI-360*: native oriented boxes + dense labels, but a much heavier dataset
   that diverges from the existing KITTI-Velodyne pipeline. Rejected as YAGNI.
 
-New HF dataset: **`kolodkin/pcl-viewer-kitti-seg`**, mirroring the existing
-`kolodkin/pcl-viewer-kitti-movie` layout.
+### Shared dataset layout
+
+Both movies live in the **one existing HF dataset**,
+`kolodkin/pcl-viewer-kitti-movie`, under two parallel folders:
+
+```
+kolodkin/pcl-viewer-kitti-movie/
+├── README.md                 # one dataset card covering both movies
+├── geometry/                 # existing geometry-only movie (drive 0005)
+│   ├── 000000.drc … 000153.drc
+│   └── annotations.md        # "geometry only — no labels"
+└── seg/                      # new labeled movie (SemanticKITTI slice)
+    ├── 000000.drc … NNNNNN.drc   # class id packed in Draco color attribute
+    ├── boxes.json
+    └── annotations.md        # "labels included — per-point class + per-frame boxes"
+```
+
+This **moves the existing 154 frames from the dataset root into `geometry/`**, so
+`build_movie_dataset.py` and `MOVIE_BASE` are updated to the `geometry/` prefix
+(see Config). No third dataset is created.
 
 ### Licensing
 
-SemanticKITTI / KITTI are **CC BY-NC-SA 3.0**. The derived dataset keeps that
-license with attribution; the HF card declares `cc-by-nc-sa-3.0` and carries the
+SemanticKITTI / KITTI are **CC BY-NC-SA 3.0**. The dataset keeps that license
+with attribution; the single HF card declares `cc-by-nc-sa-3.0` and carries the
 SemanticKITTI (Behley et al., ICCV 2019) and KITTI (Geiger et al.) citations.
-Unlike the geometry-only movie, this dataset's `annotations.md` documents that
-labels **are** included (per-point class + per-frame boxes).
+Each folder's `annotations.md` states its own label status: `geometry/` is
+geometry-only; `seg/` documents that labels **are** included (per-point class +
+per-frame boxes).
 
 ## How labels ride the streaming pipeline
 
@@ -80,9 +99,14 @@ labels could silently misalign. Rejected.
    later nicety.
 5. **Draco-encode** positions with the per-point **class as the color
    attribute** (14-bit position quantization, as today).
-6. Write `boxes.json` — `{ "NNNNNN": [ {cls, center:[x,y,z], size:[x,y,z]}, … ] }`.
-7. Upload `.drc` frames + `boxes.json` + dataset card (`README.md`) +
-   `annotations.md` to the HF dataset.
+6. Write `seg/boxes.json` — `{ "NNNNNN": [ {cls, center:[x,y,z], size:[x,y,z]}, … ] }`.
+7. Upload to `kolodkin/pcl-viewer-kitti-movie` under **`seg/`** (frames +
+   `boxes.json` + `seg/annotations.md`), and refresh the root `README.md` card to
+   describe both movies.
+
+The existing `scripts/build_movie_dataset.py` is updated to upload its geometry
+frames under **`geometry/`** (and write `geometry/annotations.md`) so the two
+build scripts share one dataset without clobbering each other's card or frames.
 
 ## Viewer changes — `viewer.js`
 
@@ -104,9 +128,11 @@ labels could silently misalign. Rejected.
 
 ## Config — `web/config.js`
 
-Add the seg scene's `segMovieBase`, `segBoxesUrl`, and `segMovieCount`, each
-`?`-overridable (and via `window.__PCL_CONFIG`) exactly like the existing movie
-params, so e2e points them at local fixtures.
+Repoint the existing `MOVIE_BASE` default at the new **`geometry/`** prefix
+(`…/resolve/main/geometry/`), and add the seg scene's `segMovieBase`
+(`…/resolve/main/seg/`), `segBoxesUrl` (`…/seg/boxes.json`), and `segMovieCount`,
+each `?`-overridable (and via `window.__PCL_CONFIG`) exactly like the existing
+movie params, so e2e points them at local fixtures.
 
 ## Tests
 
