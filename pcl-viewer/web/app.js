@@ -3,6 +3,7 @@ import { h, render } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import htm from 'htm';
 import { createViewer } from './viewer.js';
+import { COLOR_MODES } from './colorModes.js';
 
 const html = htm.bind(h);
 
@@ -13,13 +14,11 @@ const SCENES = [
   { id: 'seg', label: 'KITTI seg' },
 ];
 
-// Display labels for the color modes. Which modes are actually offered is decided
-// per scene by the viewer (it knows which ramp/class buffers the live cloud has)
-// and surfaced via stats.colorModes — the dropdown lists only those.
-const COLOR_MODE_LABELS = {
-  flat: 'Flat', class: 'By class', height: 'By height',
-  distance: 'By distance', intensity: 'By intensity',
-};
+// id -> label lookup over the shared mode list. Which modes are actually offered
+// per scene (and the applied one) is decided by the viewer and pushed in via the
+// onColorState callback below; the dropdown renders only those.
+const COLOR_MODE_LABEL = Object.fromEntries(COLOR_MODES.map((m) => [m.id, m.label]));
+const ALL_MODE_IDS = COLOR_MODES.map((m) => m.id);
 
 // A few representative classes for the seg-scene legend (hex matches SEG_PALETTE).
 const SEG_LEGEND = [
@@ -33,7 +32,10 @@ function App() {
   const canvasRef = useRef(null);
   const viewerRef = useRef(null);
   const [pointSize, setPointSize] = useState(0.004);
+  // Color state is pushed by the viewer (onColorState), not polled: `colorMode`
+  // is the mode actually applied, `colorModes` the subset the live scene offers.
   const [colorMode, setColorMode] = useState('distance');
+  const [colorModes, setColorModes] = useState(ALL_MODE_IDS);
   const [pointShape, setPointShape] = useState('ball');
   const [sceneId, setSceneId] = useState('city');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -44,11 +46,15 @@ function App() {
     ready: false, pointCount: 0, fps: 0, cameraDistance: 0, eye: origin, target: origin,
     scene: 'city', frameIndex: 0, frameCount: 0, playing: false,
     loading: false, loadProgress: { loaded: 0, total: 0 }, error: null,
-    colorMode: 'distance', colorModes: ['flat', 'height', 'distance', 'intensity'],
   });
 
   useEffect(() => {
-    const viewer = createViewer(canvasRef.current);
+    // The viewer pushes the applied color mode + the modes the live scene offers
+    // whenever they change (scene switch, fallback, or a manual pick), so the
+    // dropdown follows the viewer without polling.
+    const viewer = createViewer(canvasRef.current, {
+      onColorState: ({ mode, modes }) => { setColorMode(mode); setColorModes(modes); },
+    });
     viewerRef.current = viewer;
 
     let frames = 0, last = performance.now(), fps = 0, raf = 0;
@@ -71,29 +77,21 @@ function App() {
   // playback (and scene resets to 0) between manual seeks.
   useEffect(() => { setFrame(stats.frameIndex); }, [stats.frameIndex]);
 
-  // Mirror the viewer's actually-applied color mode so the dropdown follows any
-  // fallback: switching to a scene that lacks the current mode (e.g. seg's "class"
-  // → city, or "intensity" → the movie) drops it to flat in the viewer, and the
-  // dropdown — now listing only the new scene's modes — must reflect that.
-  useEffect(() => {
-    if (stats.colorMode && stats.colorMode !== colorMode) setColorMode(stats.colorMode);
-  }, [stats.colorMode]);
-
   const onSize = (e) => {
     const v = parseFloat(e.target.value);
     setPointSize(v); viewerRef.current.setPointSize(v);
   };
-  const onColor = (e) => {
-    setColorMode(e.target.value); viewerRef.current.setColorMode(e.target.value);
-  };
+  // Drive the viewer; the onColorState callback echoes the applied mode back into
+  // local state (so a fallback would be reflected too).
+  const onColor = (e) => viewerRef.current.setColorMode(e.target.value);
   const onShape = (e) => {
     setPointShape(e.target.value); viewerRef.current.setPointShape(e.target.value);
   };
   const onScene = (e) => {
     const id = e.target.value;
     setSceneId(id); viewerRef.current.loadScene(id);
-    // The seg scene's whole point is the per-point classes — default to that mode.
-    if (id === 'seg') { setColorMode('class'); viewerRef.current.setColorMode('class'); }
+    // Per-scene color defaults (e.g. seg → "by class") live in the viewer and
+    // arrive via onColorState once the new scene's first frame installs.
   };
   const onToggleBoxes = (e) => {
     setShowBoxes(e.target.checked); viewerRef.current.setShowBoxes(e.target.checked);
@@ -190,8 +188,8 @@ function App() {
                value=${pointSize} data-testid="point-size" onInput=${onSize} />
         <label>Color mode</label>
         <select data-testid="color-mode" value=${colorMode} onChange=${onColor}>
-          ${stats.colorModes.map((m) => html`
-            <option value=${m}>${COLOR_MODE_LABELS[m] || m}</option>`)}
+          ${colorModes.map((m) => html`
+            <option value=${m}>${COLOR_MODE_LABEL[m] || m}</option>`)}
         </select>
         ${isSeg && html`
           <label class="row">

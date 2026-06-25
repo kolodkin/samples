@@ -9,18 +9,25 @@ import {
   CITY_URL, LUCY_URL, MOVIE_COUNT, frameUrl,
   SEG_MOVIE_COUNT, SEG_BOXES_URL, segFrameUrl,
 } from './config.js';
+import { COLOR_MODES } from './colorModes.js';
 
 const BG = 0x101418;
 const FLAT_COLOR = 0x66ccff;
 const MOVIE_FPS = 15;
-
-// All color modes in display order. "flat" is always available; the scalar/class
-// modes are offered only when the live cloud actually supplies the matching ramp
-// buffer (computeColorBuffers decides per scene), so the UI lists just the modes
-// that apply — e.g. "by class" only on the seg scene, "by intensity" only where
-// the source carried an intensity field.
-const COLOR_MODES = ['flat', 'class', 'height', 'distance', 'intensity'];
 const MOVIE_DECODE_CONCURRENCY = 4; // frames decoded in flight via the worker queue
+
+// Modes the cloud offers are derived from the ramp/class buffers it actually
+// carries: "flat" is always available, the rest only when their buffer exists
+// (so "by class" appears just on the seg scene, "by intensity" only where the
+// source had an intensity field). Order follows COLOR_MODES.
+const offeredModes = (buffers) =>
+  COLOR_MODES.filter((m) => m.id === 'flat' || buffers[m.id]).map((m) => m.id);
+
+// Scenes listed here reset the color mode to the given value each time they load:
+// the seg scene is *about* its per-point classes, so it always opens "by class".
+// Scenes not listed keep whatever mode is active, falling back to flat (via
+// applyColorMode) if the new cloud can't supply it.
+const SCENE_DEFAULT_COLOR = { seg: 'class' };
 
 // Per-scene normalization + framing. KITTI clouds (city, movie, seg) are z-up
 // sensor frames spread over a wide ground plane: rotate to y-up, scale by a robust
@@ -75,7 +82,7 @@ function installPointShapeShading(material) {
   };
 }
 
-export function createViewer(canvas) {
+export function createViewer(canvas, { onColorState } = {}) {
   const renderer = new THREE.WebGLRenderer({
     canvas,
     antialias: true,
@@ -228,6 +235,17 @@ export function createViewer(canvas) {
     return buffers;
   }
 
+  // Push the applied mode + available modes to the UI, but only when either
+  // actually changes. `state.colorModes` is a stable array per scene (set once at
+  // load), so the per-frame applyColorMode during movie playback is a no-op here.
+  let lastMode, lastModes;
+  function notifyColorState() {
+    if (state.settings.colorMode === lastMode && state.colorModes === lastModes) return;
+    lastMode = state.settings.colorMode;
+    lastModes = state.colorModes;
+    if (onColorState) onColorState({ mode: lastMode, modes: lastModes });
+  }
+
   function applyColorMode(mode) {
     if (!points) return;
     const buffer = mode === 'flat' ? null : colorBuffers[mode];
@@ -244,6 +262,7 @@ export function createViewer(canvas) {
       points.material.color.set(FLAT_COLOR);
     }
     points.material.needsUpdate = true;
+    notifyColorState();
   }
 
   // Normalize a static cloud into the viewer's working frame: center on the
@@ -315,8 +334,6 @@ export function createViewer(canvas) {
       points.geometry = geometry;
     }
     colorBuffers = buffers;
-    // Offer "flat" plus whichever ramp/class buffers this cloud actually supplies.
-    state.colorModes = COLOR_MODES.filter((m) => m === 'flat' || colorBuffers[m]);
     applyColorMode(state.settings.colorMode);
     state.pointCount = geometry.getAttribute('position').count;
   }
@@ -372,7 +389,9 @@ export function createViewer(canvas) {
     const geom = await loadGeometry(url);
     if (token !== loadToken) { geom.dispose(); return; }
     normalizeGeometry(geom, profile);
-    installGeometry(geom, computeColorBuffers(geom));
+    const buffers = computeColorBuffers(geom);
+    state.colorModes = offeredModes(buffers); // once per scene, before install
+    installGeometry(geom, buffers);
     resize();
     frameCamera(profile);
     state.ready = true;
@@ -477,6 +496,7 @@ export function createViewer(canvas) {
     state.frameCount = count;
     state.frameIndex = 0;
     state.loadProgress = { loaded: 1, total: count };
+    state.colorModes = offeredModes(first.buffers); // every frame shares these
     installGeometry(first.geometry, first.buffers);
     if (movie.onFrame) movie.onFrame(0, shared);
     resize();
@@ -521,11 +541,8 @@ export function createViewer(canvas) {
   // the box group each time the displayed frame changes (via loadMovie's onFrame).
   async function loadSegMovie(count) {
     const token = loadToken;
-    // The seg scene is about per-point classes: make "by class" the mode frame 0
-    // installs with (the app sets the dropdown to match). Set it here rather than
-    // via the handle because at scene-switch time `points` is null, so a
-    // setColorMode() call would no-op and frame 0 would render the stale mode.
-    state.settings.colorMode = 'class';
+    // "By class" is the seg scene's default, applied in loadScene via
+    // SCENE_DEFAULT_COLOR (frame 0 installs with it).
     try {
       const resp = await fetch(SEG_BOXES_URL);
       segBoxes = resp.ok ? await resp.json() : null;
@@ -624,6 +641,9 @@ export function createViewer(canvas) {
     state.loading = false;
     state.loadProgress = { loaded: 0, total: 0 };
     state.scene = id;
+    // Scenes with a forced default (seg → "by class") reset the mode before the
+    // first frame installs; others carry the current mode into the new scene.
+    if (SCENE_DEFAULT_COLOR[id]) state.settings.colorMode = SCENE_DEFAULT_COLOR[id];
     activeProfile = SCENE_PROFILE[id] || PROFILES.kitti;
     teardownScene();
     if (id === 'city') await loadStatic(CITY_URL, activeProfile);
