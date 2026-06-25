@@ -454,6 +454,11 @@ export function createViewer(canvas) {
   // the box group each time the displayed frame changes (via loadMovie's onFrame).
   async function loadSegMovie(count) {
     const token = loadToken;
+    // The seg scene is about per-point classes: make "by class" the mode frame 0
+    // installs with (the app sets the dropdown to match). Set it here rather than
+    // via the handle because at scene-switch time `points` is null, so a
+    // setColorMode() call would no-op and frame 0 would render the stale mode.
+    state.settings.colorMode = 'class';
     try {
       const resp = await fetch(SEG_BOXES_URL);
       segBoxes = resp.ok ? await resp.json() : null;

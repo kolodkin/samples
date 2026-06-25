@@ -244,3 +244,28 @@ def test_scene_switch_mid_load_clears_loading_indicator(server_url, page):
     # not show a leftover "Loading…" line.
     assert page.evaluate("() => window.__PCL.loading") is False
     expect(page.get_by_test_id("loading")).to_have_count(0)
+
+
+def test_seg_scene_classes_and_boxes(server_url, page):
+    page.goto(
+        server_url
+        + "/?segMovieBase=/fixtures/seg/&segMovieCount=4&segBoxesUrl=/fixtures/seg/boxes.json"
+    )
+    _wait_ready(page)
+    page.get_by_test_id("menu-toggle").click()
+    page.get_by_test_id("scene").select_option("seg")
+    page.wait_for_function(
+        "() => window.__PCL.scene === 'seg' && window.__PCL.ready === true"
+        " && window.__PCL.frameCount === 4",
+        timeout=60000,
+    )
+    # By-class coloring is selected automatically and renders pixels.
+    page.wait_for_function("() => window.__PCL.settings.colorMode === 'class'")
+    assert page.evaluate("() => window.__PCL.handle.visiblePixelCount()") > 500
+    # Boxes render (the fixture has one car box per frame).
+    page.wait_for_function("() => window.__PCL.handle.getStats().boxCount >= 1", timeout=5000)
+    # The toggle hides them.
+    page.get_by_test_id("show-boxes").click()
+    page.wait_for_function("() => window.__PCL.settings.showBoxes === false")
+    # Legend is shown for the seg scene.
+    assert page.get_by_test_id("legend").is_visible()
