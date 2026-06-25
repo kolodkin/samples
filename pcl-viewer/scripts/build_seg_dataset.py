@@ -1,26 +1,37 @@
-"""One-shot: build the SemanticKITTI 'seg' movie under the shared HF dataset.
+"""Build the SemanticKITTI 'seg' movie under the shared HF dataset, in stages.
 
-Downloads one SemanticKITTI sequence slice (KITTI Odometry velodyne + label
-files), remaps each point to the 19-class learning set, joint voxel-downsamples
-to ~30k points carrying the class, derives one axis-aligned 3D box per thing
-instance, Draco-encodes positions with the class id packed into the color
-attribute (red channel), writes boxes.json, and uploads everything under seg/ in
-kolodkin/pcl-viewer-kitti-movie alongside the existing geometry/ movie.
+Three stages, selectable via flags (default: run all three):
 
-Inputs (set SEMANTIC_KITTI_DIR to a local SemanticKITTI 'dataset/sequences' tree,
-or pass --velodyne-dir / --label-dir):
-  <seq>/velodyne/NNNNNN.bin   float32 [x y z remission]
-  <seq>/labels/NNNNNN.label   uint32  (low16 = class, high16 = instance)
+  --download   Stream the SemanticKITTI archive (Brainkite/semantickitti, a
+               split tar.zst) and extract matched velodyne `.bin` + `.label`
+               pairs for one sequence's first N frames into --src-dir. Velodyne
+               and labels live in separate, randomly-ordered regions, so it keeps
+               streaming until it holds all N of *both* (≈6 GB for 150 frames).
+  --process    Read the raw frames from --src-dir, remap each point to the 19-class
+               learning set, joint voxel-downsample to ~30k points carrying the
+               class, derive one axis-aligned 3D box per thing instance, and
+               Draco-encode positions with the class id packed into the color
+               attribute (red channel). Writes .drc + boxes.json + annotations.md
+               to --out.
+  --upload     Upload --out to `seg/` in the HF dataset (alongside `geometry/`)
+               and refresh the dataset card. Needs HF_TOKEN.
 
-Run (HF_TOKEN must be set to upload):
-  uv run --group gen python scripts/build_seg_dataset.py --seq 08 --start 0 --limit 150
-  uv run --group gen python scripts/build_seg_dataset.py --seq 08 --limit 4 --no-upload
+Examples:
+  # full pipeline (download → process → upload), 150 frames of sequence 00
+  uv run --group gen python scripts/build_seg_dataset.py --seq 00 --limit 150
+  # just re-process already-downloaded frames, no upload
+  uv run --group gen python scripts/build_seg_dataset.py --process --src-dir /tmp/seg-src
+  # process a local SemanticKITTI tree + upload (skip the big download)
+  SEMANTIC_KITTI_DIR=~/sk/dataset/sequences \\
+    uv run --group gen python scripts/build_seg_dataset.py --process --upload --seq 08
 """
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import re
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -31,6 +42,11 @@ REPO_ID = "kolodkin/pcl-viewer-kitti-movie"
 TARGET_POINTS = 30000
 QUANT_BITS = 14
 THING_CLASSES = {1, 2, 3, 4, 5, 6, 7, 8}
+
+# SemanticKITTI archive (full dataset/sequences tree as a split tar.zst).
+ARCHIVE_BASE = ("https://huggingface.co/datasets/Brainkite/semantickitti/"
+                "resolve/main/semantickitti.tar.zst.part.")
+ARCHIVE_PARTS = ["aa", "ab", "ac", "ad", "ae", "af", "ag"]
 
 # SemanticKITTI raw label id -> 19-class learning id (the official learning_map).
 LEARNING_MAP = {
@@ -82,6 +98,84 @@ Sequence: **{seq}**, frames {start}…{last}. License: see `../README.md`.
 """
 
 
+# ----------------------------------------------------------------------------
+# --download : stream the split tar.zst, extract matched bin+label pairs
+# ----------------------------------------------------------------------------
+class _ChainedParts:
+    """File-like over the concatenation of the split archive parts (one zstd
+    stream); counts bytes downloaded for progress reporting."""
+
+    def __init__(self, parts):
+        import requests
+        self._requests = requests
+        self.parts, self.i, self.n = list(parts), 0, 0
+        self.cur = None
+        self._open()
+
+    def _open(self):
+        if self.i >= len(self.parts):
+            self.cur = None
+            return
+        r = self._requests.get(ARCHIVE_BASE + self.parts[self.i], stream=True)
+        r.raise_for_status()
+        self.cur = r.raw
+
+    def read(self, n):
+        while True:
+            if self.cur is None:
+                return b""
+            b = self.cur.read(n)
+            if b:
+                self.n += len(b)
+                return b
+            self.i += 1
+            self._open()
+
+
+def download(seq: str, n: int, src_dir: Path) -> None:
+    import tarfile
+    import zstandard
+
+    velo_out = src_dir / seq / "velodyne"
+    label_out = src_dir / seq / "labels"
+    velo_out.mkdir(parents=True, exist_ok=True)
+    label_out.mkdir(parents=True, exist_ok=True)
+    bin_re = re.compile(rf"sequences/{seq}/velodyne/(\d+)\.bin$")
+    lab_re = re.compile(rf"sequences/{seq}/labels/(\d+)\.label$")
+
+    src = _ChainedParts(ARCHIVE_PARTS)
+    reader = zstandard.ZstdDecompressor().stream_reader(src)
+    tar = tarfile.open(fileobj=reader, mode="r|")
+    bins, labels, scanned = set(), set(), 0
+    print(f"streaming SemanticKITTI seq {seq}, collecting {n} frames…")
+    for m in tar:
+        scanned += 1
+        if scanned % 1000 == 0:
+            print(f"  scanned={scanned} dl={src.n/1e9:.2f}GB "
+                  f"bins={len(bins)} labels={len(labels)}")
+            sys.stdout.flush()
+        mb = bin_re.search(m.name)
+        if mb and int(mb.group(1)) < n:
+            idx = int(mb.group(1))
+            (velo_out / f"{idx:06d}.bin").write_bytes(tar.extractfile(m).read())
+            bins.add(idx)
+        ml = lab_re.search(m.name)
+        if ml and int(ml.group(1)) < n:
+            idx = int(ml.group(1))
+            (label_out / f"{idx:06d}.label").write_bytes(tar.extractfile(m).read())
+            labels.add(idx)
+        if len(bins) >= n and len(labels) >= n:
+            break
+    if len(bins) < n or len(labels) < n:
+        raise SystemExit(
+            f"archive exhausted with bins={len(bins)} labels={len(labels)} "
+            f"(< {n}); the sequence may have fewer frames")
+    print(f"downloaded {len(bins)} pairs ({src.n/1e9:.2f}GB) -> {src_dir}")
+
+
+# ----------------------------------------------------------------------------
+# --process : remap + downsample + box derivation + Draco encode
+# ----------------------------------------------------------------------------
 def voxel_downsample_idx(pts: np.ndarray, voxel: float) -> np.ndarray:
     keys = np.floor(pts / voxel).astype(np.int64)
     _, idx = np.unique(keys, axis=0, return_index=True)
@@ -120,34 +214,26 @@ def derive_boxes(xyz: np.ndarray, cls: np.ndarray, inst: np.ndarray) -> list[dic
             continue
         pts = xyz[m]
         lo, hi = pts.min(0), pts.max(0)
-        center = ((lo + hi) / 2).tolist()
-        size = (hi - lo).tolist()
-        boxes.append({"cls": int(cls[m][0]), "center": center, "size": size})
+        boxes.append({
+            "cls": int(cls[m][0]),
+            "center": ((lo + hi) / 2).tolist(),
+            "size": (hi - lo).tolist(),
+        })
     return boxes
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--repo-id", default=REPO_ID)
-    ap.add_argument("--seq", default="08")
-    ap.add_argument("--start", type=int, default=0)
-    ap.add_argument("--limit", type=int, default=150)
-    ap.add_argument("--velodyne-dir")
-    ap.add_argument("--label-dir")
-    ap.add_argument("--out", default="/tmp/kitti-seg")
-    ap.add_argument("--no-upload", action="store_true")
-    args = ap.parse_args()
-
-    root = os.environ.get("SEMANTIC_KITTI_DIR", "")
-    velo_dir = Path(args.velodyne_dir or f"{root}/{args.seq}/velodyne")
-    label_dir = Path(args.label_dir or f"{root}/{args.seq}/labels")
-    out = Path(args.out)
+def process(seq: str, start: int, limit: int, src_dir: Path, out: Path) -> int:
+    # Read from a pre-existing local SemanticKITTI tree if one is configured,
+    # else from where --download wrote the frames.
+    root = Path(os.environ["SEMANTIC_KITTI_DIR"]) if os.environ.get("SEMANTIC_KITTI_DIR") else src_dir
+    velo_dir = root / seq / "velodyne"
+    label_dir = root / seq / "labels"
     out.mkdir(parents=True, exist_ok=True)
 
-    bins = sorted(velo_dir.glob("*.bin"))[args.start : args.start + args.limit]
+    bins = sorted(velo_dir.glob("*.bin"))[start:start + limit]
     if not bins:
         raise SystemExit(f"no .bin frames under {velo_dir}")
-    print(f"{len(bins)} frames from {velo_dir}")
+    print(f"processing {len(bins)} frames from {velo_dir}")
 
     boxes_all = {}
     for i, binpath in enumerate(bins):
@@ -160,29 +246,62 @@ def main() -> None:
         xyz_d, cls_d, inst_d = xyz[idx], cls[idx], inst[idx]
         colors = np.zeros((len(xyz_d), 3), dtype=np.uint8)
         colors[:, 0] = cls_d
-        buf = DracoPy.encode(xyz_d.astype(np.float32), colors=colors, quantization_bits=QUANT_BITS)
+        buf = DracoPy.encode(xyz_d.astype(np.float32), colors=colors,
+                             quantization_bits=QUANT_BITS)
         (out / f"{i:06d}.drc").write_bytes(buf)
         boxes_all[f"{i:06d}"] = derive_boxes(xyz_d, cls_d, inst_d)
         if i % 20 == 0:
-            print(f"  frame {i}: {len(xyz_d)} pts, {len(boxes_all[f'{i:06d}'])} boxes -> {len(buf)} bytes")
+            print(f"  frame {i}: {len(xyz_d)} pts, "
+                  f"{len(boxes_all[f'{i:06d}'])} boxes -> {len(buf)} bytes")
 
     (out / "boxes.json").write_text(json.dumps(boxes_all))
-    (out / "annotations.md").write_text(
-        ANNOTATIONS.format(
-            target=TARGET_POINTS, bits=QUANT_BITS, seq=args.seq,
-            start=args.start, last=args.start + len(bins) - 1,
-        )
-    )
+    (out / "annotations.md").write_text(ANNOTATIONS.format(
+        target=TARGET_POINTS, bits=QUANT_BITS, seq=seq,
+        start=start, last=start + len(bins) - 1))
     print(f"wrote {len(bins)} frames + boxes.json to {out}")
+    return len(bins)
 
-    if args.no_upload:
-        return
+
+# ----------------------------------------------------------------------------
+# --upload : push seg/ + dataset card
+# ----------------------------------------------------------------------------
+def upload(repo_id: str, out: Path) -> None:
     api = HfApi(token=os.environ["HF_TOKEN"])
-    api.create_repo(args.repo_id, repo_type="dataset", exist_ok=True, private=False)
-    api.upload_folder(folder_path=str(out), path_in_repo="seg", repo_id=args.repo_id, repo_type="dataset")
+    api.create_repo(repo_id, repo_type="dataset", exist_ok=True, private=False)
+    api.upload_folder(folder_path=str(out), path_in_repo="seg",
+                      repo_id=repo_id, repo_type="dataset")
     api.upload_file(path_or_fileobj=CARD.encode(), path_in_repo="README.md",
-                    repo_id=args.repo_id, repo_type="dataset")
-    print(f"uploaded seg/ ({len(bins)} frames) to https://huggingface.co/datasets/{args.repo_id}")
+                    repo_id=repo_id, repo_type="dataset")
+    print(f"uploaded seg/ to https://huggingface.co/datasets/{repo_id}")
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--download", action="store_true", help="stream + extract raw frames")
+    ap.add_argument("--process", action="store_true", help="remap/downsample/encode")
+    ap.add_argument("--upload", action="store_true", help="push seg/ to HF (needs HF_TOKEN)")
+    ap.add_argument("--repo-id", default=REPO_ID)
+    ap.add_argument("--seq", default="00")
+    ap.add_argument("--start", type=int, default=0)
+    ap.add_argument("--limit", type=int, default=150)
+    ap.add_argument("--src-dir", default="/tmp/kitti-seg-src",
+                    help="raw velodyne/labels tree (download target / process source)")
+    ap.add_argument("--out", default="/tmp/kitti-seg", help="processed .drc output dir")
+    args = ap.parse_args()
+
+    # No stage flag -> run the whole pipeline.
+    stages = (args.download, args.process, args.upload)
+    if not any(stages):
+        args.download = args.process = args.upload = True
+
+    src_dir, out = Path(args.src_dir), Path(args.out)
+    if args.download:
+        download(args.seq, args.limit, src_dir)
+    if args.process:
+        process(args.seq, args.start, args.limit, src_dir, out)
+    if args.upload:
+        upload(args.repo_id, out)
 
 
 if __name__ == "__main__":
