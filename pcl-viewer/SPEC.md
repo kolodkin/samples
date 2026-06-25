@@ -137,10 +137,15 @@ pair) but adds per-point **classes** and per-frame **3D boxes**:
   frame changes, transforming each box through the **same** rotate→translate→scale
   normalization applied to the points (`buildBoxLines`), colored by class. A
   **Show boxes** toggle flips `boxGroup.visible`.
-- **Pipeline.** `build_seg_dataset.py`: SemanticKITTI `velodyne` + `labels` →
-  remap to learning ids → joint voxel-downsample to ~30k (class carried, not
-  averaged) → derive boxes → Draco encode (class in color, 14-bit positions) →
-  write `boxes.json` → upload under `seg/`. Offline fixtures
+- **Pipeline.** `build_seg_dataset.py` runs in three selectable stages
+  (`--download` / `--process` / `--upload`; no flag = all three). **download**
+  streams the SemanticKITTI archive (a split `tar.zst`) and extracts matched
+  velodyne `.bin` + `.label` pairs for one sequence's first N frames — the two
+  live in separate, randomly-ordered regions, so it keeps streaming until it holds
+  all N of both (~6 GB for 150 frames). **process** remaps to learning ids → joint
+  voxel-downsample to ~30k (class carried, not averaged) → derive boxes → Draco
+  encode (class in color, 14-bit positions) → write `boxes.json`. **upload** pushes
+  `seg/` to HF. The live scene is sequence **00**, frames 0–149. Offline fixtures
   (`tests/fixtures/seg/`, built by `build_seg_fixtures.py`) drive the seg e2e.
 
 ### Licensing
@@ -158,6 +163,8 @@ carries the citations per the BY + SA terms. The PCL table scene is
   `uv run --group dev pytest`.
 - Regenerate the movie dataset (one-shot, needs `HF_TOKEN` with write on the
   dataset): `uv run --group gen python scripts/build_movie_dataset.py`.
-- Regenerate the seg dataset (one-shot, needs `HF_TOKEN` + a local SemanticKITTI
-  `dataset/sequences` tree via `SEMANTIC_KITTI_DIR`): `uv run --group gen python
-  scripts/build_seg_dataset.py --seq 08 --limit 150`.
+- Regenerate the seg dataset (needs `HF_TOKEN`): `uv run --group gen python
+  scripts/build_seg_dataset.py --seq 00 --limit 150` downloads, processes, and
+  uploads. Use `--download` / `--process` / `--upload` to run a single stage, or
+  set `SEMANTIC_KITTI_DIR` to a local `dataset/sequences` tree to skip the
+  download and `--process` straight from disk.
