@@ -33,7 +33,7 @@ function App() {
   const [showBoxes, setShowBoxes] = useState(true);
   const origin = { x: 0, y: 0, z: 0 }; // placeholder until the first stats tick
   const [stats, setStats] = useState({
-    ready: false, pointCount: 0, fps: 0, cameraDistance: 0, eye: origin, target: origin,
+    ready: false, pointCount: 0, fps: 0, cameraDistance: 0, zoom: 1, eye: origin, target: origin,
     scene: 'city', frameIndex: 0, frameCount: 0, playing: false,
     loading: false, loadProgress: { loaded: 0, total: 0 }, error: null,
   });
@@ -200,7 +200,8 @@ function App() {
 
     <div class="panel hud" data-testid="stats">
       <div><b data-testid="point-count">${stats.pointCount.toLocaleString()}</b> pts
-           · <b>${stats.fps}</b> fps · d <b>${stats.cameraDistance.toFixed(2)}</b></div>
+           · <b>${stats.fps}</b> fps · d <b>${stats.cameraDistance.toFixed(2)}</b>
+           · zoom <b data-testid="zoom">${stats.zoom.toFixed(2)}×</b></div>
       ${isMovieLike && stats.frameCount > 0 && html`
         <div>frame <b data-testid="frame-index">${stats.frameIndex + 1}</b> / ${stats.frameCount}</div>`}
       ${loadingText && html`<div data-testid="loading">${loadingText}</div>`}

@@ -94,6 +94,7 @@ export function createViewer(canvas) {
   let points = null;       // the live THREE.Points object
   let colorBuffers = {};   // mode name -> Float32Array of per-point ramp colors
   let sceneRadius = 0.5;   // normalized robust radius of the scan
+  let baseDistance = 1;    // camera→target distance at the framed view (zoom 1.0×)
   let activeProfile = PROFILES.kitti; // normalization/framing for the live scene
 
   // Movie state
@@ -160,6 +161,9 @@ export function createViewer(canvas) {
     camera.far = radius * 100;
     camera.updateProjectionMatrix();
     controls.update();
+    // Anchor zoom 1.0× at this framed distance; dollying closer reads as >1×,
+    // pulling back as <1×. Reset re-anchors here so it always returns to 1.0×.
+    baseDistance = camera.position.distanceTo(controls.target) || 1;
   }
 
   // Map a per-point scalar field onto the blue->red HSL ramp. Robust 2nd..98th
@@ -664,6 +668,7 @@ export function createViewer(canvas) {
         ready: state.ready,
         pointCount: state.pointCount,
         cameraDistance: e.distanceTo(t),
+        zoom: baseDistance / (e.distanceTo(t) || baseDistance),
         eye: vec(e),
         target: vec(t),
         scene: state.scene,

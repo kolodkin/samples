@@ -121,6 +121,20 @@ def test_camera_readout(server_url, page):
             float(p)  # each component parses as a number
 
 
+def test_zoom_readout(server_url, page):
+    page.goto(server_url + "/")
+    _wait_ready(page)
+    page.wait_for_timeout(600)  # let the 500ms stats cadence tick at least once
+    # At the framed view the zoom anchor reads 1.0×.
+    text = page.get_by_test_id("zoom").inner_text()
+    assert text.endswith("×")
+    assert abs(float(text[:-1]) - 1.0) < 0.01, f"expected ~1.00×, got {text!r}"
+    # The numeric stat backing the readout agrees with it and is a positive ratio.
+    zoom = page.evaluate("() => window.__PCL.handle.getStats().zoom")
+    assert zoom > 0
+    assert abs(zoom - 1.0) < 0.01
+
+
 def test_screenshot_capture(server_url, page, tmp_path):
     page.goto(server_url + "/")
     _wait_ready(page)
