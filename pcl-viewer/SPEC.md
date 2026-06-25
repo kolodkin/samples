@@ -81,7 +81,7 @@ hook, and captures a screenshot (compatible with `/e2e-screenshots-report`).
 | Scene            | Source                                                | Transport                       |
 |------------------|-------------------------------------------------------|---------------------------------|
 | KITTI city view  | `web/models/kitti-velodyne-000000.pcd` (committed)    | same-origin PCD                 |
-| PCL table scene  | `PointCloudLibrary/data` `table_scene_lms400.pcd`     | raw.githubusercontent (CORS)    |
+| Stanford Lucy    | three.js repo `Lucy100k.ply` (50k-vertex binary PLY)  | raw.githubusercontent (CORS)    |
 | KITTI movie      | `kolodkin/pcl-viewer-kitti-movie` `geometry/` (HF)    | HF resolve (CORS), Draco `.drc` |
 | KITTI seg        | `kolodkin/pcl-viewer-kitti-movie` `seg/` (HF)         | HF resolve (CORS), Draco `.drc` + `boxes.json` |
 
@@ -89,10 +89,25 @@ The shared HF dataset holds both movies under sibling folders — `geometry/`
 (positions-only, from KITTI raw drive 0005) and `seg/` (SemanticKITTI, with
 per-point classes + `boxes.json`) — under one CC BY-NC-SA card.
 
+### Per-scene normalization profiles
+`viewer.js` keys a small **profile** off the scene id. The KITTI clouds (city,
+movie, seg) are z-up sensor frames spread over a wide ground plane: rotate z-up → y-up,
+scale by a robust *horizontal* (x,z) radius, and frame from the low forward-facing
+chase camera (the default described above). **Lucy** is a compact object already in
+a y-up frame: it skips the rotation, scales by a robust *bounding extent* (98th
+-percentile L∞ radius) so the tall figure fits the cube rather than being dominated
+by its height, and is framed **front-on and upright** from a slightly elevated
+three-quarter angle. Both profiles center on the origin and normalize to
+`sceneRadius 0.5`, so the point-size slider and the height/distance ramps work
+unchanged (Lucy carries no `intensity`, so that mode falls back to flat).
+
 `web/config.js` holds the scene URLs and frame counts, each overridable via
-`?pclUrl=`, `?movieBase=`, `?movieCount=`, `?segMovieBase=`, `?segMovieCount=`,
-`?segBoxesUrl=` (used by e2e to point at local fixtures). `viewer.js` exposes `loadScene(id)` — `loadStatic` (PCDLoader) for
-city/table, `loadMovie` (DRACOLoader) for the movie. The movie **streams**:
+`?lucyUrl=`, `?movieBase=`, `?movieCount=`, `?segMovieBase=`, `?segMovieCount=`,
+`?segBoxesUrl=` (used by e2e to point at local fixtures). `viewer.js` exposes
+`loadScene(id)`; `loadStatic` loads the city scan and Lucy, picking the loader by
+file extension (`PCDLoader` for `.pcd`, `PLYLoader` for `.ply` — the PLY mesh's face
+index is stripped so its unique vertices render as points), `loadMovie` (DRACOLoader)
+drives the movie, and `loadSegMovie` adds the seg scene's classes + boxes. The movie **streams**:
 frame 0 is decoded first (it defines the shared normalization transform every
 other frame reuses, so points don't pulse), then playback starts immediately
 while the remaining frames decode through a **bounded-concurrency worker queue**
@@ -113,9 +128,11 @@ quantization, ~73 KB/frame, 154 frames) → upload to the HF dataset with a data
 card (`README.md`) and an `annotations.md` noting the frames are **geometry only**
 (positions, no KITTI object/semantic labels). Frame data is **not** in git; the
 browser fetches `.drc` at runtime. Tiny
-committed fixtures (`tests/fixtures/movie/*.drc`, built by
-`tests/fixtures/build_fixtures.py`) drive the offline movie e2e — conftest stages
-them into `web/fixtures/`.
+committed fixtures (`tests/fixtures/movie/*.drc` for the movie, and
+`tests/fixtures/lucy/lucy_fixture.ply` — a small indexed-mesh PLY exercising the
+PLY/object path for the Lucy scene), built by `tests/fixtures/build_fixtures.py`,
+drive the offline e2e — conftest stages them into `web/fixtures/`. The real Lucy
+cloud is hot-linked, so it is not fetched in tests.
 
 ### Seg scene (`loadSegMovie` + `scripts/build_seg_dataset.py`, one-shot)
 
@@ -154,8 +171,10 @@ KITTI / SemanticKITTI are **CC BY-NC-SA 3.0**. The committed city frame and both
 derived movies (`geometry/` and `seg/`) retain that license with attribution
 (Geiger et al., IJRR 2013 / CVPR 2012; Behley et al., ICCV 2019 for the seg
 labels); the single HF dataset card declares `license: cc-by-nc-sa-3.0` and
-carries the citations per the BY + SA terms. The PCL table scene is
-**BSD-3-Clause** (PointCloudLibrary).
+carries the citations per the BY + SA terms. **Stanford Lucy** is from the Stanford
+3D Scanning Repository (Stanford Computer Graphics Laboratory); per the repository's
+terms it is used with attribution and is hot-linked at runtime (the `Lucy100k.ply`
+decimation shipped in the three.js examples), not committed.
 
 ## Run
 - Viewer: `./pcl-viewer.sh` (set `PORT` to override 8000).

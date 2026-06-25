@@ -7,6 +7,7 @@ offline sequence. Requires the `gen` group:
 """
 from __future__ import annotations
 
+import struct
 from pathlib import Path
 
 import numpy as np
@@ -34,6 +35,41 @@ def voxel_downsample(pts: np.ndarray, voxel: float) -> np.ndarray:
     return pts[np.sort(idx)]
 
 
+def build_lucy_fixture() -> None:
+    """Tiny PLY mesh fixture for the offline Lucy (object-profile) e2e.
+
+    A small Fibonacci sphere with throwaway triangle faces: enough to make the PLY
+    an *indexed mesh* (like the real Lucy), so the PLY loader path — index stripped,
+    unique vertices rendered as points — is exercised without committing the 1.9 MB
+    Lucy cloud. Written as `binary_little_endian` to match the real Lucy's encoding
+    (so the e2e drives the same binary PLY parser) and to keep the committed fixture
+    a compact ~65 KB blob rather than thousands of lines of ASCII."""
+    out = HERE / "lucy"
+    out.mkdir(parents=True, exist_ok=True)
+    n = 4000
+    i = np.arange(n)
+    y = 1.0 - 2.0 * (i + 0.5) / n
+    r = np.sqrt(np.maximum(0.0, 1.0 - y * y))
+    theta = np.pi * (3.0 - np.sqrt(5.0)) * i  # golden angle
+    verts = np.stack([r * np.cos(theta), y, r * np.sin(theta)], axis=1).astype("<f4")
+    faces = np.array([(a, a + 1, a + 2) for a in range(0, n - 2, 3)], dtype="<i4")
+    header = (
+        "ply\n"
+        "format binary_little_endian 1.0\n"
+        f"element vertex {n}\n"
+        "property float x\nproperty float y\nproperty float z\n"
+        f"element face {len(faces)}\n"
+        "property list uchar int vertex_indices\n"
+        "end_header\n"
+    ).encode("ascii")
+    body = bytearray(verts.tobytes())
+    for f in faces:
+        body += struct.pack("<B", 3) + f.tobytes()  # uchar count + 3 int32 indices
+    path = out / "lucy_fixture.ply"
+    path.write_bytes(header + bytes(body))
+    print(f"wrote {path}  ({path.stat().st_size} bytes, {n} verts, {len(faces)} faces)")
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     xyz = read_binary_pcd_xyz(SRC)
@@ -43,6 +79,7 @@ def main() -> None:
         buf = DracoPy.encode(frame.astype(np.float32), quantization_bits=14)
         (OUT / f"{i:06d}.drc").write_bytes(buf)
         print(f"wrote {OUT / f'{i:06d}.drc'}  ({len(buf)} bytes, {len(frame)} pts)")
+    build_lucy_fixture()
 
 
 if __name__ == "__main__":
