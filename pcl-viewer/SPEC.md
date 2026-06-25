@@ -62,10 +62,11 @@ and per-vertex color ramps working unchanged — the shading multiplies into
 |---------------|-----------------------------------------------------|
 | Point shape   | lit sphere impostor ("ball", default) vs. flat square sprite |
 | Point size    | `PointsMaterial.size` (0.002–0.05)                  |
-| Color mode    | flat vs. per-vertex ramp by height / distance / intensity |
-| Movie (movie scene only) | play/pause (the sequence loops continuously) |
+| Color mode    | flat vs. per-vertex ramp by height / distance / intensity, or palette by class (seg scene) |
+| Movie (movie + seg scenes) | play/pause, frame step/seek (the sequence loops continuously) |
+| Show boxes (seg scene only) | toggle the per-instance 3D bounding boxes |
 | Reset camera  | re-frames the low forward-facing view down the road  |
-| Stats overlay | point count, rolling FPS, camera distance           |
+| Stats overlay | point count, rolling FPS, camera distance, box count |
 
 ## e2e strategy
 `conftest.py` ensures vendoring, then starts `serve.py` on a free port per test.
@@ -81,11 +82,16 @@ hook, and captures a screenshot (compatible with `/e2e-screenshots-report`).
 |------------------|-------------------------------------------------------|---------------------------------|
 | KITTI city view  | `web/models/kitti-velodyne-000000.pcd` (committed)    | same-origin PCD                 |
 | Stanford Lucy    | three.js repo `Lucy100k.ply` (50k-vertex binary PLY)  | raw.githubusercontent (CORS)    |
-| KITTI movie      | `kolodkin/pcl-viewer-kitti-movie` (HF dataset)        | HF resolve (CORS), Draco `.drc` |
+| KITTI movie      | `kolodkin/pcl-viewer-kitti-movie` `geometry/` (HF)    | HF resolve (CORS), Draco `.drc` |
+| KITTI seg        | `kolodkin/pcl-viewer-kitti-movie` `seg/` (HF)         | HF resolve (CORS), Draco `.drc` + `boxes.json` |
+
+The shared HF dataset holds both movies under sibling folders — `geometry/`
+(positions-only, from KITTI raw drive 0005) and `seg/` (SemanticKITTI, with
+per-point classes + `boxes.json`) — under one CC BY-NC-SA card.
 
 ### Per-scene normalization profiles
 `viewer.js` keys a small **profile** off the scene id. The KITTI clouds (city,
-movie) are z-up sensor frames spread over a wide ground plane: rotate z-up → y-up,
+movie, seg) are z-up sensor frames spread over a wide ground plane: rotate z-up → y-up,
 scale by a robust *horizontal* (x,z) radius, and frame from the low forward-facing
 chase camera (the default described above). **Lucy** is a compact object already in
 a y-up frame: it skips the rotation, scales by a robust *bounding extent* (98th
@@ -95,12 +101,13 @@ three-quarter angle. Both profiles center on the origin and normalize to
 `sceneRadius 0.5`, so the point-size slider and the height/distance ramps work
 unchanged (Lucy carries no `intensity`, so that mode falls back to flat).
 
-`web/config.js` holds the scene URLs and the movie frame count, each overridable
-via `?lucyUrl=`, `?movieBase=`, `?movieCount=` (used by e2e to point at local
-fixtures). `viewer.js` exposes `loadScene(id)`; `loadStatic` loads the city scan
-and Lucy, picking the loader by file extension (`PCDLoader` for `.pcd`, `PLYLoader`
-for `.ply` — the PLY mesh's face index is stripped so its unique vertices render as
-points), and `loadMovie` (DRACOLoader) drives the movie. The movie **streams**:
+`web/config.js` holds the scene URLs and frame counts, each overridable via
+`?lucyUrl=`, `?movieBase=`, `?movieCount=`, `?segMovieBase=`, `?segMovieCount=`,
+`?segBoxesUrl=` (used by e2e to point at local fixtures). `viewer.js` exposes
+`loadScene(id)`; `loadStatic` loads the city scan and Lucy, picking the loader by
+file extension (`PCDLoader` for `.pcd`, `PLYLoader` for `.ply` — the PLY mesh's face
+index is stripped so its unique vertices render as points), `loadMovie` (DRACOLoader)
+drives the movie, and `loadSegMovie` adds the seg scene's classes + boxes. The movie **streams**:
 frame 0 is decoded first (it defines the shared normalization transform every
 other frame reuses, so points don't pulse), then playback starts immediately
 while the remaining frames decode through a **bounded-concurrency worker queue**
@@ -127,14 +134,48 @@ PLY/object path for the Lucy scene), built by `tests/fixtures/build_fixtures.py`
 drive the offline e2e — conftest stages them into `web/fixtures/`. The real Lucy
 cloud is hot-linked, so it is not fetched in tests.
 
+### Seg scene (`loadSegMovie` + `scripts/build_seg_dataset.py`, one-shot)
+
+The seg scene reuses the streaming `loadMovie` path (a `urlFn`/`onFrame` options
+pair) but adds per-point **classes** and per-frame **3D boxes**:
+
+- **Class encoding.** Draco can't carry a side array (it may reorder/dedup points
+  on decode), so each point's **19-class learning id** is packed into the Draco
+  **color attribute's red channel** (`colors[:,0] = class_id`). It rides glued to
+  its point through decode; three.js exposes a normalized `color` attribute and
+  the viewer recovers `id = round(color.r * 255)`. `computeColorBuffers` maps each
+  id through `SEG_PALETTE` (the SemanticKITTI 19-class colors) into a `class`
+  buffer; "By class" is just another `applyColorMode` entry, so clouds without the
+  attribute fall back to flat. `loadSegMovie` defaults the mode to `class`.
+- **Boxes.** `boxes.json` (`{ "NNNNNN": [ {cls, center, size} ] }`, fetched once)
+  holds one **axis-aligned** box per thing instance (learning classes 1–8),
+  derived at build time from the SemanticKITTI instance ids (high 16 bits of the
+  `.label`). `onFrame` rebuilds a `LineSegments` box group each time the displayed
+  frame changes, transforming each box through the **same** rotate→translate→scale
+  normalization applied to the points (`buildBoxLines`), colored by class. A
+  **Show boxes** toggle flips `boxGroup.visible`.
+- **Pipeline.** `build_seg_dataset.py` runs in three selectable stages
+  (`--download` / `--process` / `--upload`; no flag = all three). **download**
+  streams the SemanticKITTI archive (a split `tar.zst`) and extracts matched
+  velodyne `.bin` + `.label` pairs for one sequence's first N frames — the two
+  live in separate, randomly-ordered regions, so it keeps streaming until it holds
+  all N of both (~6 GB for 150 frames). **process** remaps to learning ids → joint
+  voxel-downsample to ~30k (class carried, not averaged) → derive boxes → Draco
+  encode (class in color, 14-bit positions) → write `boxes.json`. **upload** pushes
+  `seg/` to HF. The live scene is sequence **00**, frames 0–149. The offline seg
+  fixture (`tests/fixtures/seg/`) is the **first few real processed frames** sliced
+  out by `build_seg_fixtures.py`, so the e2e and screenshot report render at the
+  same density/classes/boxes as the live scene, just with a handful of frames.
+
 ### Licensing
 
-KITTI is **CC BY-NC-SA 3.0**. Both the committed city frame and the derived movie
-dataset retain that license with attribution (Geiger et al., IJRR 2013 / CVPR
-2012); the HF dataset card declares `license: cc-by-nc-sa-3.0` and carries the
-citation per the BY + SA terms. **Stanford Lucy** is from the Stanford 3D Scanning
-Repository (Stanford Computer Graphics Laboratory); per the repository's terms it
-is used with attribution and is hot-linked at runtime (the `Lucy100k.ply`
+KITTI / SemanticKITTI are **CC BY-NC-SA 3.0**. The committed city frame and both
+derived movies (`geometry/` and `seg/`) retain that license with attribution
+(Geiger et al., IJRR 2013 / CVPR 2012; Behley et al., ICCV 2019 for the seg
+labels); the single HF dataset card declares `license: cc-by-nc-sa-3.0` and
+carries the citations per the BY + SA terms. **Stanford Lucy** is from the Stanford
+3D Scanning Repository (Stanford Computer Graphics Laboratory); per the repository's
+terms it is used with attribution and is hot-linked at runtime (the `Lucy100k.ply`
 decimation shipped in the three.js examples), not committed.
 
 ## Run
@@ -143,3 +184,8 @@ decimation shipped in the three.js examples), not committed.
   `uv run --group dev pytest`.
 - Regenerate the movie dataset (one-shot, needs `HF_TOKEN` with write on the
   dataset): `uv run --group gen python scripts/build_movie_dataset.py`.
+- Regenerate the seg dataset (needs `HF_TOKEN`): `uv run --group gen python
+  scripts/build_seg_dataset.py --seq 00 --limit 150` downloads, processes, and
+  uploads. Use `--download` / `--process` / `--upload` to run a single stage, or
+  set `SEMANTIC_KITTI_DIR` to a local `dataset/sequences` tree to skip the
+  download and `--process` straight from disk.

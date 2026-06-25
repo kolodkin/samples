@@ -10,6 +10,15 @@ const SCENES = [
   { id: 'city', label: 'KITTI city view' },
   { id: 'lucy', label: 'Stanford Lucy' },
   { id: 'movie', label: 'KITTI movie' },
+  { id: 'seg', label: 'KITTI seg' },
+];
+
+// A few representative classes for the seg-scene legend (hex matches SEG_PALETTE).
+const SEG_LEGEND = [
+  { name: 'car', hex: '6496F5' }, { name: 'person', hex: 'FF1E1E' },
+  { name: 'road', hex: 'FF00FF' }, { name: 'sidewalk', hex: '4B004B' },
+  { name: 'building', hex: 'FFC800' }, { name: 'vegetation', hex: '00AF00' },
+  { name: 'pole', hex: 'FFF096' }, { name: 'traffic-sign', hex: 'FF0000' },
 ];
 
 function App() {
@@ -21,6 +30,7 @@ function App() {
   const [sceneId, setSceneId] = useState('city');
   const [menuOpen, setMenuOpen] = useState(false);
   const [frame, setFrame] = useState(0);
+  const [showBoxes, setShowBoxes] = useState(true);
   const origin = { x: 0, y: 0, z: 0 }; // placeholder until the first stats tick
   const [stats, setStats] = useState({
     ready: false, pointCount: 0, fps: 0, cameraDistance: 0, eye: origin, target: origin,
@@ -65,6 +75,11 @@ function App() {
   const onScene = (e) => {
     const id = e.target.value;
     setSceneId(id); viewerRef.current.loadScene(id);
+    // The seg scene's whole point is the per-point classes — default to that mode.
+    if (id === 'seg') { setColorMode('class'); viewerRef.current.setColorMode('class'); }
+  };
+  const onToggleBoxes = (e) => {
+    setShowBoxes(e.target.checked); viewerRef.current.setShowBoxes(e.target.checked);
   };
   const onPlayPause = () => {
     // Decide from the viewer's live state, not the 500ms-throttled `stats`
@@ -94,6 +109,8 @@ function App() {
   const fmt = (v) => `${v.x.toFixed(2)}  ${v.y.toFixed(2)}  ${v.z.toFixed(2)}`;
 
   const isMovie = sceneId === 'movie';
+  const isSeg = sceneId === 'seg';
+  const isMovieLike = isMovie || isSeg; // both stream frames with transport controls
   const progressText = stats.loadProgress.total
     ? `Loading ${stats.loadProgress.loaded} / ${stats.loadProgress.total}…`
     : 'Loading…';
@@ -127,7 +144,7 @@ function App() {
         <select data-testid="scene" value=${sceneId} onChange=${onScene}>
           ${SCENES.map((s) => html`<option value=${s.id}>${s.label}</option>`)}
         </select>
-        ${isMovie && stats.frameCount > 0 && html`
+        ${isMovieLike && stats.frameCount > 0 && html`
           <label>Frame</label>
           <div class="frame-jump">
             <input type="number" min="1" max=${stats.frameCount} step="1"
@@ -157,10 +174,24 @@ function App() {
         <label>Color mode</label>
         <select data-testid="color-mode" value=${colorMode} onChange=${onColor}>
           <option value="flat">Flat</option>
+          <option value="class">By class</option>
           <option value="height">By height</option>
           <option value="distance">By distance</option>
           <option value="intensity">By intensity</option>
         </select>
+        ${isSeg && html`
+          <label class="row">
+            <input type="checkbox" data-testid="show-boxes"
+                   checked=${showBoxes} onChange=${onToggleBoxes} />
+            Show boxes
+          </label>
+          <div class="legend" data-testid="legend">
+            ${SEG_LEGEND.map((c) => html`
+              <span class="legend-item">
+                <span class="swatch" style=${`background:#${c.hex}`}></span>${c.name}
+              </span>`)}
+          </div>
+        `}
         <div class="row">
           <button data-testid="reset" onClick=${onReset}>Reset camera</button>
         </div>
@@ -170,7 +201,7 @@ function App() {
     <div class="panel hud" data-testid="stats">
       <div><b data-testid="point-count">${stats.pointCount.toLocaleString()}</b> pts
            · <b>${stats.fps}</b> fps · d <b>${stats.cameraDistance.toFixed(2)}</b></div>
-      ${isMovie && stats.frameCount > 0 && html`
+      ${isMovieLike && stats.frameCount > 0 && html`
         <div>frame <b data-testid="frame-index">${stats.frameIndex + 1}</b> / ${stats.frameCount}</div>`}
       ${loadingText && html`<div data-testid="loading">${loadingText}</div>`}
       ${stats.error && html`<div class="err" data-testid="error">${stats.error}</div>`}

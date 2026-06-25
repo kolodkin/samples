@@ -16,4 +16,5 @@ gen = [
     "DracoPy>=1.4.0",
     "huggingface_hub>=0.23",
     "requests>=2.31",
+    "zstandard>=0.22",
 ]

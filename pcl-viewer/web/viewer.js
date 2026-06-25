@@ -5,22 +5,34 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { PCDLoader } from 'three/addons/loaders/PCDLoader.js';
 import { PLYLoader } from 'three/addons/loaders/PLYLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { CITY_URL, LUCY_URL, MOVIE_COUNT, frameUrl } from './config.js';
+import {
+  CITY_URL, LUCY_URL, MOVIE_COUNT, frameUrl,
+  SEG_MOVIE_COUNT, SEG_BOXES_URL, segFrameUrl,
+} from './config.js';
 
 const BG = 0x101418;
 const FLAT_COLOR = 0x66ccff;
 const MOVIE_FPS = 15;
 const MOVIE_DECODE_CONCURRENCY = 4; // frames decoded in flight via the worker queue
 
-// Per-scene normalization + framing. KITTI clouds (city, movie) are z-up sensor
-// frames spread over a wide ground plane: rotate to y-up, scale by a robust
+// Per-scene normalization + framing. KITTI clouds (city, movie, seg) are z-up
+// sensor frames spread over a wide ground plane: rotate to y-up, scale by a robust
 // *horizontal* radius so the dense scene fills the view, and frame from a low
 // chase camera looking down the road. The Lucy statue is a compact object already
 // in a y-up frame: skip the rotation, scale by a robust bounding extent so the
 // tall figure fits the view, and frame it front-on, upright. `kind` selects the
 // behavior in normalizeGeometry/frameCamera.
 const PROFILES = { kitti: { kind: 'kitti' }, object: { kind: 'object' } };
-const SCENE_PROFILE = { city: PROFILES.kitti, lucy: PROFILES.object, movie: PROFILES.kitti };
+const SCENE_PROFILE = {
+  city: PROFILES.kitti, lucy: PROFILES.object, movie: PROFILES.kitti, seg: PROFILES.kitti,
+};
+
+// SemanticKITTI 19-class learning palette, indexed by class id (0 = unlabeled).
+const SEG_PALETTE = [
+  0x202830, 0x6496F5, 0x64E6F5, 0x1E3C96, 0x501EB4, 0x0000FF, 0xFF1E1E,
+  0xFF28C8, 0x961E5A, 0xFF00FF, 0xFF96FF, 0x4B004B, 0xAF004B, 0xFFC800,
+  0xFF7832, 0x00AF00, 0x873C00, 0x96F050, 0xFFF096, 0xFF0000,
+].map((hex) => new THREE.Color(hex));
 
 // Render each point either as a lit sphere impostor ("ball", the default) or as
 // the plain flat square sprite ("square", three.js's stock point look). Both go
@@ -85,8 +97,13 @@ export function createViewer(canvas) {
   let activeProfile = PROFILES.kitti; // normalization/framing for the live scene
 
   // Movie state
-  let movie = null;        // { frames: [{geometry, buffers}], timer, index }
+  let movie = null;        // { frames: [{geometry, buffers}], timer, index, onFrame, shared }
   let loadToken = 0;       // increments on each loadScene to cancel stale async loads
+
+  // Seg scene state: per-instance 3D boxes drawn over the movie points.
+  let boxGroup = null;     // THREE.Group of per-instance LineSegments
+  let segBoxes = null;     // parsed boxes.json: { "000000": [ {cls,center,size}, ... ] }
+  let showBoxes = true;
 
   const state = {
     ready: false,
@@ -98,7 +115,8 @@ export function createViewer(canvas) {
     loading: false,
     loadProgress: { loaded: 0, total: 0 },
     error: null,
-    settings: { pointSize: 0.004, colorMode: 'distance', pointShape: 'ball' },
+    boxCount: 0,
+    settings: { pointSize: 0.004, colorMode: 'distance', pointShape: 'ball', showBoxes: true },
     framesRendered: 0,
   };
   window.__PCL = state;
@@ -182,6 +200,22 @@ export function createViewer(canvas) {
     if (intensity) {
       const vals = Float32Array.from({ length: n }, (_, i) => intensity.getX(i));
       buffers.intensity = rampColors(vals);
+    }
+    // Draco movie frames for the seg scene carry the per-point class id in the
+    // (normalized) red channel of the color attribute; map each id through the
+    // fixed palette to build the "by class" buffer. Other clouds lack it, so
+    // "by class" falls back to flat there via applyColorMode.
+    const klass = geometry.getAttribute('color');
+    if (klass) {
+      const out = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        // DRACOLoader hands the color attribute back as raw, un-normalized floats,
+        // so the red channel already IS the class id (not a 0..1 fraction).
+        const id = Math.round(klass.getX(i));
+        const c = SEG_PALETTE[id] || SEG_PALETTE[0];
+        out[i * 3] = c.r; out[i * 3 + 1] = c.g; out[i * 3 + 2] = c.b;
+      }
+      buffers.class = out;
     }
     return buffers;
   }
@@ -290,6 +324,9 @@ export function createViewer(canvas) {
 
   function teardownScene() {
     const wasMovie = movie !== null;
+    disposeBoxGroup();
+    segBoxes = null;
+    state.boxCount = 0;
     stopMovie();
     if (points) {
       // Movie frame geometries are disposed by stopMovie(); for static scenes
@@ -332,24 +369,83 @@ export function createViewer(canvas) {
   }
 
   function dracoLoad(url) {
-    return new Promise((res, rej) => dracoLoader.load(url, (g) => res(g), undefined, rej));
+    // Decode via decodeDracoFile (not .load(), which hardcodes SRGBColorSpace) with
+    // a non-sRGB colorspace, so DRACOLoader SKIPS its convertSRGBToLinear pass over
+    // the color attribute. The seg scene smuggles the per-point class id in that
+    // attribute's red channel as a raw integer; the sRGB→linear curve would mangle
+    // any id > 1, so it must pass through untouched.
+    return fetch(url)
+      .then((r) => r.arrayBuffer())
+      .then((buf) => new Promise((res, rej) => {
+        dracoLoader.decodeDracoFile(buf, res, null, null, THREE.LinearSRGBColorSpace).catch(rej);
+      }));
   }
 
   // Decode one frame off the queue: Draco decode (in DRACOLoader's WASM worker) →
   // normalize against the shared transform → precompute color buffers. Returns the
   // slot, or null if the load was cancelled (stale token).
-  async function decodeFrame(i, shared, token) {
-    const geom = await dracoLoad(frameUrl(i));
+  async function decodeFrame(i, shared, token, urlFn) {
+    const geom = await dracoLoad(urlFn(i));
     if (token !== loadToken) { geom.dispose(); return null; }
     normalizeMovieFrame(geom, shared);
     return { geometry: geom, buffers: computeColorBuffers(geom) };
+  }
+
+  // Transform an axis-aligned source-frame (z-up, metres) box through the same
+  // rotate→translate→scale normalization applied to the movie points, then return
+  // its 12-edge wireframe as LineSegments colored by class.
+  function buildBoxLines(box, shared) {
+    const [cx, cy, cz] = box.center;
+    const [sx, sy, sz] = box.size;
+    const hx = sx / 2, hy = sy / 2, hz = sz / 2;
+    const corners = [];
+    for (const dx of [-hx, hx]) for (const dy of [-hy, hy]) for (const dz of [-hz, hz]) {
+      const v = new THREE.Vector3(cx + dx, cy + dy, cz + dz);
+      v.applyAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2); // z-up -> y-up
+      v.sub(shared.center).multiplyScalar(shared.scale);
+      corners.push(v);
+    }
+    // corners ordered by (dx,dy,dz) bits; edges connect corners differing in one bit.
+    const E = [[0,1],[0,2],[0,4],[1,3],[1,5],[2,3],[2,6],[3,7],[4,5],[4,6],[5,7],[6,7]];
+    const positions = new Float32Array(E.length * 2 * 3);
+    let k = 0;
+    for (const [a, b] of E) {
+      positions[k++] = corners[a].x; positions[k++] = corners[a].y; positions[k++] = corners[a].z;
+      positions[k++] = corners[b].x; positions[k++] = corners[b].y; positions[k++] = corners[b].z;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const color = SEG_PALETTE[box.cls] || SEG_PALETTE[0];
+    return new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color }));
+  }
+
+  function disposeBoxGroup() {
+    if (!boxGroup) return;
+    scene.remove(boxGroup);
+    boxGroup.traverse((o) => {
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) o.material.dispose();
+    });
+    boxGroup = null;
+  }
+
+  // Rebuild the box group for the given frame from segBoxes + the shared transform.
+  function updateBoxes(frameIndex, shared) {
+    disposeBoxGroup();
+    boxGroup = new THREE.Group();
+    boxGroup.visible = showBoxes;
+    const list = (segBoxes && segBoxes[String(frameIndex).padStart(6, '0')]) || [];
+    for (const box of list) boxGroup.add(buildBoxLines(box, shared));
+    state.boxCount = boxGroup.children.length;
+    scene.add(boxGroup);
   }
 
   // Stream the movie: decode frame 0 first (it defines the shared normalization
   // transform), start playback immediately, then fill the remaining slots through a
   // bounded-concurrency worker queue while playback runs (hold-on-stall covers any
   // frame the playhead reaches before it is decoded).
-  async function loadMovie(count) {
+  async function loadMovie(count, opts = {}) {
+    const urlFn = opts.urlFn || frameUrl;
     const token = loadToken;
     state.loading = true;
     state.loadProgress = { loaded: 0, total: count };
@@ -358,7 +454,7 @@ export function createViewer(canvas) {
 
     let first;
     try {
-      first = await decodeFrame(0, shared, token);
+      first = await decodeFrame(0, shared, token, urlFn);
     } catch (e) {
       if (token !== loadToken) return;
       state.loading = false;
@@ -367,11 +463,12 @@ export function createViewer(canvas) {
     }
     if (token !== loadToken) { if (first) first.geometry.dispose(); return; }
     frames[0] = first;
-    movie = { frames, timer: null, index: 0, failed: new Set() };
+    movie = { frames, timer: null, index: 0, failed: new Set(), onFrame: opts.onFrame, shared };
     state.frameCount = count;
     state.frameIndex = 0;
     state.loadProgress = { loaded: 1, total: count };
     installGeometry(first.geometry, first.buffers);
+    if (movie.onFrame) movie.onFrame(0, shared);
     resize();
     frameCamera();
     state.ready = true;
@@ -386,7 +483,7 @@ export function createViewer(canvas) {
         const i = next++;
         let slot;
         try {
-          slot = await decodeFrame(i, shared, token);
+          slot = await decodeFrame(i, shared, token, urlFn);
         } catch (e) {
           if (token !== loadToken) return;
           // One frame failing shouldn't kill the whole stream: mark it so
@@ -409,11 +506,33 @@ export function createViewer(canvas) {
     if (token === loadToken) state.loading = false;
   }
 
+  // The seg scene is a movie with per-point class colors plus per-frame 3D boxes:
+  // fetch boxes.json up front, then stream frames from the seg dataset, rebuilding
+  // the box group each time the displayed frame changes (via loadMovie's onFrame).
+  async function loadSegMovie(count) {
+    const token = loadToken;
+    // The seg scene is about per-point classes: make "by class" the mode frame 0
+    // installs with (the app sets the dropdown to match). Set it here rather than
+    // via the handle because at scene-switch time `points` is null, so a
+    // setColorMode() call would no-op and frame 0 would render the stale mode.
+    state.settings.colorMode = 'class';
+    try {
+      const resp = await fetch(SEG_BOXES_URL);
+      segBoxes = resp.ok ? await resp.json() : null;
+    } catch { segBoxes = null; }
+    if (token !== loadToken) return;
+    await loadMovie(count, {
+      urlFn: segFrameUrl,
+      onFrame: (i, shared) => updateBoxes(i, shared),
+    });
+  }
+
   function showFrame(i) {
     if (!movie || !movie.frames[i]) return;
     movie.index = i;
     state.frameIndex = i;
     installGeometry(movie.frames[i].geometry, movie.frames[i].buffers);
+    if (movie.onFrame) movie.onFrame(i, movie.shared);
   }
 
   function play() {
@@ -500,6 +619,7 @@ export function createViewer(canvas) {
     if (id === 'city') await loadStatic(CITY_URL, activeProfile);
     else if (id === 'lucy') await loadStatic(LUCY_URL, activeProfile);
     else if (id === 'movie') await loadMovie(MOVIE_COUNT);
+    else if (id === 'seg') await loadSegMovie(SEG_MOVIE_COUNT);
   }
 
   let raf = 0;
@@ -524,6 +644,11 @@ export function createViewer(canvas) {
       if (points) { points.material.size = n; points.material.needsUpdate = true; }
     },
     setColorMode(mode) { applyColorMode(mode); },
+    setShowBoxes(on) {
+      showBoxes = !!on;
+      state.settings.showBoxes = showBoxes;
+      if (boxGroup) boxGroup.visible = showBoxes;
+    },
     setPointShape(shape) {
       state.settings.pointShape = shape === 'square' ? 'square' : 'ball';
       if (points) {
@@ -548,6 +673,7 @@ export function createViewer(canvas) {
         loading: state.loading,
         loadProgress: state.loadProgress,
         error: state.error,
+        boxCount: state.boxCount,
       };
     },
     // e2e helper: count non-background pixels in the rendered frame.
@@ -561,6 +687,23 @@ export function createViewer(canvas) {
       let n = 0;
       for (let i = 0; i < buf.length; i += 4) {
         if (Math.abs(buf[i] - br) + Math.abs(buf[i + 1] - bg) + Math.abs(buf[i + 2] - bb) > 24) n++;
+      }
+      return n;
+    },
+    // e2e helper: count saturated (chromatic) pixels — max−min channel spread.
+    // The seg palette is vivid (car blue, road magenta, building yellow), so a
+    // working "by class" render has many; the near-grey fallback color has none.
+    colorfulPixelCount(threshold = 40) {
+      const gl = renderer.getContext();
+      const w = renderer.domElement.width;
+      const h = renderer.domElement.height;
+      const buf = new Uint8Array(w * h * 4);
+      gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+      let n = 0;
+      for (let i = 0; i < buf.length; i += 4) {
+        const max = Math.max(buf[i], buf[i + 1], buf[i + 2]);
+        const min = Math.min(buf[i], buf[i + 1], buf[i + 2]);
+        if (max - min > threshold) n++;
       }
       return n;
     },
