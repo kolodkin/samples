@@ -124,11 +124,11 @@ function App() {
           <input type="range" min="0" max=${stats.frameCount - 1} step="1"
                  value=${frame} data-testid="frame-select" onInput=${onSeek} />
           <div class="row">
-            <button data-testid="step-back" aria-label="Previous frame"
-                    onClick=${() => onStep(-1)}>−</button>
             <button data-testid="play-pause" onClick=${onPlayPause}>
               ${stats.playing ? 'Pause' : 'Play'}
             </button>
+            <button data-testid="step-back" aria-label="Previous frame"
+                    onClick=${() => onStep(-1)}>−</button>
             <button data-testid="step-forward" aria-label="Next frame"
                     onClick=${() => onStep(1)}>+</button>
           </div>
