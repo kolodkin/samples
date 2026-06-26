@@ -48,7 +48,7 @@ Draco-compressed, downsampled LiDAR frames for the
 
 **This is a derivative work.** Each `NNNNNN.drc` is one Velodyne sweep from
 **KITTI raw drive `2011_09_26_drive_0005`**, voxel-downsampled to ~30k points
-(positions only) and Draco-encoded (14-bit position quantization).
+(positions + per-point intensity) and Draco-encoded (14-bit position quantization).
 
 ## Attribution & license
 
@@ -80,8 +80,9 @@ intended for visual playback in the
 | `NNNNNN.drc` | `{drive}` Velodyne sweep `NNNNNN`, in capture order         |
 
 - Frames: **{count}** (`000000.drc` … `{last:06d}.drc`), in capture order.
-- Format: Draco-encoded point **positions only** (`x y z`), {bits}-bit position
-  quantization. No color, intensity, normals, or per-point labels.
+- Format: Draco-encoded point positions (`x y z`, {bits}-bit quantization) plus a
+  per-point **intensity** (laser reflectance) packed into the Draco color
+  attribute's green channel as a 0–255 byte. No normals or per-point labels.
 - Each sweep is voxel-downsampled to ~{target:,} points before encoding, so a
   point in a frame does **not** correspond to a fixed physical return across
   frames (downsampling is independent per frame).
@@ -99,24 +100,32 @@ under the same license. Non-commercial use only.
 """
 
 
-def voxel_downsample(pts: np.ndarray, voxel: float) -> np.ndarray:
+def voxel_downsample_idx(pts: np.ndarray, voxel: float) -> np.ndarray:
     keys = np.floor(pts / voxel).astype(np.int64)
     _, idx = np.unique(keys, axis=0, return_index=True)
-    return pts[np.sort(idx)]
+    return np.sort(idx)
 
 
-def downsample_to_target(pts: np.ndarray, target: int = 30000) -> np.ndarray:
-    """Pick a voxel size that lands near `target` points (a few bisection steps)."""
+def downsample_idx_to_target(pts: np.ndarray, target: int = 30000) -> np.ndarray:
+    """Pick a voxel size landing near `target` points; return the kept indices."""
     lo, hi = 0.05, 2.0
-    out = pts
+    idx = np.arange(len(pts))
     for _ in range(12):
         mid = (lo + hi) / 2
-        out = voxel_downsample(pts, mid)
-        if len(out) > target:
+        idx = voxel_downsample_idx(pts, mid)
+        if len(idx) > target:
             lo = mid
         else:
             hi = mid
-    return out
+    return idx
+
+
+def encode_frame(xyz: np.ndarray, intensity: np.ndarray) -> bytes:
+    """Draco-encode positions + per-point intensity in the color green channel."""
+    colors = np.zeros((len(xyz), 3), dtype=np.uint8)
+    colors[:, 1] = np.clip(intensity * 255.0, 0, 255).astype(np.uint8)
+    return DracoPy.encode(xyz.astype(np.float32), colors=colors,
+                          quantization_bits=QUANT_BITS)
 
 
 def main() -> None:
@@ -142,8 +151,9 @@ def main() -> None:
     count = 0
     for i, name in enumerate(bins):
         raw = np.frombuffer(zf.read(name), dtype=np.float32).reshape(-1, 4)
-        xyz = downsample_to_target(raw[:, :3].copy(), TARGET_POINTS)
-        buf = DracoPy.encode(xyz.astype(np.float32), quantization_bits=QUANT_BITS)
+        idx = downsample_idx_to_target(raw[:, :3].copy(), TARGET_POINTS)
+        xyz, inten = raw[idx, :3], raw[idx, 3]
+        buf = encode_frame(xyz, inten)
         (out / f"{i:06d}.drc").write_bytes(buf)
         count += 1
         if i % 20 == 0:
