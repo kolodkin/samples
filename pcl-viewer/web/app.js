@@ -19,13 +19,27 @@ const SCENES = [
 const COLOR_MODE_LABEL = Object.fromEntries(COLOR_MODES.map((m) => [m.id, m.label]));
 const ALL_MODE_IDS = COLOR_MODES.map((m) => m.id);
 
-// A few representative classes for the seg-scene legend (hex matches SEG_PALETTE).
+// A few representative classes for the seg-scene legend (hex/cls match SEG_PALETTE
+// indices in viewer.js). `cls` is the class id each swatch toggles in the filter.
 const SEG_LEGEND = [
-  { name: 'car', hex: '6496F5' }, { name: 'person', hex: 'FF1E1E' },
-  { name: 'road', hex: 'FF00FF' }, { name: 'sidewalk', hex: '4B004B' },
-  { name: 'building', hex: 'FFC800' }, { name: 'vegetation', hex: '00AF00' },
-  { name: 'pole', hex: 'FFF096' }, { name: 'traffic-sign', hex: 'FF0000' },
+  { name: 'car', hex: '6496F5', cls: 1 }, { name: 'person', hex: 'FF1E1E', cls: 6 },
+  { name: 'road', hex: 'FF00FF', cls: 9 }, { name: 'sidewalk', hex: '4B004B', cls: 11 },
+  { name: 'building', hex: 'FFC800', cls: 13 }, { name: 'vegetation', hex: '00AF00', cls: 15 },
+  { name: 'pole', hex: 'FFF096', cls: 18 }, { name: 'traffic-sign', hex: 'FF0000', cls: 19 },
 ];
+
+// Scalar fields offered as range filters. Height and distance exist on every
+// scene; intensity only where the cloud supplies it (gated on the offered modes).
+const FILTER_FIELDS = [
+  { key: 'height', label: 'Height' },
+  { key: 'distance', label: 'Distance' },
+  { key: 'intensity', label: 'Intensity' },
+];
+const EMPTY_FILTERS = {
+  height: { min: '', max: '' },
+  distance: { min: '', max: '' },
+  intensity: { min: '', max: '' },
+};
 
 function App() {
   const canvasRef = useRef(null);
@@ -40,11 +54,17 @@ function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [frame, setFrame] = useState(0);
   const [showBoxes, setShowBoxes] = useState(true);
+  // Filter UI state mirrors the viewer's filters. Range bounds are kept as raw
+  // strings ('' = unbounded) so the inputs stay editable; hiddenClasses tracks the
+  // class ids toggled off via the legend.
+  const [filters, setFilters] = useState(EMPTY_FILTERS);
+  const [hiddenClasses, setHiddenClasses] = useState([]);
   const origin = { x: 0, y: 0, z: 0 }; // placeholder until the first stats tick
   const [stats, setStats] = useState({
     ready: false, pointCount: 0, fps: 0, cameraDistance: 0, eye: origin, target: origin,
     scene: 'movie', frameIndex: 0, frameCount: 0, playing: false,
     loading: false, loadProgress: { loaded: 0, total: 0 }, error: null,
+    visibleCount: 0, scalarRanges: {},
   });
 
   useEffect(() => {
@@ -120,6 +140,25 @@ function App() {
     viewerRef.current.seek(i);
   };
   const onReset = () => viewerRef.current.resetCamera();
+  // Empty / unparseable input means "no bound on this side" (the default, max = ∞).
+  const toBound = (s) => (s === '' || Number.isNaN(parseFloat(s)) ? null : parseFloat(s));
+  const onFilter = (field, bound, e) => {
+    const next = { ...filters, [field]: { ...filters[field], [bound]: e.target.value } };
+    setFilters(next);
+    viewerRef.current.setFilter(field, {
+      min: toBound(next[field].min), max: toBound(next[field].max),
+    });
+  };
+  const onToggleClass = (cls) => {
+    const hidden = hiddenClasses.includes(cls);
+    setHiddenClasses(hidden ? hiddenClasses.filter((c) => c !== cls) : [...hiddenClasses, cls]);
+    viewerRef.current.setClassHidden(cls, !hidden);
+  };
+  const onResetFilters = () => {
+    setFilters(EMPTY_FILTERS);
+    setHiddenClasses([]);
+    viewerRef.current.resetFilters();
+  };
   const fmt = (v) => `${v.x.toFixed(2)}  ${v.y.toFixed(2)}  ${v.z.toFixed(2)}`;
 
   const isMovie = sceneId === 'movie';
@@ -190,17 +229,46 @@ function App() {
           ${colorModes.map((m) => html`
             <option value=${m}>${COLOR_MODE_LABEL[m] || m}</option>`)}
         </select>
+        <label>Point filters (min / max, blank = ∞)</label>
+        ${FILTER_FIELDS
+          .filter((f) => f.key !== 'intensity' || colorModes.includes('intensity'))
+          .map((f) => {
+            const rng = stats.scalarRanges[f.key];
+            return html`
+              <div class="filter-row" data-testid=${`filter-${f.key}`}>
+                <span class="filter-name">${f.label}</span>
+                <input type="number" step="any" data-testid=${`filter-${f.key}-min`}
+                       placeholder=${rng ? rng.min.toFixed(2) : 'min'}
+                       value=${filters[f.key].min}
+                       onInput=${(e) => onFilter(f.key, 'min', e)} />
+                <input type="number" step="any" data-testid=${`filter-${f.key}-max`}
+                       placeholder=${rng ? rng.max.toFixed(2) : '∞'}
+                       value=${filters[f.key].max}
+                       onInput=${(e) => onFilter(f.key, 'max', e)} />
+              </div>`;
+          })}
+        <div class="row">
+          <button data-testid="reset-filters" onClick=${onResetFilters}>Reset filters</button>
+        </div>
         ${isSeg && html`
           <label class="row">
             <input type="checkbox" data-testid="show-boxes"
                    checked=${showBoxes} onChange=${onToggleBoxes} />
             Show boxes
           </label>
+          <label>Classes (click to filter)</label>
           <div class="legend" data-testid="legend">
-            ${SEG_LEGEND.map((c) => html`
-              <span class="legend-item">
-                <span class="swatch" style=${`background:#${c.hex}`}></span>${c.name}
-              </span>`)}
+            ${SEG_LEGEND.map((c) => {
+              const off = hiddenClasses.includes(c.cls);
+              return html`
+                <button type="button" class=${`legend-item${off ? ' off' : ''}`}
+                        data-testid=${`class-toggle-${c.name}`}
+                        aria-pressed=${off ? 'false' : 'true'}
+                        title=${off ? `Show ${c.name}` : `Hide ${c.name}`}
+                        onClick=${() => onToggleClass(c.cls)}>
+                  <span class="swatch" style=${`background:#${c.hex}`}></span>${c.name}
+                </button>`;
+            })}
           </div>
         `}
         <div class="row">
@@ -212,6 +280,8 @@ function App() {
     <div class="panel hud" data-testid="stats">
       <div><b data-testid="point-count">${stats.pointCount.toLocaleString()}</b> pts
            · <b>${stats.fps}</b> fps · d <b>${stats.cameraDistance.toFixed(2)}</b></div>
+      ${stats.visibleCount < stats.pointCount && html`
+        <div data-testid="visible-count"><b>${stats.visibleCount.toLocaleString()}</b> shown (filtered)</div>`}
       ${isMovieLike && stats.frameCount > 0 && html`
         <div>frame <b data-testid="frame-index">${stats.frameIndex + 1}</b> / ${stats.frameCount}</div>`}
       ${loadingText && html`<div data-testid="loading">${loadingText}</div>`}

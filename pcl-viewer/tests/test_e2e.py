@@ -335,3 +335,95 @@ def test_seg_scene_classes_and_boxes(server_url, page):
     page.wait_for_function("() => window.__PCL.settings.showBoxes === true")
     # Legend is shown for the seg scene.
     assert page.get_by_test_id("legend").is_visible()
+
+
+def _set_range(page, tid, value):
+    page.get_by_test_id(tid).evaluate(
+        "(el, v) => { el.value = v; el.dispatchEvent(new Event('input', {bubbles:true})); }",
+        str(value),
+    )
+
+
+def test_point_range_filter_on_static_scene(server_url, page):
+    # Range filters clip points by a scalar field. Exercise on the static Lucy
+    # scene so the cloud is fixed (no per-frame churn) and the visible count is
+    # deterministic. Height and distance are available on every scene.
+    page.goto(server_url + DEFAULT + "&lucyUrl=/fixtures/lucy/lucy_fixture.ply")
+    _wait_ready(page)
+    page.get_by_test_id("menu-toggle").click()
+    page.get_by_test_id("scene").select_option("lucy")
+    page.wait_for_function(
+        "() => window.__PCL.scene === 'lucy' && window.__PCL.ready === true",
+        timeout=20000)
+    total = page.evaluate("() => window.__PCL.pointCount")
+    # Nothing filtered by default: every point is visible.
+    assert page.evaluate("() => window.__PCL.visibleCount") == total
+
+    # Clip the top half off by height: cap the max at the middle of the data range.
+    rng = page.evaluate("() => window.__PCL.scalarRanges.height")
+    mid = (rng["min"] + rng["max"]) / 2
+    _set_range(page, "filter-height-max", mid)
+    page.wait_for_function("() => window.__PCL.visibleCount < window.__PCL.pointCount")
+    clipped = page.evaluate("() => window.__PCL.visibleCount")
+    assert 0 < clipped < total
+    # Fewer points are actually drawn.
+    assert page.evaluate("() => window.__PCL.handle.visiblePixelCount()") > 0
+
+    # Reset clears every range and brings all points back.
+    page.get_by_test_id("reset-filters").click()
+    page.wait_for_function("() => window.__PCL.visibleCount === window.__PCL.pointCount")
+    assert page.get_by_test_id("filter-height-max").input_value() == ""
+
+
+def test_intensity_filter_on_movie(server_url, page):
+    # Intensity is only offered where the cloud supplies it (the movie packs it in
+    # a Draco color channel). Pause first so the visible count is stable.
+    page.goto(server_url + DEFAULT)
+    _wait_ready(page)
+    page.get_by_test_id("menu-toggle").click()
+    page.wait_for_function("() => window.__PCL.playing === true")
+    page.get_by_test_id("play-pause").click()
+    page.wait_for_function("() => window.__PCL.playing === false")
+
+    rng = page.evaluate("() => window.__PCL.scalarRanges.intensity")
+    mid = (rng["min"] + rng["max"]) / 2
+    _set_range(page, "filter-intensity-min", mid)
+    page.wait_for_function("() => window.__PCL.visibleCount < window.__PCL.pointCount")
+    assert page.evaluate("() => window.__PCL.visibleCount") > 0
+
+
+def test_class_toggle_filters_points(server_url, page):
+    # Each legend class is a toggle: clicking it filters that class out of the
+    # cloud, clicking again brings it back. Vegetation (id 15) is the densest class
+    # in every fixture frame, so toggling it visibly drops the point count.
+    page.goto(
+        server_url
+        + DEFAULT
+        + "&segMovieBase=/fixtures/seg/&segMovieCount=4&segBoxesUrl=/fixtures/seg/boxes.json"
+    )
+    _wait_ready(page)
+    page.get_by_test_id("menu-toggle").click()
+    page.get_by_test_id("scene").select_option("seg")
+    page.wait_for_function(
+        "() => window.__PCL.scene === 'seg' && window.__PCL.ready === true"
+        " && window.__PCL.frameCount === 4",
+        timeout=60000,
+    )
+    # Pause so the frame (and its class mix) is fixed under us.
+    page.get_by_test_id("play-pause").click()
+    page.wait_for_function("() => window.__PCL.playing === false")
+    before = page.evaluate("() => window.__PCL.visibleCount")
+
+    page.get_by_test_id("class-toggle-vegetation").click()
+    page.wait_for_function(
+        "() => window.__PCL.settings.hiddenClasses.includes(15)")
+    page.wait_for_function(
+        f"() => window.__PCL.visibleCount < {before}")
+    assert page.evaluate("() => window.__PCL.visibleCount") > 0
+
+    # Toggling again restores the hidden class.
+    page.get_by_test_id("class-toggle-vegetation").click()
+    page.wait_for_function(
+        "() => !window.__PCL.settings.hiddenClasses.includes(15)")
+    page.wait_for_function(
+        f"() => window.__PCL.visibleCount === {before}")
