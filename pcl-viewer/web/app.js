@@ -70,11 +70,13 @@ function App() {
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [hiddenClasses, setHiddenClasses] = useState([]);
   const origin = { x: 0, y: 0, z: 0 }; // placeholder until the first stats tick
+  const fileInputRef = useRef(null);
   const [stats, setStats] = useState({
     ready: false, pointCount: 0, fps: 0, cameraDistance: 0, eye: origin, target: origin,
     scene: 'movie', frameIndex: 0, frameCount: 0, playing: false,
     loading: false, loadProgress: { loaded: 0, total: 0 }, error: null,
-    visibleCount: 0, scalarRanges: {},
+    visibleCount: 0, scalarRanges: {}, fileName: null, classLegend: [],
+    pointSize: 0.004,
   });
 
   useEffect(() => {
@@ -106,6 +108,11 @@ function App() {
   // playback (and scene resets to 0) between manual seeks.
   useEffect(() => { setFrame(stats.frameIndex); }, [stats.frameIndex]);
 
+  // The viewer auto-sizes points to a loaded file's density; mirror that into the
+  // slider so it shows the applied size. (A user drag sets both, so the next tick
+  // matches and this is a no-op then.)
+  useEffect(() => { if (stats.pointSize) setPointSize(stats.pointSize); }, [stats.pointSize]);
+
   const onSize = (e) => {
     const v = parseFloat(e.target.value);
     setPointSize(v); viewerRef.current.setPointSize(v);
@@ -118,9 +125,24 @@ function App() {
   };
   const onScene = (e) => {
     const id = e.target.value;
+    if (id === 'file') return; // the "loaded file" entry isn't a re-selectable scene
     setSceneId(id); viewerRef.current.loadScene(id);
     // Per-scene color defaults (e.g. seg → "by class") live in the viewer and
     // arrive via onColorState once the new scene's first frame installs.
+  };
+  // "Load PCL…" opens the OS file picker via the hidden input; picking a file
+  // loads it as the transient "file" scene.
+  const onLoadClick = () => fileInputRef.current.click();
+  const onFile = (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = ''; // allow re-picking the same file later
+    if (!file) return;
+    setSceneId('file');
+    // loadFile resets the viewer's filters (the new cloud is differently scaled
+    // and enumerated); mirror that in the UI so the inputs/legend match.
+    setFilters(EMPTY_FILTERS);
+    setHiddenClasses([]);
+    viewerRef.current.loadFile(file);
   };
   const onToggleBoxes = (e) => {
     setShowBoxes(e.target.checked); viewerRef.current.setShowBoxes(e.target.checked);
@@ -164,7 +186,10 @@ function App() {
   // nothing — then steps inward; values stay clamped to the (step-aligned) data
   // envelope so the buttons never run off into meaningless territory.
   const onFilterStep = (field, bound, dir) => {
-    const rng = stats.scalarRanges[field];
+    // Read the live ranges from the viewer, not the 500ms-throttled `stats`
+    // snapshot: a click landing before the first post-load stats tick would
+    // otherwise see an empty `scalarRanges` and no-op (flaky under slow CI).
+    const rng = viewerRef.current.getStats().scalarRanges[field];
     if (!rng) return;
     const step = niceStep((rng.max - rng.min) / 40) || 1;
     const lo = Math.floor(rng.min / step) * step;
@@ -194,7 +219,20 @@ function App() {
 
   const isMovie = sceneId === 'movie';
   const isSeg = sceneId === 'seg';
+  const isFile = sceneId === 'file';
   const isMovieLike = isMovie || isSeg; // both stream frames with transport controls
+  // The tickable class legend (each swatch toggles its class id in/out of the
+  // cloud): seg uses a fixed representative subset; a loaded file uses the dynamic
+  // enumeration the viewer derived from its class column, where the class id is
+  // the entry's index (matching scalars.classId in the viewer).
+  const legendItems = isSeg
+    ? SEG_LEGEND
+    : (stats.classLegend || []).map((c, i) => ({ ...c, cls: i }));
+  // While a file is loaded the Scene dropdown shows a temporary entry for it, so
+  // its value matches sceneId and the user can still switch to a built-in scene.
+  const sceneOptions = isFile
+    ? [...SCENES, { id: 'file', label: stats.fileName || 'Loaded file' }]
+    : SCENES;
   const progressText = stats.loadProgress.total
     ? `Loading ${stats.loadProgress.loaded} / ${stats.loadProgress.total}…`
     : 'Loading…';
@@ -226,8 +264,20 @@ function App() {
         <h1>PCL Viewer</h1>
         <label>Scene</label>
         <select data-testid="scene" value=${sceneId} onChange=${onScene}>
-          ${SCENES.map((s) => html`<option value=${s.id}>${s.label}</option>`)}
+          ${sceneOptions.map((s) => html`<option value=${s.id}>${s.label}</option>`)}
         </select>
+        <button class="load-pcl" data-testid="load-file" onClick=${onLoadClick}>
+          <svg class="load-pcl-icon" viewBox="0 0 16 16" width="15" height="15"
+               fill="none" stroke="currentColor" stroke-width="1.5"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M8 10.5V2.5" />
+            <path d="M4.8 5.7 8 2.5l3.2 3.2" />
+            <path d="M2.5 10v2.5a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V10" />
+          </svg>
+          <span>Load PCL…</span>
+        </button>
+        <input type="file" accept=".pcd,.csv,.parquet" data-testid="file-input"
+               ref=${fileInputRef} onChange=${onFile} style="display:none" />
         ${isMovieLike && stats.frameCount > 0 && html`
           <label>Frame</label>
           <div class="frame-jump">
@@ -297,9 +347,11 @@ function App() {
                    checked=${showBoxes} onChange=${onToggleBoxes} />
             Show boxes
           </label>
+        `}
+        ${legendItems.length > 0 && html`
           <label>Classes (click to filter)</label>
           <div class="legend" data-testid="legend">
-            ${SEG_LEGEND.map((c) => {
+            ${legendItems.map((c) => {
               const off = hiddenClasses.includes(c.cls);
               return html`
                 <button type="button" class=${`legend-item${off ? ' off' : ''}`}
@@ -325,6 +377,8 @@ function App() {
         <div data-testid="visible-count"><b>${stats.visibleCount.toLocaleString()}</b> shown (filtered)</div>`}
       ${isMovieLike && stats.frameCount > 0 && html`
         <div>frame <b data-testid="frame-index">${stats.frameIndex + 1}</b> / ${stats.frameCount}</div>`}
+      ${isFile && stats.fileName && html`
+        <div>file <b data-testid="file-name">${stats.fileName}</b></div>`}
       ${loadingText && html`<div data-testid="loading">${loadingText}</div>`}
       ${stats.error && html`<div class="err" data-testid="error">${stats.error}</div>`}
       <div class="vec">eye <b data-testid="cam-eye">${fmt(stats.eye)}</b></div>
