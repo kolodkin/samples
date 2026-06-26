@@ -21,8 +21,29 @@ import json
 import shutil
 from pathlib import Path
 
+import numpy as np
+import DracoPy
+
 HERE = Path(__file__).resolve().parent
 OUT = HERE / "seg"
+
+
+def inject_intensity(out: Path) -> None:
+    """Re-encode each committed seg .drc in place, adding a deterministic synthetic
+    intensity (normalized radial distance) to the color green channel. The class id
+    in the red channel is preserved. Use offline when the real ~6 GB processed
+    source isn't available; real intensity comes from build_seg_dataset.py --process."""
+    for drc in sorted(out.glob("*.drc")):
+        m = DracoPy.decode(drc.read_bytes())
+        pts = np.asarray(m.points, dtype=np.float32)
+        colors = np.asarray(m.colors, dtype=np.uint8).copy()
+        d = np.linalg.norm(pts, axis=1)
+        span = (d.max() - d.min()) or 1.0
+        colors[:, 1] = np.clip((d - d.min()) / span * 255.0, 0, 255).astype(np.uint8)
+        buf = DracoPy.encode(pts, colors=colors, quantization_bits=14)
+        drc.write_bytes(buf)
+        print(f"injected intensity -> {drc} ({len(buf)} bytes, "
+              f"green_max={int(colors[:,1].max())})")
 
 
 def main() -> None:
@@ -30,7 +51,14 @@ def main() -> None:
     ap.add_argument("--src", default="/tmp/kitti-seg",
                     help="processed seg dataset dir (build_seg_dataset.py --out)")
     ap.add_argument("--frames", type=int, default=4, help="how many frames to keep")
+    ap.add_argument("--inject-intensity", action="store_true",
+                    help="re-encode the committed fixtures in place with synthetic "
+                         "intensity (offline; no processed source needed)")
     args = ap.parse_args()
+
+    if args.inject_intensity:
+        inject_intensity(OUT)
+        return
 
     src = Path(args.src)
     drcs = sorted(src.glob("*.drc"))[:args.frames]

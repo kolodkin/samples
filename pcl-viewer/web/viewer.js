@@ -197,11 +197,12 @@ export function createViewer(canvas, { onColorState } = {}) {
     return colors;
   }
 
-  // Precompute a ramp buffer for every scalar mode the cloud can supply:
-  // height (y), radial distance from the sensor (origin), and laser intensity
-  // (only if the source carried an `intensity` field — Draco movie frames are
-  // positions-only, so they get height + distance, and intensity falls back).
-  function computeColorBuffers(geometry) {
+  // Precompute a ramp buffer for every scalar mode the cloud can supply: height
+  // (y), radial distance from the sensor (origin), and intensity. Movie/seg Draco
+  // frames pack scalars into the color attribute, so an explicit per-scene channel
+  // map (`opts.classChannel`, `opts.intensityChannel`) says which channel carries
+  // what; static clouds pass no map and fall back to native attributes.
+  function computeColorBuffers(geometry, opts = {}) {
     const pos = geometry.getAttribute('position');
     const n = pos.count;
     const height = new Float32Array(n);
@@ -211,22 +212,30 @@ export function createViewer(canvas, { onColorState } = {}) {
       distance[i] = Math.hypot(pos.getX(i), pos.getY(i), pos.getZ(i));
     }
     const buffers = { height: rampColors(height), distance: rampColors(distance) };
-    const intensity = geometry.getAttribute('intensity');
-    if (intensity) {
-      const vals = Float32Array.from({ length: n }, (_, i) => intensity.getX(i));
+    const color = geometry.getAttribute('color');
+
+    // Intensity: a movie channel if the scene maps one, else a native PCD field
+    // (the city scene). Raw channel bytes are fine — rampColors clamps relatively.
+    if (opts.intensityChannel != null && color) {
+      const ch = opts.intensityChannel;
+      const vals = Float32Array.from({ length: n }, (_, i) => color.getComponent(i, ch));
       buffers.intensity = rampColors(vals);
+    } else {
+      const intensity = geometry.getAttribute('intensity');
+      if (intensity) {
+        const vals = Float32Array.from({ length: n }, (_, i) => intensity.getX(i));
+        buffers.intensity = rampColors(vals);
+      }
     }
-    // Draco movie frames for the seg scene carry the per-point class id in the
-    // (normalized) red channel of the color attribute; map each id through the
-    // fixed palette to build the "by class" buffer. Other clouds lack it, so
-    // "by class" falls back to flat there via applyColorMode.
-    const klass = geometry.getAttribute('color');
-    if (klass) {
+
+    // Class: the seg scene packs the per-point id (raw integer) in a color channel;
+    // map each id through the fixed palette. DRACOLoader hands the color attribute
+    // back as raw, un-normalized floats, so the channel value already IS the id.
+    if (opts.classChannel != null && color) {
+      const ch = opts.classChannel;
       const out = new Float32Array(n * 3);
       for (let i = 0; i < n; i++) {
-        // DRACOLoader hands the color attribute back as raw, un-normalized floats,
-        // so the red channel already IS the class id (not a 0..1 fraction).
-        const id = Math.round(klass.getX(i));
+        const id = Math.round(color.getComponent(i, ch));
         const c = SEG_PALETTE[id] || SEG_PALETTE[0];
         out[i * 3] = c.r; out[i * 3 + 1] = c.g; out[i * 3 + 2] = c.b;
       }
@@ -413,11 +422,11 @@ export function createViewer(canvas, { onColorState } = {}) {
   // Decode one frame off the queue: Draco decode (in DRACOLoader's WASM worker) →
   // normalize against the shared transform → precompute color buffers. Returns the
   // slot, or null if the load was cancelled (stale token).
-  async function decodeFrame(i, shared, token, urlFn) {
+  async function decodeFrame(i, shared, token, urlFn, colorChannels) {
     const geom = await dracoLoad(urlFn(i));
     if (token !== loadToken) { geom.dispose(); return null; }
     normalizeMovieFrame(geom, shared);
-    return { geometry: geom, buffers: computeColorBuffers(geom) };
+    return { geometry: geom, buffers: computeColorBuffers(geom, colorChannels) };
   }
 
   // Transform an axis-aligned source-frame (z-up, metres) box through the same
@@ -483,7 +492,7 @@ export function createViewer(canvas, { onColorState } = {}) {
 
     let first;
     try {
-      first = await decodeFrame(0, shared, token, urlFn);
+      first = await decodeFrame(0, shared, token, urlFn, opts.colorChannels);
     } catch (e) {
       if (token !== loadToken) return;
       state.loading = false;
@@ -513,7 +522,7 @@ export function createViewer(canvas, { onColorState } = {}) {
         const i = next++;
         let slot;
         try {
-          slot = await decodeFrame(i, shared, token, urlFn);
+          slot = await decodeFrame(i, shared, token, urlFn, opts.colorChannels);
         } catch (e) {
           if (token !== loadToken) return;
           // One frame failing shouldn't kill the whole stream: mark it so
@@ -551,6 +560,7 @@ export function createViewer(canvas, { onColorState } = {}) {
     await loadMovie(count, {
       urlFn: segFrameUrl,
       onFrame: (i, shared) => updateBoxes(i, shared),
+      colorChannels: { classChannel: 0, intensityChannel: 1 },
     });
   }
 
@@ -648,7 +658,7 @@ export function createViewer(canvas, { onColorState } = {}) {
     teardownScene();
     if (id === 'city') await loadStatic(CITY_URL, activeProfile);
     else if (id === 'lucy') await loadStatic(LUCY_URL, activeProfile);
-    else if (id === 'movie') await loadMovie(MOVIE_COUNT);
+    else if (id === 'movie') await loadMovie(MOVIE_COUNT, { colorChannels: { intensityChannel: 1 } });
     else if (id === 'seg') await loadSegMovie(SEG_MOVIE_COUNT);
   }
 

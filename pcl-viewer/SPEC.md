@@ -48,12 +48,14 @@ rather than a fixed five. `web/colorModes.js` is the single source of truth — 
 ordered `COLOR_MODES` list of `{id, label}`, imported by both the viewer (ids) and
 the UI (labels). `computeColorBuffers` builds a ramp/class buffer for each field the
 cloud carries — every cloud gets `height` and `distance`, the city PCD adds
-`intensity` (its `intensity` field), and the seg Draco frames add `class` (the
-per-point id smuggled in the color attribute). At **scene load** (in `loadStatic` /
-`loadMovie`, not per movie frame) the offered set is derived once as `flat` plus
-whichever buffers exist (`offeredModes` → `state.colorModes`, in `COLOR_MODES`
-order). The result per scene: **city** flat/height/distance/intensity, **Lucy** and
-**movie** flat/height/distance, **seg** flat/class/height/distance.
+`intensity` from its `intensity` field, the movie/seg Draco frames add `intensity`
+from the color attribute's green channel, and the seg frames add `class` (the
+per-point id in the color attribute's red channel). At **scene load** (in
+`loadStatic` / `loadMovie`, not per movie frame) the offered set is derived once as
+`flat` plus whichever buffers exist (`offeredModes` → `state.colorModes`, in
+`COLOR_MODES` order). The result per scene: **city** and **movie**
+flat/height/distance/intensity, **Lucy** flat/height/distance, **seg**
+flat/class/height/distance/intensity.
 
 Color state is **pushed** to the UI rather than polled: `createViewer` takes an
 `onColorState({mode, modes})` callback that `applyColorMode` fires whenever the
@@ -129,7 +131,8 @@ a y-up frame: it skips the rotation, scales by a robust *bounding extent* (98th
 by its height, and is framed **front-on and upright** from a slightly elevated
 three-quarter angle. Both profiles center on the origin and normalize to
 `sceneRadius 0.5`, so the point-size slider and the height/distance ramps work
-unchanged (Lucy carries no `intensity`, so that mode falls back to flat).
+unchanged (Lucy carries no `intensity`, so that mode falls back to flat; the
+movie and seg scenes now do carry it).
 
 `web/config.js` holds the scene URLs and frame counts, each overridable via
 `?lucyUrl=`, `?movieBase=`, `?movieCount=`, `?segMovieBase=`, `?segMovieCount=`,
@@ -152,11 +155,11 @@ CDN.
 ### Movie pipeline (`scripts/build_movie_dataset.py`, one-shot)
 
 KITTI raw drive `2011_09_26_drive_0005` → per-frame Velodyne `.bin` →
-voxel-downsample to ~30k points (positions only; the viewer colors by
-height/flat, so reflectance is dropped) → Draco encode (14-bit position
-quantization, ~73 KB/frame, 154 frames) → upload to the HF dataset with a dataset
-card (`README.md`) and an `annotations.md` noting the frames are **geometry only**
-(positions, no KITTI object/semantic labels). Frame data is **not** in git; the
+voxel-downsample to ~30k points (positions + per-point intensity, the latter packed
+into the Draco color attribute's green channel) → Draco encode (14-bit position
+quantization, 154 frames) → upload to the HF dataset with a dataset
+card (`README.md`) and an `annotations.md` noting the frames carry positions +
+intensity (no KITTI object/semantic labels). Frame data is **not** in git; the
 browser fetches `.drc` at runtime. Tiny
 committed fixtures (`tests/fixtures/movie/*.drc` for the movie, and
 `tests/fixtures/lucy/lucy_fixture.ply` — a small indexed-mesh PLY exercising the
@@ -177,6 +180,12 @@ pair) but adds per-point **classes** and per-frame **3D boxes**:
   id through `SEG_PALETTE` (the SemanticKITTI 19-class colors) into a `class`
   buffer; "By class" is just another `applyColorMode` entry, so clouds without the
   attribute fall back to flat. `loadSegMovie` defaults the mode to `class`.
+- **Intensity encoding.** The same color attribute's **green channel** carries the
+  per-point intensity (`colors[:,1] = intensity*255`), for both the geometry and
+  seg movies. The viewer is told which channel holds what via a per-scene
+  `colorChannels` map (`{classChannel, intensityChannel}`) threaded through
+  `loadMovie` → `decodeFrame` → `computeColorBuffers`, so "By intensity" is offered
+  on the movie scenes just as it is on the city PCD.
 - **Boxes.** `boxes.json` (`{ "NNNNNN": [ {cls, center, size} ] }`, fetched once)
   holds one **axis-aligned** box per thing instance (learning classes 1–8),
   derived at build time from the SemanticKITTI instance ids (high 16 bits of the
