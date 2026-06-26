@@ -1,6 +1,7 @@
 """Pytest fixtures: ensure vendored libs exist, run the static server."""
 from __future__ import annotations
 
+import glob
 import os
 import shutil
 import socket
@@ -44,6 +45,56 @@ def vendored():
         subprocess.run(["bash", os.path.join(HERE, "vendor.sh")], check=True)
     assert os.path.exists(sentinel), "vendor.sh did not populate web/vendor/"
     _stage_fixtures()
+
+
+@pytest.fixture(scope="session")
+def browser_type_launch_args(browser_type_launch_args):
+    """Use Playwright's own bundled Chromium when present; otherwise fall back to
+    a pre-provisioned Chromium under PLAYWRIGHT_BROWSERS_PATH. CI/web-session
+    images often ship a pinned Chromium at a different revision than the installed
+    Playwright expects, which would otherwise fail with "Executable doesn't
+    exist". On a normal dev machine the bundled browser exists, so this is a no-op."""
+    args = dict(browser_type_launch_args)
+    if "executable_path" in args:
+        return args
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            bundled = p.chromium.executable_path
+        if os.path.exists(bundled):
+            return args
+    except Exception:
+        pass
+    base = os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers")
+    found = sorted(glob.glob(os.path.join(base, "chromium-*", "chrome-linux", "chrome")))
+    if found:
+        args["executable_path"] = found[-1]
+    return args
+
+
+@pytest.fixture(autouse=True)
+def _unobstructed_final_frame(request):
+    """Leave each browser test on an unobstructed rendered cloud for its
+    final-state screenshot: close the controls modal (if open) before
+    pytest-playwright captures the PNG, so the e2e report shows the point cloud
+    rather than the menu panel over it.
+
+    Only browser tests request `page`; resolve it at SETUP time (not teardown) and
+    only when the test already asks for it. Resolving here makes this fixture
+    finalize BEFORE pytest-playwright's screenshot (correct LIFO ordering), while
+    NOT forcing a browser onto the pure-Python unit tests (server / build) — doing
+    so would spawn a blank tab and emit white screenshots."""
+    page = request.getfixturevalue("page") if "page" in request.fixturenames else None
+    yield
+    if page is None:
+        return
+    try:
+        if page.get_by_test_id("controls").count() > 0:
+            page.get_by_test_id("menu-toggle").click()
+            page.get_by_test_id("controls").wait_for(state="detached", timeout=2000)
+        page.wait_for_timeout(150)  # settle a frame so the cloud, not a transition, is caught
+    except Exception:
+        pass
 
 
 @pytest.fixture()
