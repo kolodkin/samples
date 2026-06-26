@@ -256,12 +256,12 @@ export function createViewer(canvas, { onColorState } = {}) {
   // stays warm and bright. Same robust 2nd..98th percentile clamp as rampColors so a
   // few outliers don't compress the map; linear RGB interpolation between stops.
   const HOT_STOPS = [
-    { t: 0.00, c: [0.28, 0.05, 0.42] }, // deep purple  (low intensity only)
-    { t: 0.15, c: [0.70, 0.09, 0.42] }, // magenta
-    { t: 0.35, c: [0.95, 0.24, 0.16] }, // red
-    { t: 0.60, c: [1.00, 0.52, 0.06] }, // orange
-    { t: 0.82, c: [1.00, 0.82, 0.26] }, // yellow
-    { t: 1.00, c: [1.00, 0.98, 0.88] }, // near-white   (high intensity)
+    { t: 0.00, c: [0.50, 0.16, 0.70] }, // bright purple (low intensity only)
+    { t: 0.15, c: [0.90, 0.22, 0.55] }, // magenta
+    { t: 0.35, c: [1.00, 0.38, 0.28] }, // red
+    { t: 0.60, c: [1.00, 0.64, 0.22] }, // orange
+    { t: 0.82, c: [1.00, 0.88, 0.45] }, // yellow
+    { t: 1.00, c: [1.00, 1.00, 0.92] }, // near-white    (high intensity)
   ];
   function hotRampColors(values) {
     const n = values.length;
