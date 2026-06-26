@@ -248,6 +248,40 @@ export function createViewer(canvas, { onColorState } = {}) {
     return colors;
   }
 
+  // Intensity gets its own "hot" (thermal) colormap instead of the shared blue->red
+  // ramp: only the lowest returns read as cool purple, and the bulk of the
+  // histogram-equalized range climbs through magenta -> red -> orange -> yellow to
+  // near-white, so the cloud is mostly bright and reflective surfaces pop. Stops are
+  // placed so purple occupies just the bottom ~15% of the range and everything above
+  // stays warm and bright. Same robust 2nd..98th percentile clamp as rampColors so a
+  // few outliers don't compress the map; linear RGB interpolation between stops.
+  const HOT_STOPS = [
+    { t: 0.00, c: [0.28, 0.05, 0.42] }, // deep purple  (low intensity only)
+    { t: 0.15, c: [0.70, 0.09, 0.42] }, // magenta
+    { t: 0.35, c: [0.95, 0.24, 0.16] }, // red
+    { t: 0.60, c: [1.00, 0.52, 0.06] }, // orange
+    { t: 0.82, c: [1.00, 0.82, 0.26] }, // yellow
+    { t: 1.00, c: [1.00, 0.98, 0.88] }, // near-white   (high intensity)
+  ];
+  function hotRampColors(values) {
+    const n = values.length;
+    const sorted = Float32Array.from(values).sort();
+    const min = sorted[Math.floor(n * 0.02)];
+    const span = (sorted[Math.floor(n * 0.98)] - min) || 1;
+    const colors = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      const t = Math.min(1, Math.max(0, (values[i] - min) / span));
+      let s = 0;
+      while (s < HOT_STOPS.length - 2 && t > HOT_STOPS[s + 1].t) s++;
+      const a = HOT_STOPS[s], b = HOT_STOPS[s + 1];
+      const u = (t - a.t) / (b.t - a.t || 1);
+      colors[i * 3]     = a.c[0] + (b.c[0] - a.c[0]) * u;
+      colors[i * 3 + 1] = a.c[1] + (b.c[1] - a.c[1]) * u;
+      colors[i * 3 + 2] = a.c[2] + (b.c[2] - a.c[2]) * u;
+    }
+    return colors;
+  }
+
   // Precompute, for every scalar mode the cloud can supply, both a ramp color
   // buffer (for "color by") and the raw per-point values (for range filtering):
   // height (y), radial distance from the sensor (origin), and intensity. Movie/seg
@@ -280,14 +314,14 @@ export function createViewer(canvas, { onColorState } = {}) {
       if (attr) intensity = Float32Array.from({ length: n }, (_, i) => attr.getX(i));
     }
     // Color "by intensity" off a histogram-equalized copy (eq_i) precomputed here
-    // at load, never by mutating the raw field: the equalized values drive the ramp
-    // (so the clumped LiDAR histogram spreads across the full blue->red range),
-    // while raw intensity stays in scalars for range filtering and the HUD's 0–255
-    // hints. setHSL needs roughly the same span rampColors expects, and eq_i is
-    // already a uniform [0,1] CDF, so the ramp's percentile clamp is a near-identity.
+    // at load, never by mutating the raw field: the equalized values drive the hot
+    // colormap (so the clumped LiDAR histogram spreads evenly — mostly bright, only
+    // the low tail purple), while raw intensity stays in scalars for range filtering
+    // and the HUD's 0–255 hints. eq_i is already a uniform [0,1] CDF, so the map's
+    // percentile clamp is a near-identity.
     if (intensity) {
       const eqIntensity = equalizeHistogram(intensity);
-      colors.intensity = rampColors(eqIntensity);
+      colors.intensity = hotRampColors(eqIntensity);
       scalars.intensity = intensity;
     }
 
