@@ -59,6 +59,15 @@ function generateClassPalette(n) {
   return out;
 }
 
+// Pick a clear point size for a loaded cloud from its density. The 0.004 default
+// is tuned for the dense ~30k-point KITTI scans; a sparser user cloud at that
+// size nearly vanishes, so scale up by 1/sqrt(count) (points cover area), clamped
+// so it never goes below the default or grows into fat blobs.
+function autoPointSize(count) {
+  const size = 0.004 * Math.sqrt(30000 / Math.max(count, 1));
+  return Math.min(0.02, Math.max(0.004, size));
+}
+
 // SemanticKITTI 19-class learning palette, indexed by class id (0 = unlabeled).
 const SEG_PALETTE = [
   0x202830, 0x6496F5, 0x64E6F5, 0x1E3C96, 0x501EB4, 0x0000FF, 0xFF1E1E,
@@ -573,6 +582,10 @@ export function createViewer(canvas, { onColorState } = {}) {
       geom.setAttribute('intensity', new THREE.BufferAttribute(parsed.intensity, 1));
     }
 
+    // Size points to the cloud's density so it reads clearly regardless of how
+    // many points it has (the slider follows via getStats → app).
+    state.settings.pointSize = autoPointSize(parsed.positions.length / 3);
+
     let classColors = null;
     if (parsed.classIds && parsed.classNames) {
       classColors = generateClassPalette(parsed.classNames.length);
@@ -937,6 +950,7 @@ export function createViewer(canvas, { onColorState } = {}) {
         boxCount: state.boxCount,
         colorMode: state.settings.colorMode, // the mode actually applied (post-fallback)
         colorModes: state.colorModes,         // modes the live cloud supports
+        pointSize: state.settings.pointSize,  // current size (auto-set on file load)
         fileName: state.fileName,             // loaded local file name (file scene)
         classLegend: state.classLegend,       // [{name, hex}] for loaded class enum
       };

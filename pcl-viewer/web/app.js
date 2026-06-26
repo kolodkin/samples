@@ -76,6 +76,7 @@ function App() {
     scene: 'movie', frameIndex: 0, frameCount: 0, playing: false,
     loading: false, loadProgress: { loaded: 0, total: 0 }, error: null,
     visibleCount: 0, scalarRanges: {}, fileName: null, classLegend: [],
+    pointSize: 0.004,
   });
 
   useEffect(() => {
@@ -106,6 +107,11 @@ function App() {
   // Mirror the playhead into local state so the frame-select slider tracks
   // playback (and scene resets to 0) between manual seeks.
   useEffect(() => { setFrame(stats.frameIndex); }, [stats.frameIndex]);
+
+  // The viewer auto-sizes points to a loaded file's density; mirror that into the
+  // slider so it shows the applied size. (A user drag sets both, so the next tick
+  // matches and this is a no-op then.)
+  useEffect(() => { if (stats.pointSize) setPointSize(stats.pointSize); }, [stats.pointSize]);
 
   const onSize = (e) => {
     const v = parseFloat(e.target.value);
@@ -257,7 +263,16 @@ function App() {
         <select data-testid="scene" value=${sceneId} onChange=${onScene}>
           ${sceneOptions.map((s) => html`<option value=${s.id}>${s.label}</option>`)}
         </select>
-        <button data-testid="load-file" onClick=${onLoadClick}>Load PCL…</button>
+        <button class="load-pcl" data-testid="load-file" onClick=${onLoadClick}>
+          <svg class="load-pcl-icon" viewBox="0 0 16 16" width="15" height="15"
+               fill="none" stroke="currentColor" stroke-width="1.5"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M8 10.5V2.5" />
+            <path d="M4.8 5.7 8 2.5l3.2 3.2" />
+            <path d="M2.5 10v2.5a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V10" />
+          </svg>
+          <span>Load PCL…</span>
+        </button>
         <input type="file" accept=".pcd,.csv,.parquet" data-testid="file-input"
                ref=${fileInputRef} onChange=${onFile} style="display:none" />
         ${isMovieLike && stats.frameCount > 0 && html`

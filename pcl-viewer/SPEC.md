@@ -196,8 +196,11 @@ scene's tickable `legend` markup (class id = enumeration index). Loading a file
 resets the range filters and hidden classes so the new cloud starts unfiltered.
 "By class" is the default mode when a file carries classes; otherwise the active
 scalar mode carries over (flat fallback as usual). Loaded clouds use the **object** normalization profile (no z-up rotation,
-centered, framed front-on). The Scene dropdown gains a temporary entry showing the
-file name while loaded; switching to a built-in scene clears it.
+centered, framed front-on). Point size is **auto-scaled to the cloud's density** on
+load (`autoPointSize`, ∝ 1/√count, clamped 0.004–0.02) so a sparse file reads
+clearly instead of vanishing at the dense-scan default; the size slider follows via
+`getStats`, and the user can still adjust it. The Scene dropdown gains a temporary
+entry showing the file name while loaded; switching to a built-in scene clears it.
 
 ### Per-scene normalization profiles
 `viewer.js` keys a small **profile** off the scene id. The KITTI clouds (movie,

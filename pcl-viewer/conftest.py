@@ -79,14 +79,16 @@ def _unobstructed_final_frame(request):
     pytest-playwright captures the PNG, so the e2e report shows the point cloud
     rather than the menu panel over it.
 
-    Resolves `page` lazily via `request` so it does NOT drag a browser into the
-    pure-Python unit tests (server / build) that never use one — forcing `page`
-    there would spawn a blank tab and emit white screenshots."""
+    Only browser tests request `page`; resolve it at SETUP time (not teardown) and
+    only when the test already asks for it. Resolving here makes this fixture
+    finalize BEFORE pytest-playwright's screenshot (correct LIFO ordering), while
+    NOT forcing a browser onto the pure-Python unit tests (server / build) — doing
+    so would spawn a blank tab and emit white screenshots."""
+    page = request.getfixturevalue("page") if "page" in request.fixturenames else None
     yield
-    if "page" not in request.fixturenames:
+    if page is None:
         return
     try:
-        page = request.getfixturevalue("page")
         if page.get_by_test_id("controls").count() > 0:
             page.get_by_test_id("menu-toggle").click()
             page.get_by_test_id("controls").wait_for(state="detached", timeout=2000)
