@@ -120,10 +120,21 @@ def downsample_idx_to_target(pts: np.ndarray, target: int = 30000) -> np.ndarray
     return idx
 
 
+def intensity_to_byte(intensity: np.ndarray) -> np.ndarray:
+    """Map per-point remission to a 0–255 byte. KITTI stores remission as a float
+    in [0,1], so scale by 255; but some mirrors ship it already in 0–255, where a
+    blind *255 would saturate every point to white. Detect the range and only
+    scale when the values are normalized, then clip for safety."""
+    inten = np.asarray(intensity, dtype=np.float32)
+    if inten.size and inten.max() <= 1.0:  # [0,1] remission -> 0..255
+        inten = inten * 255.0
+    return np.clip(inten, 0, 255).astype(np.uint8)
+
+
 def encode_frame(xyz: np.ndarray, intensity: np.ndarray) -> bytes:
     """Draco-encode positions + per-point intensity in the color green channel."""
     colors = np.zeros((len(xyz), 3), dtype=np.uint8)
-    colors[:, 1] = np.clip(intensity * 255.0, 0, 255).astype(np.uint8)
+    colors[:, 1] = intensity_to_byte(intensity)
     return DracoPy.encode(xyz.astype(np.float32), colors=colors,
                           quantization_bits=QUANT_BITS)
 
