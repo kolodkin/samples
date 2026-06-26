@@ -480,7 +480,10 @@ def test_filter_stepper_buttons(server_url, page):
     # Stepping the max bound down: first click fills the input with a number.
     dec = page.get_by_test_id("filter-height-max-dec")
     dec.click()
-    assert page.get_by_test_id("filter-height-max").input_value() != ""
+    # The click materializes the bound via an async Preact re-render, so read the
+    # input through an auto-waiting expect rather than synchronously (else the
+    # value can still be empty the instant after the click — a timing flake).
+    expect(page.get_by_test_id("filter-height-max")).not_to_have_value("")
     page.wait_for_function(
         "() => window.__PCL.handle.getStats().filters.height.max !== null")
     # Keep stepping inward until some points are clipped (never all).
