@@ -1,17 +1,16 @@
 PCL Viewer — three.js + Preact
 ---
 
-A no-build, ES-module point cloud viewer with a **Scene** selector: a 360°
-street-level KITTI LiDAR scan (`kitti-velodyne-000000.pcd`, 115k points),
-**Stanford Lucy** — the famous winged-angel statue (50k-vertex binary PLY, framed
-upright and front-on) hot-linked from the three.js model repo — and a
+A no-build, ES-module point cloud viewer with a **Scene** selector: a
 **KITTI movie** — a Draco-compressed multi-frame LiDAR sequence streamed at
 runtime from a Hugging Face dataset and decoded in-browser through a
 bounded-concurrency worker queue, so playback starts on the first frame and runs
-at ~15 fps while the rest decode in the background, and a **KITTI seg** scene — a
+at ~15 fps while the rest decode in the background — a **KITTI seg** scene — a
 SemanticKITTI movie (from the same dataset's `seg/` folder) that colors every
 point by its semantic class and draws a 3D bounding box around each object
-instance. Each point renders as
+instance — and **Stanford Lucy**, the famous winged-angel statue (50k-vertex
+binary PLY, framed upright and front-on) hot-linked from the three.js model repo.
+Each point renders as
 a lit sphere impostor (a round, shaded "3D ball", with the older flat square
 sprite still selectable) under `OrbitControls`, wrapped in a Preact UI (scene
 selector, movie play/pause, point-shape and point-size controls, a

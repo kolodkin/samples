@@ -21,39 +21,33 @@ Python server, never a CDN at test time). Preact renders via `htm` — no JSX/tr
 - `serve.py` — `ThreadingHTTPServer` serving `web/` with JS/`.pcd` MIME types and
   `Cache-Control: no-store`.
 
-## Sample asset
+## Sample asset (movie-fixture source)
 `web/models/kitti-velodyne-000000.pcd` — frame `000000` of the KITTI raw Velodyne
 data: a single 360° street-level LiDAR scan (binary PCD, `FIELDS x y z intensity`,
-115,385 points, ~1.8 MB). It is a *city viewpoint* cloud — one sensor sweep showing
-the road as concentric scan rings with parked cars, walls, poles and vegetation
-rising out of it. It comes from the KITTI dataset and is licensed
+115,385 points, ~1.8 MB). It comes from the KITTI dataset and is licensed
 **CC BY-NC-SA 3.0** — *not* permissively licensed like the rest of the project; see
-`web/models/ATTRIBUTION.md` for the source, license terms, and citation.
+`web/models/ATTRIBUTION.md` for the source, license terms, and citation. It is no
+longer a selectable scene; it is retained as the **source for the offline movie
+fixtures** — `tests/fixtures/build_fixtures.py` decimates it into the tiny
+`tests/fixtures/movie/*.drc` frames the e2e plays without a network.
 
-KITTI uses a z-up vehicle frame in metres, so on load the viewer reorients it
-(z-up → three.js y-up), centers it, and scales by a **robust** horizontal radius
-(90th percentile of distance from the sensor, not the absolute max) so the dense
-scene fills the view instead of being shrunk by a few 80 m stray returns. The
-**default** "by distance" mode colors per-vertex by radial range from the sensor
-(blue → red), with the range clamped to the 2nd–98th percentile so the near rings
-read blue and the far returns climb through to red, lighting up the concentric scan
-rings. The same ramp (and the same robust percentile clamp) also drives "by height"
-(along the vertical axis, so ground reads blue and cars/walls climb to red) and "by
-intensity" (the PCD's per-point laser reflectance, which picks out road markings and
-signs); "flat" mode (a single material color) is a toggle. The ramp buffers are precomputed once per cloud and swapped on the geometry.
+The same z-up→y-up reorientation, robust-radius normalization, and percentile-clamped
+ramp coloring it once demonstrated now drive the live KITTI scenes (movie + seg);
+see "Per-scene normalization profiles" below.
 
 ## Scene-dependent color modes
 The color-mode dropdown lists only the modes the live scene can actually supply,
 rather than a fixed five. `web/colorModes.js` is the single source of truth — an
 ordered `COLOR_MODES` list of `{id, label}`, imported by both the viewer (ids) and
 the UI (labels). `computeColorBuffers` builds a ramp/class buffer for each field the
-cloud carries — every cloud gets `height` and `distance`, the city PCD adds
-`intensity` (its `intensity` field), and the seg Draco frames add `class` (the
-per-point id smuggled in the color attribute). At **scene load** (in `loadStatic` /
-`loadMovie`, not per movie frame) the offered set is derived once as `flat` plus
-whichever buffers exist (`offeredModes` → `state.colorModes`, in `COLOR_MODES`
-order). The result per scene: **city** flat/height/distance/intensity, **Lucy** and
-**movie** flat/height/distance, **seg** flat/class/height/distance.
+cloud carries — every cloud gets `height` and `distance`, and the seg Draco frames
+add `class` (the per-point id smuggled in the color attribute). At **scene load**
+(in `loadStatic` / `loadMovie`, not per movie frame) the offered set is derived once
+as `flat` plus whichever buffers exist (`offeredModes` → `state.colorModes`, in
+`COLOR_MODES` order). The result per scene: **movie** and **Lucy**
+flat/height/distance, **seg** flat/class/height/distance. (`COLOR_MODES` also lists
+an `intensity` ramp for sources carrying an `intensity` field — none of the current
+scenes do, so it is never offered; the retired city PCD was the last to use it.)
 
 Color state is **pushed** to the UI rather than polled: `createViewer` takes an
 `onColorState({mode, modes})` callback that `applyColorMode` fires whenever the
@@ -62,7 +56,7 @@ re-installs, since `state.colorModes` is a stable array per scene). `app.js` hol
 `colorMode`/`colorModes` as local state updated by that callback and renders exactly
 those `<option>`s — so the dropdown follows the viewer immediately, including the
 `applyColorMode` flat-fallback that backstops a *scene switch* stranding the current
-mode (e.g. leaving seg's "by class" for the city scan). Per-scene **default** modes
+mode (e.g. leaving seg's "by class" for the movie, which has no class buffer). Per-scene **default** modes
 live in one `SCENE_DEFAULT_COLOR` map in the viewer (`{ seg: 'class' }`, applied in
 `loadScene`); scenes not listed carry the current mode into the new scene.
 `getStats()` also exposes `colorMode`/`colorModes` for e2e introspection.
@@ -89,7 +83,7 @@ and per-vertex color ramps working unchanged — the shading multiplies into
 |---------------|-----------------------------------------------------|
 | Point shape   | lit sphere impostor ("ball", default) vs. flat square sprite |
 | Point size    | `PointsMaterial.size` (0.002–0.05)                  |
-| Color mode    | flat vs. per-vertex ramp by height / distance / intensity, or palette by class (seg scene) |
+| Color mode    | flat vs. per-vertex ramp by height / distance (plus by-intensity where a source carries it), or palette by class (seg scene) |
 | Movie (movie + seg scenes) | play/pause, frame step/seek (the sequence loops continuously) |
 | Show boxes (seg scene only) | toggle the per-instance 3D bounding boxes |
 | Reset camera  | re-frames the low forward-facing view down the road  |
@@ -108,20 +102,21 @@ hook, and captures a screenshot (compatible with `/e2e-screenshots-report`).
 
 ## Scenes
 
+Scenes are offered in this order (the first, **KITTI movie**, is the default):
+
 | Scene            | Source                                                | Transport                       |
 |------------------|-------------------------------------------------------|---------------------------------|
-| KITTI city view  | `web/models/kitti-velodyne-000000.pcd` (committed)    | same-origin PCD                 |
-| Stanford Lucy    | three.js repo `Lucy100k.ply` (50k-vertex binary PLY)  | raw.githubusercontent (CORS)    |
 | KITTI movie      | `kolodkin/pcl-viewer-kitti-movie` `geometry/` (HF)    | HF resolve (CORS), Draco `.drc` |
 | KITTI seg        | `kolodkin/pcl-viewer-kitti-movie` `seg/` (HF)         | HF resolve (CORS), Draco `.drc` + `boxes.json` |
+| Stanford Lucy    | three.js repo `Lucy100k.ply` (50k-vertex binary PLY)  | raw.githubusercontent (CORS)    |
 
 The shared HF dataset holds both movies under sibling folders — `geometry/`
 (positions-only, from KITTI raw drive 0005) and `seg/` (SemanticKITTI, with
 per-point classes + `boxes.json`) — under one CC BY-NC-SA card.
 
 ### Per-scene normalization profiles
-`viewer.js` keys a small **profile** off the scene id. The KITTI clouds (city,
-movie, seg) are z-up sensor frames spread over a wide ground plane: rotate z-up → y-up,
+`viewer.js` keys a small **profile** off the scene id. The KITTI clouds (movie,
+seg) are z-up sensor frames spread over a wide ground plane: rotate z-up → y-up,
 scale by a robust *horizontal* (x,z) radius, and frame from the low forward-facing
 chase camera (the default described above). **Lucy** is a compact object already in
 a y-up frame: it skips the rotation, scales by a robust *bounding extent* (98th
@@ -134,7 +129,7 @@ unchanged (Lucy carries no `intensity`, so that mode falls back to flat).
 `web/config.js` holds the scene URLs and frame counts, each overridable via
 `?lucyUrl=`, `?movieBase=`, `?movieCount=`, `?segMovieBase=`, `?segMovieCount=`,
 `?segBoxesUrl=` (used by e2e to point at local fixtures). `viewer.js` exposes
-`loadScene(id)`; `loadStatic` loads the city scan and Lucy, picking the loader by
+`loadScene(id)`; `loadStatic` loads Lucy, picking the loader by
 file extension (`PCDLoader` for `.pcd`, `PLYLoader` for `.ply` — the PLY mesh's face
 index is stripped so its unique vertices render as points), `loadMovie` (DRACOLoader)
 drives the movie, and `loadSegMovie` adds the seg scene's classes + boxes. The movie **streams**:
@@ -199,7 +194,8 @@ pair) but adds per-point **classes** and per-frame **3D boxes**:
 
 ### Licensing
 
-KITTI / SemanticKITTI are **CC BY-NC-SA 3.0**. The committed city frame and both
+KITTI / SemanticKITTI are **CC BY-NC-SA 3.0**. The committed KITTI frame (retained
+as the movie-fixture source) and both
 derived movies (`geometry/` and `seg/`) retain that license with attribution
 (Geiger et al., IJRR 2013 / CVPR 2012; Behley et al., ICCV 2019 for the seg
 labels); the single HF dataset card declares `license: cc-by-nc-sa-3.0` and
