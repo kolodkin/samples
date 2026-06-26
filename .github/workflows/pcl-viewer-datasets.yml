@@ -1,0 +1,141 @@
+name: pcl-viewer-datasets
+
+# Manual-only: (re)build the KITTI "movie" (geometry) and SemanticKITTI "seg"
+# Draco datasets and optionally publish them to the Hugging Face dataset the
+# viewer reads from. This is the fix for the stale-data intensity bug: the live
+# geometry/ frames carry no color attribute and seg/ has an all-zero intensity
+# channel, both predating the intensity-packing commits. Regenerating with the
+# current build scripts repacks per-point intensity into the Draco green channel.
+#
+# Leave "publish_hf" off for a dry run (download + process, no upload) to validate
+# the build before touching the public dataset.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Which dataset(s) to build'
+        type: choice
+        options: [both, geometry, seg]
+        default: both
+      publish_hf:
+        description: 'Upload to Hugging Face (requires HF_TOKEN). Off = dry run, no upload.'
+        type: boolean
+        default: false
+      hf_repo_id:
+        description: 'Target HF dataset repo (owner/name); HF_TOKEN must have write access. Blank = script default (kolodkin/pcl-viewer-kitti-movie).'
+        type: string
+      movie_limit:
+        description: 'geometry: cap frame count (0 = all frames of drive 0005, ~154).'
+        type: string
+        default: '0'
+      seg_seq:
+        description: 'seg: SemanticKITTI sequence to slice.'
+        type: string
+        default: '00'
+      seg_limit:
+        description: 'seg: number of frames to build (viewer expects 150).'
+        type: string
+        default: '150'
+
+# Serialize runs: two builds uploading to the same HF repo at once would clobber.
+concurrency:
+  group: pcl-viewer-datasets
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # HF_TOKEN (and any other publish secrets) live on the DEV environment.
+    environment: DEV
+    timeout-minutes: 180
+    defaults:
+      run:
+        working-directory: pcl-viewer
+    env:
+      # Secret only flows when publishing is requested; a dry run never sees it.
+      HF_TOKEN: ${{ inputs.publish_hf && secrets.HF_TOKEN || '' }}
+      PUBLISH_HF: ${{ inputs.publish_hf }}
+      HF_REPO_ID_INPUT: ${{ inputs.hf_repo_id }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Free disk space
+        # The seg download streams ~6 GB; drop preinstalled toolchains we don't
+        # need so /tmp has room for the source frames + processed output.
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc || true
+          df -h /
+
+      - name: Build geometry movie (KITTI drive 0005)
+        if: ${{ inputs.target == 'both' || inputs.target == 'geometry' }}
+        env:
+          MOVIE_LIMIT: ${{ inputs.movie_limit }}
+        run: |
+          FLAGS=()
+          if [ -n "$HF_REPO_ID_INPUT" ]; then FLAGS+=(--repo-id "$HF_REPO_ID_INPUT"); fi
+          if [ -n "$MOVIE_LIMIT" ] && [ "$MOVIE_LIMIT" != "0" ]; then FLAGS+=(--limit "$MOVIE_LIMIT"); fi
+          # No HF_TOKEN -> dry run: build frames locally but skip the upload.
+          if [ "$PUBLISH_HF" != "true" ]; then FLAGS+=(--no-upload); fi
+          echo "build_movie_dataset.py ${FLAGS[*]}"
+          uv run --group gen python scripts/build_movie_dataset.py "${FLAGS[@]}"
+
+      - name: Build seg movie (SemanticKITTI)
+        if: ${{ inputs.target == 'both' || inputs.target == 'seg' }}
+        env:
+          SEG_SEQ: ${{ inputs.seg_seq }}
+          SEG_LIMIT: ${{ inputs.seg_limit }}
+        run: |
+          FLAGS=(--seq "$SEG_SEQ" --limit "$SEG_LIMIT")
+          if [ -n "$HF_REPO_ID_INPUT" ]; then FLAGS+=(--repo-id "$HF_REPO_ID_INPUT"); fi
+          # Stage flags: always download + process; only upload when publishing.
+          if [ "$PUBLISH_HF" = "true" ]; then FLAGS+=(--download --process --upload); else FLAGS+=(--download --process); fi
+          echo "build_seg_dataset.py ${FLAGS[*]}"
+          uv run --group gen python scripts/build_seg_dataset.py "${FLAGS[@]}"
+
+      - name: Verify packed intensity (decode a built frame)
+        if: always()
+        run: |
+          uv run --group gen python - <<'PY'
+          import glob, numpy as np, DracoPy
+          def report(path, ch_label):
+              files = sorted(glob.glob(path))
+              if not files:
+                  print(f"  (no frames at {path})"); return
+              with open(files[0], "rb") as f:
+                  m = DracoPy.decode(f.read())
+              c = getattr(m, "colors", None)
+              if c is None or len(c) == 0:
+                  print(f"  {files[0]}: NO color attribute"); return
+              c = np.asarray(c)
+              desc = " ".join(f"ch{k}[{c[:,k].min()}-{c[:,k].max()}]" for k in range(c.shape[1]))
+              print(f"  {files[0]}: {desc}  ({ch_label})")
+          print("geometry (intensity in green ch1):")
+          report("/tmp/kitti-movie/*.drc", "ch1=intensity")
+          print("seg (class red ch0, intensity green ch1):")
+          report("/tmp/kitti-seg/*.drc", "ch0=class ch1=intensity")
+          PY
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo '## pcl-viewer dataset build'
+            echo
+            echo "- target: \`${{ inputs.target }}\`"
+            echo "- published to HF: \`${{ inputs.publish_hf }}\`"
+            echo "- repo: \`${HF_REPO_ID_INPUT:-kolodkin/pcl-viewer-kitti-movie (default)}\`"
+            echo
+            echo 'Intensity is packed into the Draco color green channel (ch1); seg also'
+            echo 'carries the per-point class id in the red channel (ch0). See the'
+            echo '"Verify packed intensity" step log for the decoded ranges.'
+          } >> "$GITHUB_STEP_SUMMARY"
