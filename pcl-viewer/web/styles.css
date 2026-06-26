@@ -28,6 +28,17 @@ html, body { margin: 0; height: 100%; background: #101418; color: #e6edf3;
 .controls button { flex: 1; cursor: pointer; background: #1f6feb; color: #fff;
   border: 0; border-radius: 6px; padding: 7px; }
 
+/* Tab bar: two segmented buttons splitting the menu into View / Filters. Active
+   tab keeps the blue accent; inactive is muted. Overrides the generic blue
+   full-width .controls button look above. */
+.controls .tabs { display: flex; gap: 0; margin: 0 0 4px; }
+.controls .tabs .tab { flex: 1; padding: 7px; cursor: pointer; font: inherit;
+  background: #21262d; color: #9fb0c0; border: 1px solid #2a3340; border-radius: 0; }
+.controls .tabs .tab:first-child { border-radius: 6px 0 0 6px; }
+.controls .tabs .tab:last-child { border-radius: 0 6px 6px 0; border-left: 0; }
+.controls .tabs .tab:hover { background: #2a3340; color: #e6edf3; }
+.controls .tabs .tab.active { background: #1f6feb; color: #fff; border-color: #1f6feb; }
+
 /* "Load PCL" entry point: a full-width outlined-accent button with an upload
    glyph, set apart from the solid scene/transport buttons. Fills on hover/focus. */
 .controls .load-pcl { display: flex; align-items: center; justify-content: center;
