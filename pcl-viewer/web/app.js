@@ -186,7 +186,10 @@ function App() {
   // nothing — then steps inward; values stay clamped to the (step-aligned) data
   // envelope so the buttons never run off into meaningless territory.
   const onFilterStep = (field, bound, dir) => {
-    const rng = stats.scalarRanges[field];
+    // Read the live ranges from the viewer, not the 500ms-throttled `stats`
+    // snapshot: a click landing before the first post-load stats tick would
+    // otherwise see an empty `scalarRanges` and no-op (flaky under slow CI).
+    const rng = viewerRef.current.getStats().scalarRanges[field];
     if (!rng) return;
     const step = niceStep((rng.max - rng.min) / 40) || 1;
     const lo = Math.floor(rng.min / step) * step;
