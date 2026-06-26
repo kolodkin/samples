@@ -2,7 +2,7 @@
 # IMDb Dataset Builder: load, curate, and profile IMDb title.basics data,
 # then optionally publish the clean dataset to Hugging Face.
 #
-# Usage: ./imdb-dataset-builder.sh [--sample] [--year-from YEAR] [--publish] [--airtable]
+# Usage: ./imdb-dataset-builder.sh [--sample] [--year-from YEAR] [--publish] [--airtable] [--local-setup]
 #
 # Options:
 #   --sample            Run on a 500k row sample (default: full ~12.6M row dataset)
@@ -11,6 +11,10 @@
 #                       requires HF_TOKEN — registration fails if it is unset)
 #   --airtable          Publish the showcase sample to Airtable (default: off; also
 #                       requires AIRTABLE_API_KEY + AIRTABLE_BASE_ID)
+#   --local-setup       Auto-provision ClickHouse + PostgreSQL locally via apt
+#                       (default: off). Without it, the databases are assumed to
+#                       already exist at AAICLICK_CH_URL / AAICLICK_SQL_URL — the
+#                       mode CI uses, where the DBs are service containers.
 #
 # Environment:
 #   HF_TOKEN  — Hugging Face token, required when --publish is passed
@@ -32,20 +36,6 @@ PYTHON="${PYTHON:-uv run python}"
 # ---------------------------------------------------------------------------
 export AAICLICK_SQL_URL="${AAICLICK_SQL_URL:-postgresql+asyncpg://aaiclick:secret@localhost:5432/aaiclick}"
 export AAICLICK_CH_URL="${AAICLICK_CH_URL:-clickhouse://default:benchmark@localhost:8123/default}"
-
-# Auto-provision the databases (idempotent — both scripts skip work already
-# done). setup_postgres also runs `aaiclick migrate`, so the orchestration
-# schema exists; no `aaiclick setup` (local-mode bootstrap) is needed.
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-if [ -x "$REPO_ROOT/scripts/setup_clickhouse" ] && [ -x "$REPO_ROOT/scripts/setup_postgres" ]; then
-    echo "Provisioning distributed backend (ClickHouse + PostgreSQL)..."
-    "$REPO_ROOT/scripts/setup_clickhouse"
-    "$REPO_ROOT/scripts/setup_postgres"
-    echo
-else
-    echo "WARNING: scripts/setup_{clickhouse,postgres} not found — assuming a" >&2
-    echo "         distributed backend is already running at the URLs above." >&2
-fi
 
 WORKER_LOG="tmp/imdb_worker.log"
 export AAICLICK_REPORT_FILE="tmp/imdb_report.md"
@@ -75,13 +65,35 @@ while [ $# -gt 0 ]; do
             PARAMS_PARTS+=('"publish_airtable": true')
             shift
             ;;
+        --local-setup)
+            LOCAL_SETUP=1
+            shift
+            ;;
         *)
             echo "Unknown flag: $1" >&2
-            echo "Usage: $0 [--sample] [--year-from YEAR] [--publish] [--airtable]" >&2
+            echo "Usage: $0 [--sample] [--year-from YEAR] [--publish] [--airtable] [--local-setup]" >&2
             exit 1
             ;;
     esac
 done
+
+# Auto-provision the databases locally only when --local-setup is passed
+# (idempotent — both scripts skip work already done). setup_postgres also runs
+# `aaiclick migrate`, so the orchestration schema exists. Without --local-setup
+# (e.g. CI, where ClickHouse + PostgreSQL are service containers) the databases
+# are assumed to already exist at the AAICLICK_*_URL values above.
+if [ -n "${LOCAL_SETUP:-}" ]; then
+    REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+    if [ -x "$REPO_ROOT/scripts/setup_clickhouse" ] && [ -x "$REPO_ROOT/scripts/setup_postgres" ]; then
+        echo "Provisioning distributed backend (ClickHouse + PostgreSQL)..."
+        "$REPO_ROOT/scripts/setup_clickhouse"
+        "$REPO_ROOT/scripts/setup_postgres"
+        echo
+    else
+        echo "WARNING: scripts/setup_{clickhouse,postgres} not found — assuming a" >&2
+        echo "         distributed backend is already running at the URLs above." >&2
+    fi
+fi
 
 if [ -z "${SAMPLE_MODE:-}" ]; then
     echo "Running on full IMDb dataset (~12.6M rows; pass --sample for a 500k-row demo)..."
