@@ -67,9 +67,10 @@ def test_color_mode_toggle(server_url, page):
     page.get_by_test_id("color-mode").select_option("flat")
     page.wait_for_function("() => window.__PCL.settings.colorMode === 'flat'")
     # Each scalar ramp mode the movie supplies applies and keeps the cloud
-    # rendering (positions-only Draco frames carry height + distance, no
-    # intensity); falling back to flat would leave colorMode == 'flat' and fail.
-    for mode in ("distance", "height"):
+    # rendering; the Draco frames carry height, distance, and intensity (packed in
+    # a color channel), so a fall-back to flat would leave colorMode == 'flat'
+    # and fail this loop.
+    for mode in ("distance", "intensity", "height"):
         page.get_by_test_id("color-mode").select_option(mode)
         page.wait_for_function(
             f"() => window.__PCL.settings.colorMode === '{mode}'")
@@ -83,8 +84,8 @@ def _color_mode_options(page):
 
 def test_color_modes_match_scene(server_url, page):
     # The color-mode dropdown must offer only the modes the live scene can supply,
-    # not a fixed five: the positions-only movie frames carry height + distance but
-    # no per-point class, so "class" is not offered.
+    # not a fixed five: the movie frames carry height/distance/intensity but no
+    # per-point class, so "class" is not offered.
     page.goto(
         server_url
         + DEFAULT
@@ -92,9 +93,10 @@ def test_color_modes_match_scene(server_url, page):
     )
     _wait_ready(page)
     page.get_by_test_id("menu-toggle").click()
-    assert _color_mode_options(page) == ["flat", "height", "distance"]
+    assert _color_mode_options(page) == ["flat", "height", "distance", "intensity"]
 
-    # The seg Draco frames carry per-point classes, so "class" appears.
+    # The seg Draco frames carry per-point classes AND intensity, so both "class"
+    # and "intensity" join the scalar ramps.
     page.get_by_test_id("scene").select_option("seg")
     page.wait_for_function(
         "() => window.__PCL.scene === 'seg' && window.__PCL.ready === true"
@@ -103,19 +105,19 @@ def test_color_modes_match_scene(server_url, page):
     )
     page.wait_for_function(
         "() => JSON.stringify(window.__PCL.handle.getStats().colorModes)"
-        " === JSON.stringify(['flat','class','height','distance'])")
-    assert _color_mode_options(page) == ["flat", "class", "height", "distance"]
+        " === JSON.stringify(['flat','class','height','distance','intensity'])")
+    assert _color_mode_options(page) == ["flat", "class", "height", "distance", "intensity"]
     # Seg defaults to by-class, and the dropdown reflects that applied mode.
     expect(page.get_by_test_id("color-mode")).to_have_value("class")
 
     # Switching back to a scene without "class" drops the stranded mode to flat in
-    # both the viewer and the dropdown.
+    # both the viewer and the dropdown (the movie carries intensity but no class).
     page.get_by_test_id("scene").select_option("movie")
     page.wait_for_function(
         "() => window.__PCL.scene === 'movie' && window.__PCL.ready === true",
         timeout=60000)
     page.wait_for_function("() => window.__PCL.settings.colorMode === 'flat'")
-    assert _color_mode_options(page) == ["flat", "height", "distance"]
+    assert _color_mode_options(page) == ["flat", "height", "distance", "intensity"]
     expect(page.get_by_test_id("color-mode")).to_have_value("flat")
 
 

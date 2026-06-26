@@ -18,21 +18,20 @@ SRC = HERE.parent.parent / "web" / "models" / "kitti-velodyne-000000.pcd"
 OUT = HERE / "movie"
 
 
-def read_binary_pcd_xyz(path: Path) -> np.ndarray:
-    """Minimal binary-PCD reader for FIELDS x y z intensity (float32)."""
+def read_binary_pcd(path: Path) -> np.ndarray:
+    """Minimal binary-PCD reader for FIELDS x y z intensity (float32) -> (N,4)."""
     data = path.read_bytes()
     marker = b"DATA binary\n"
     header_end = data.index(marker) + len(marker)
     header = data[:header_end].decode("ascii", "replace")
     count = next(int(line.split()[1]) for line in header.splitlines() if line.startswith("POINTS"))
-    body = np.frombuffer(data[header_end:header_end + count * 16], dtype=np.float32).reshape(-1, 4)
-    return body[:, :3].copy()
+    return np.frombuffer(data[header_end:header_end + count * 16], dtype=np.float32).reshape(-1, 4)
 
 
-def voxel_downsample(pts: np.ndarray, voxel: float) -> np.ndarray:
+def voxel_downsample_idx(pts: np.ndarray, voxel: float) -> np.ndarray:
     keys = np.floor(pts / voxel).astype(np.int64)
     _, idx = np.unique(keys, axis=0, return_index=True)
-    return pts[np.sort(idx)]
+    return np.sort(idx)
 
 
 def build_lucy_fixture() -> None:
@@ -72,11 +71,16 @@ def build_lucy_fixture() -> None:
 
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
-    xyz = read_binary_pcd_xyz(SRC)
-    base = voxel_downsample(xyz, 0.8)  # ~a few thousand points -> tiny .drc
+    data = read_binary_pcd(SRC)                 # (N,4): xyz + intensity
+    idx = voxel_downsample_idx(data[:, :3], 0.8)  # ~a few thousand points -> tiny .drc
+    base = data[idx]
     for i in range(4):
-        frame = base + np.array([i * 0.5, 0.0, 0.0], dtype=np.float32)  # roll forward
-        buf = DracoPy.encode(frame.astype(np.float32), quantization_bits=14)
+        frame = base.copy()
+        frame[:, 0] += i * 0.5                   # roll forward in x
+        colors = np.zeros((len(frame), 3), dtype=np.uint8)
+        colors[:, 1] = np.clip(frame[:, 3] * 255.0, 0, 255).astype(np.uint8)
+        buf = DracoPy.encode(frame[:, :3].astype(np.float32), colors=colors,
+                             quantization_bits=14)
         (OUT / f"{i:06d}.drc").write_bytes(buf)
         print(f"wrote {OUT / f'{i:06d}.drc'}  ({len(buf)} bytes, {len(frame)} pts)")
     build_lucy_fixture()
