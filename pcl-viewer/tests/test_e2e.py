@@ -14,6 +14,13 @@ def _wait_ready(page):
                            timeout=60000)
 
 
+def _open_filters(page):
+    """The controls are split into View / Filters tabs; range filters, the
+    seg boxes toggle, and the class legend live under Filters. The menu must
+    already be open."""
+    page.get_by_test_id("tab-filters").click()
+
+
 def test_point_cloud_loads_and_renders(server_url, page):
     page.goto(server_url + DEFAULT)
     _wait_ready(page)
@@ -159,6 +166,24 @@ def test_menu_toggle(server_url, page):
     # Tapping the backdrop closes it again.
     page.get_by_test_id("backdrop").click()
     expect(page.get_by_test_id("controls")).to_have_count(0)
+
+
+def test_menu_tabs_switch(server_url, page):
+    page.goto(server_url + DEFAULT)
+    _wait_ready(page)
+    page.get_by_test_id("menu-toggle").click()
+    # The View tab is shown by default: its controls are present, the Filters
+    # tab's are not.
+    expect(page.get_by_test_id("scene")).to_be_visible()
+    expect(page.get_by_test_id("filter-height")).to_have_count(0)
+    # Switching to Filters swaps the bodies: range filters appear, View controls go.
+    page.get_by_test_id("tab-filters").click()
+    expect(page.get_by_test_id("filter-height")).to_be_visible()
+    expect(page.get_by_test_id("scene")).to_have_count(0)
+    # And back to View.
+    page.get_by_test_id("tab-view").click()
+    expect(page.get_by_test_id("scene")).to_be_visible()
+    expect(page.get_by_test_id("filter-height")).to_have_count(0)
 
 
 def test_camera_readout(server_url, page):
@@ -328,6 +353,8 @@ def test_seg_scene_classes_and_boxes(server_url, page):
     assert page.evaluate("() => window.__PCL.handle.colorfulPixelCount()") > 100
     # Boxes render (the fixture has one car box per frame).
     page.wait_for_function("() => window.__PCL.handle.getStats().boxCount >= 1", timeout=5000)
+    # Boxes toggle + legend live under the Filters tab.
+    _open_filters(page)
     # The toggle hides them...
     page.get_by_test_id("show-boxes").click()
     page.wait_for_function("() => window.__PCL.settings.showBoxes === false")
@@ -356,6 +383,20 @@ def _visible_pixels(page):
     return page.evaluate("() => window.__PCL.handle.visiblePixelCount()")
 
 
+def _wait_pixels_below(page, baseline):
+    """Wait until the GPU frame reflects a just-applied range filter. applyFilter
+    updates visibleCount (CPU state) synchronously, but the `aHide` discard only
+    shows up in the framebuffer on the next rAF paint — so reading pixels right
+    after the filter can catch the pre-filter frame (a render-timing flake seen on
+    slower CI GPUs). Poll the painted pixel count until it drops below the
+    unfiltered baseline (and is non-blank)."""
+    page.wait_for_function(
+        "(b) => { const px = window.__PCL.handle.visiblePixelCount();"
+        " return px > 0 && px < b; }",
+        arg=baseline,
+    )
+
+
 def test_point_range_filter_on_static_scene(server_url, page, output_path):
     # Range filters clip points by a scalar field. Exercise on the static Lucy
     # scene so the cloud is fixed (no per-frame churn) and the visible count is
@@ -368,6 +409,7 @@ def test_point_range_filter_on_static_scene(server_url, page, output_path):
     page.wait_for_function(
         "() => window.__PCL.scene === 'lucy' && window.__PCL.ready === true",
         timeout=20000)
+    _open_filters(page)
     total = page.evaluate("() => window.__PCL.pointCount")
     # Nothing filtered by default: every point is visible.
     assert page.evaluate("() => window.__PCL.visibleCount") == total
@@ -382,6 +424,7 @@ def test_point_range_filter_on_static_scene(server_url, page, output_path):
     clipped = page.evaluate("() => window.__PCL.visibleCount")
     # Some points are clipped, but never all of them — the cloud stays on screen.
     assert 0 < clipped < total
+    _wait_pixels_below(page, before_px)  # let the filtered frame paint first
     after_px = _visible_pixels(page)
     assert 0 < after_px < before_px  # visibly fewer points drawn, not a blank frame
     _shot(page, output_path, "2-after-height-filter")
@@ -403,6 +446,7 @@ def test_distance_filter_is_absolute(server_url, page):
     page.goto(server_url + DEFAULT)
     _wait_ready(page)
     page.get_by_test_id("menu-toggle").click()  # filter inputs live in the modal
+    _open_filters(page)  # range filters live under the Filters tab
     dist = page.evaluate("() => window.__PCL.scalarRanges.distance")
     height = page.evaluate("() => window.__PCL.scalarRanges.height")
     # Distance is metric: far returns are many metres out, far beyond the 0.5
@@ -429,6 +473,7 @@ def test_intensity_filter_on_movie(server_url, page, output_path):
     page.wait_for_function("() => window.__PCL.playing === true")
     page.get_by_test_id("play-pause").click()
     page.wait_for_function("() => window.__PCL.playing === false")
+    _open_filters(page)
     total = page.evaluate("() => window.__PCL.pointCount")
     before_px = _visible_pixels(page)
     _shot(page, output_path, "1-before-intensity-filter")
@@ -441,6 +486,7 @@ def test_intensity_filter_on_movie(server_url, page, output_path):
     clipped = page.evaluate("() => window.__PCL.visibleCount")
     # Some points clipped, but the cloud never empties.
     assert 0 < clipped < total
+    _wait_pixels_below(page, before_px)  # let the filtered frame paint first
     after_px = _visible_pixels(page)
     assert 0 < after_px < before_px
     _shot(page, output_path, "2-after-intensity-filter")
@@ -467,6 +513,8 @@ def test_class_toggle_filters_points(server_url, page, output_path):
     # Pause so the frame (and its class mix) is fixed under us.
     page.get_by_test_id("play-pause").click()
     page.wait_for_function("() => window.__PCL.playing === false")
+    # The class legend lives under the Filters tab.
+    _open_filters(page)
     before = page.evaluate("() => window.__PCL.visibleCount")
     before_px = _visible_pixels(page)
     _shot(page, output_path, "1-before-class-toggle")
@@ -501,13 +549,17 @@ def test_filter_stepper_buttons(server_url, page):
     page.wait_for_function(
         "() => window.__PCL.scene === 'lucy' && window.__PCL.ready === true",
         timeout=20000)
+    _open_filters(page)
     total = page.evaluate("() => window.__PCL.pointCount")
     assert page.evaluate("() => window.__PCL.visibleCount") == total
 
     # Stepping the max bound down: first click fills the input with a number.
     dec = page.get_by_test_id("filter-height-max-dec")
     dec.click()
-    assert page.get_by_test_id("filter-height-max").input_value() != ""
+    # The click materializes the bound via an async Preact re-render, so read the
+    # input through an auto-waiting expect rather than synchronously (else the
+    # value can still be empty the instant after the click — a timing flake).
+    expect(page.get_by_test_id("filter-height-max")).not_to_have_value("")
     page.wait_for_function(
         "() => window.__PCL.handle.getStats().filters.height.max !== null")
     # Keep stepping inward until some points are clipped (never all).

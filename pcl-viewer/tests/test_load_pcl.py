@@ -29,6 +29,12 @@ def _color_mode_options(page):
         "el => Array.from(el.options).map(o => o.value)")
 
 
+def _open_filters(page):
+    """The class legend lives under the menu's Filters tab; the file picker and
+    scene/color controls are on the View tab. The menu must already be open."""
+    page.get_by_test_id("tab-filters").click()
+
+
 def test_load_csv_with_header(server_url, page):
     _open_menu(page, server_url)
     _load(page, "cloud.csv")
@@ -40,7 +46,9 @@ def test_load_csv_with_header(server_url, page):
     assert page.evaluate("() => window.__PCL.settings.colorMode") == "class"
     # The class palette is vivid, so by-class renders chromatic pixels.
     assert page.evaluate("() => window.__PCL.handle.colorfulPixelCount()") > 100
-    # Dynamic legend lists the three distinct classes, and the file name shows.
+    # Dynamic legend lists the three distinct classes (under the Filters tab), and
+    # the file name shows in the always-on HUD.
+    _open_filters(page)
     expect(page.get_by_test_id("legend")).to_be_visible()
     assert page.get_by_test_id("legend").locator(".legend-item").count() == 3
     expect(page.get_by_test_id("file-name")).to_have_text("cloud.csv")
@@ -53,6 +61,8 @@ def test_loaded_file_class_legend_filters(server_url, page):
     _load(page, "cloud.csv")
     total = page.evaluate("() => window.__PCL.pointCount")
     assert page.evaluate("() => window.__PCL.visibleCount") == total
+    # The class legend is under the Filters tab.
+    _open_filters(page)
     # Hide the 'car' class → fewer points shown, but the geometry is unchanged.
     page.get_by_test_id("class-toggle-car").click()
     page.wait_for_function("() => window.__PCL.visibleCount < window.__PCL.pointCount")
@@ -78,6 +88,8 @@ def test_load_pcd(server_url, page):
     assert page.evaluate("() => window.__PCL.handle.visiblePixelCount()") > 500
     # PCD carries x,y,z + intensity but no class column.
     assert _color_mode_options(page) == ["flat", "height", "distance", "intensity"]
+    # No class column ⇒ no legend, even on the Filters tab where it would appear.
+    _open_filters(page)
     expect(page.get_by_test_id("legend")).to_have_count(0)
 
 

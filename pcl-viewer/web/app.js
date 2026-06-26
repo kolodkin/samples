@@ -13,6 +13,13 @@ const SCENES = [
   { id: 'lucy', label: 'Stanford Lucy' },
 ];
 
+// The menu's two tabs: View owns scene/transport/appearance, Filters owns the
+// range filters + class legend. Rendered as a segmented button bar.
+const TABS = [
+  { id: 'view', label: 'View' },
+  { id: 'filters', label: 'Filters' },
+];
+
 // id -> label lookup over the shared mode list. Which modes are actually offered
 // per scene (and the applied one) is decided by the viewer and pushed in via the
 // onColorState callback below; the dropdown renders only those.
@@ -62,6 +69,10 @@ function App() {
   const [pointShape, setPointShape] = useState('ball');
   const [sceneId, setSceneId] = useState('movie');
   const [menuOpen, setMenuOpen] = useState(false);
+  // Which menu tab is showing. The controls are split into a "View" tab (scene,
+  // transport, appearance) and a "Filters" tab (range filters + seg class
+  // legend); only the active tab's body is rendered. Persists across open/close.
+  const [tab, setTab] = useState('view');
   const [frame, setFrame] = useState(0);
   const [showBoxes, setShowBoxes] = useState(true);
   // Filter UI state mirrors the viewer's filters. Range bounds are kept as raw
@@ -262,111 +273,121 @@ function App() {
       <div class="backdrop" data-testid="backdrop" onClick=${() => setMenuOpen(false)}></div>
       <div class="panel controls" data-testid="controls">
         <h1>PCL Viewer</h1>
-        <label>Scene</label>
-        <select data-testid="scene" value=${sceneId} onChange=${onScene}>
-          ${sceneOptions.map((s) => html`<option value=${s.id}>${s.label}</option>`)}
-        </select>
-        <button class="load-pcl" data-testid="load-file" onClick=${onLoadClick}>
-          <svg class="load-pcl-icon" viewBox="0 0 16 16" width="15" height="15"
-               fill="none" stroke="currentColor" stroke-width="1.5"
-               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M8 10.5V2.5" />
-            <path d="M4.8 5.7 8 2.5l3.2 3.2" />
-            <path d="M2.5 10v2.5a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V10" />
-          </svg>
-          <span>Load PCL…</span>
-        </button>
-        <input type="file" accept=".pcd,.csv,.parquet" data-testid="file-input"
-               ref=${fileInputRef} onChange=${onFile} style="display:none" />
-        ${isMovieLike && stats.frameCount > 0 && html`
-          <label>Frame</label>
-          <div class="frame-jump">
-            <input type="number" min="1" max=${stats.frameCount} step="1"
-                   value=${frame + 1} data-testid="frame-input" onInput=${onFrameInput} />
-            <span>/ ${stats.frameCount}</span>
-          </div>
-          <input type="range" min="0" max=${stats.frameCount - 1} step="1"
-                 value=${frame} data-testid="frame-select" onInput=${onSeek} />
+        <div class="tabs" role="tablist">
+          ${TABS.map((t) => html`
+            <button class=${tab === t.id ? 'tab active' : 'tab'} role="tab"
+                    data-testid=${`tab-${t.id}`} aria-selected=${tab === t.id ? 'true' : 'false'}
+                    onClick=${() => setTab(t.id)}>${t.label}</button>`)}
+        </div>
+        ${tab === 'view' && html`
+          <label>Scene</label>
+          <select data-testid="scene" value=${sceneId} onChange=${onScene}>
+            ${sceneOptions.map((s) => html`<option value=${s.id}>${s.label}</option>`)}
+          </select>
+          <button class="load-pcl" data-testid="load-file" onClick=${onLoadClick}>
+            <svg class="load-pcl-icon" viewBox="0 0 16 16" width="15" height="15"
+                 fill="none" stroke="currentColor" stroke-width="1.5"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M8 10.5V2.5" />
+              <path d="M4.8 5.7 8 2.5l3.2 3.2" />
+              <path d="M2.5 10v2.5a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V10" />
+            </svg>
+            <span>Load PCL…</span>
+          </button>
+          <input type="file" accept=".pcd,.csv,.parquet" data-testid="file-input"
+                 ref=${fileInputRef} onChange=${onFile} style="display:none" />
+          ${isMovieLike && stats.frameCount > 0 && html`
+            <label>Frame</label>
+            <div class="frame-jump">
+              <input type="number" min="1" max=${stats.frameCount} step="1"
+                     value=${frame + 1} data-testid="frame-input" onInput=${onFrameInput} />
+              <span>/ ${stats.frameCount}</span>
+            </div>
+            <input type="range" min="0" max=${stats.frameCount - 1} step="1"
+                   value=${frame} data-testid="frame-select" onInput=${onSeek} />
+            <div class="row">
+              <button data-testid="play-pause" onClick=${onPlayPause}>
+                ${stats.playing ? 'Pause' : 'Play'}
+              </button>
+              <button data-testid="step-back" aria-label="Previous frame"
+                      onClick=${() => onStep(-1)}>−</button>
+              <button data-testid="step-forward" aria-label="Next frame"
+                      onClick=${() => onStep(1)}>+</button>
+            </div>
+          `}
+          <label>Point shape</label>
+          <select data-testid="point-shape" value=${pointShape} onChange=${onShape}>
+            <option value="ball">Ball (3D)</option>
+            <option value="square">Square</option>
+          </select>
+          <label>Point size: ${pointSize.toFixed(3)}</label>
+          <input type="range" min="0.002" max="0.05" step="0.001"
+                 value=${pointSize} data-testid="point-size" onInput=${onSize} />
+          <label>Color mode</label>
+          <select data-testid="color-mode" value=${colorMode} onChange=${onColor}>
+            ${colorModes.map((m) => html`
+              <option value=${m}>${COLOR_MODE_LABEL[m] || m}</option>`)}
+          </select>
           <div class="row">
-            <button data-testid="play-pause" onClick=${onPlayPause}>
-              ${stats.playing ? 'Pause' : 'Play'}
-            </button>
-            <button data-testid="step-back" aria-label="Previous frame"
-                    onClick=${() => onStep(-1)}>−</button>
-            <button data-testid="step-forward" aria-label="Next frame"
-                    onClick=${() => onStep(1)}>+</button>
+            <button data-testid="reset" onClick=${onReset}>Reset camera</button>
           </div>
         `}
-        <label>Point shape</label>
-        <select data-testid="point-shape" value=${pointShape} onChange=${onShape}>
-          <option value="ball">Ball (3D)</option>
-          <option value="square">Square</option>
-        </select>
-        <label>Point size: ${pointSize.toFixed(3)}</label>
-        <input type="range" min="0.002" max="0.05" step="0.001"
-               value=${pointSize} data-testid="point-size" onInput=${onSize} />
-        <label>Color mode</label>
-        <select data-testid="color-mode" value=${colorMode} onChange=${onColor}>
-          ${colorModes.map((m) => html`
-            <option value=${m}>${COLOR_MODE_LABEL[m] || m}</option>`)}
-        </select>
-        <label>Point filters (min / max, blank = ∞)</label>
-        ${FILTER_FIELDS
-          .filter((f) => f.key !== 'intensity' || colorModes.includes('intensity'))
-          .map((f) => {
-            const rng = stats.scalarRanges[f.key];
-            const ph = { min: rng ? rng.min.toFixed(2) : 'min', max: rng ? rng.max.toFixed(2) : '∞' };
-            return html`
-              <div class="filter-row" data-testid=${`filter-${f.key}`}>
-                <span class="filter-name">${f.label}</span>
-                <div class="filter-bounds">
-                  ${['min', 'max'].map((bound) => html`
-                    <div class="stepper">
-                      <button type="button" class="step-btn"
-                              data-testid=${`filter-${f.key}-${bound}-dec`}
-                              aria-label=${`Decrease ${f.label} ${bound}`}
-                              onClick=${() => onFilterStep(f.key, bound, -1)}>−</button>
-                      <input type="number" step="any" data-testid=${`filter-${f.key}-${bound}`}
-                             placeholder=${ph[bound]}
-                             value=${filters[f.key][bound]}
-                             onInput=${(e) => onFilter(f.key, bound, e)} />
-                      <button type="button" class="step-btn"
-                              data-testid=${`filter-${f.key}-${bound}-inc`}
-                              aria-label=${`Increase ${f.label} ${bound}`}
-                              onClick=${() => onFilterStep(f.key, bound, 1)}>+</button>
-                    </div>`)}
-                </div>
-              </div>`;
-          })}
-        <div class="row">
-          <button data-testid="reset-filters" onClick=${onResetFilters}>Reset filters</button>
-        </div>
-        ${isSeg && html`
-          <label class="row">
-            <input type="checkbox" data-testid="show-boxes"
-                   checked=${showBoxes} onChange=${onToggleBoxes} />
-            Show boxes
-          </label>
-        `}
-        ${legendItems.length > 0 && html`
-          <label>Classes (click to filter)</label>
-          <div class="legend" data-testid="legend">
-            ${legendItems.map((c) => {
-              const off = hiddenClasses.includes(c.cls);
+        ${tab === 'filters' && html`
+          <label>Point filters (min / max, blank = ∞)</label>
+          ${FILTER_FIELDS
+            .filter((f) => f.key !== 'intensity' || colorModes.includes('intensity'))
+            .map((f) => {
+              const rng = stats.scalarRanges[f.key];
+              const ph = { min: rng ? rng.min.toFixed(2) : 'min', max: rng ? rng.max.toFixed(2) : '∞' };
               return html`
-                <button type="button" class=${`legend-item${off ? ' off' : ''}`}
-                        data-testid=${`class-toggle-${c.name}`}
-                        aria-pressed=${off ? 'false' : 'true'}
-                        title=${off ? `Show ${c.name}` : `Hide ${c.name}`}
-                        onClick=${() => onToggleClass(c.cls)}>
-                  <span class="swatch" style=${`background:#${c.hex}`}></span>${c.name}
-                </button>`;
+                <div class="filter-row" data-testid=${`filter-${f.key}`}>
+                  <span class="filter-name">${f.label}</span>
+                  <div class="filter-bounds">
+                    ${['min', 'max'].map((bound) => html`
+                      <div class="stepper">
+                        <button type="button" class="step-btn"
+                                data-testid=${`filter-${f.key}-${bound}-dec`}
+                                aria-label=${`Decrease ${f.label} ${bound}`}
+                                onClick=${() => onFilterStep(f.key, bound, -1)}>−</button>
+                        <input type="number" step="any" data-testid=${`filter-${f.key}-${bound}`}
+                               placeholder=${ph[bound]}
+                               value=${filters[f.key][bound]}
+                               onInput=${(e) => onFilter(f.key, bound, e)} />
+                        <button type="button" class="step-btn"
+                                data-testid=${`filter-${f.key}-${bound}-inc`}
+                                aria-label=${`Increase ${f.label} ${bound}`}
+                                onClick=${() => onFilterStep(f.key, bound, 1)}>+</button>
+                      </div>`)}
+                  </div>
+                </div>`;
             })}
+          <div class="row">
+            <button data-testid="reset-filters" onClick=${onResetFilters}>Reset filters</button>
           </div>
+          ${isSeg && html`
+            <label class="row">
+              <input type="checkbox" data-testid="show-boxes"
+                     checked=${showBoxes} onChange=${onToggleBoxes} />
+              Show boxes
+            </label>
+          `}
+          ${legendItems.length > 0 && html`
+            <label>Classes (click to filter)</label>
+            <div class="legend" data-testid="legend">
+              ${legendItems.map((c) => {
+                const off = hiddenClasses.includes(c.cls);
+                return html`
+                  <button type="button" class=${`legend-item${off ? ' off' : ''}`}
+                          data-testid=${`class-toggle-${c.name}`}
+                          aria-pressed=${off ? 'false' : 'true'}
+                          title=${off ? `Show ${c.name}` : `Hide ${c.name}`}
+                          onClick=${() => onToggleClass(c.cls)}>
+                    <span class="swatch" style=${`background:#${c.hex}`}></span>${c.name}
+                  </button>`;
+              })}
+            </div>
+          `}
         `}
-        <div class="row">
-          <button data-testid="reset" onClick=${onReset}>Reset camera</button>
-        </div>
       </div>
     `}
 
