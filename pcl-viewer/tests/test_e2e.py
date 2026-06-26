@@ -461,3 +461,39 @@ def test_class_toggle_filters_points(server_url, page, output_path):
         "() => !window.__PCL.settings.hiddenClasses.includes(15)")
     page.wait_for_function(
         f"() => window.__PCL.visibleCount === {before}")
+
+
+def test_filter_stepper_buttons(server_url, page):
+    # Each filter bound has −/+ buttons. From an empty (unbounded) bound the first
+    # click materializes a full-range handle, and further clicks step it inward
+    # until points are clipped; the opposite button steps back out to all-visible.
+    page.goto(server_url + DEFAULT + "&lucyUrl=/fixtures/lucy/lucy_fixture.ply")
+    _wait_ready(page)
+    page.get_by_test_id("menu-toggle").click()
+    page.get_by_test_id("scene").select_option("lucy")
+    page.wait_for_function(
+        "() => window.__PCL.scene === 'lucy' && window.__PCL.ready === true",
+        timeout=20000)
+    total = page.evaluate("() => window.__PCL.pointCount")
+    assert page.evaluate("() => window.__PCL.visibleCount") == total
+
+    # Stepping the max bound down: first click fills the input with a number.
+    dec = page.get_by_test_id("filter-height-max-dec")
+    dec.click()
+    assert page.get_by_test_id("filter-height-max").input_value() != ""
+    page.wait_for_function(
+        "() => window.__PCL.handle.getStats().filters.height.max !== null")
+    # Keep stepping inward until some points are clipped (never all).
+    for _ in range(15):
+        if page.evaluate("() => window.__PCL.visibleCount") < total:
+            break
+        dec.click()
+    assert 0 < page.evaluate("() => window.__PCL.visibleCount") < total
+
+    # The + button steps the max back out until every point is visible again.
+    inc = page.get_by_test_id("filter-height-max-inc")
+    for _ in range(15):
+        if page.evaluate("() => window.__PCL.visibleCount") == total:
+            break
+        inc.click()
+    assert page.evaluate("() => window.__PCL.visibleCount") == total

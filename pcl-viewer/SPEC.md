@@ -91,7 +91,11 @@ absent, so filtering **fails open** — a geometry without it shows every point.
   **intensity** (offered only where the cloud supplies it, gated on the same
   offered-modes set as the color dropdown). Each is a `min`/`max` pair; a blank
   bound is unbounded (the default `null`/`null` passes everything, so **max = ∞**
-  out of the box). `computeColorBuffers` now returns `{colors, scalars}` — the
+  out of the box). Each bound carries **−/+ stepper buttons** sized to that field's
+  data range (a "nice" 1/2/5×10^k step from `niceStep`, ≈5 for 0–255 intensity,
+  ≈0.005 for the tiny normalized height span); from an empty bound the first click
+  materializes a full-range handle that clips nothing, then steps inward, staying
+  clamped to the step-aligned data envelope. `computeColorBuffers` now returns `{colors, scalars}` — the
   ramp colors as before, plus the raw per-point values the filter reads — and the
   data's live min/max per field (`state.scalarRanges`) is shown as input
   placeholders.

@@ -46,11 +46,26 @@ html, body { margin: 0; height: 100%; background: #101418; color: #e6edf3;
   animation: boot-spin 0.8s linear infinite; }
 @keyframes boot-spin { to { transform: rotate(360deg); } }
 
-/* Range-filter row: a field label and its min/max number inputs on one line. */
-.controls .filter-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
-.controls .filter-row .filter-name { flex: 0 0 4.5rem; font-size: 12px; color: #9fb0c0; }
-.controls .filter-row input { flex: 1; min-width: 0; background: #0d1117; color: #e6edf3;
-  border: 1px solid #2a3340; border-radius: 6px; padding: 5px 6px; }
+/* Range-filter row: a field label above its min/max steppers (each a number
+   input flanked by −/+ buttons). */
+.controls .filter-row { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.controls .filter-row .filter-name { font-size: 12px; color: #9fb0c0; }
+.controls .filter-bounds { display: flex; gap: 8px; }
+.controls .stepper { display: flex; flex: 1; min-width: 0; }
+/* Override the generic blue/full-width .controls button look for the tight
+   stepper buttons. */
+.controls .stepper .step-btn { flex: 0 0 20px; padding: 0; font-size: 15px; line-height: 1;
+  background: #21262d; color: #e6edf3; border: 1px solid #2a3340; border-radius: 0; cursor: pointer; }
+.controls .stepper .step-btn:first-child { border-radius: 6px 0 0 6px; }
+.controls .stepper .step-btn:last-child { border-radius: 0 6px 6px 0; }
+.controls .stepper .step-btn:hover { background: #2a3340; }
+.controls .stepper input { flex: 1; min-width: 0; width: 100%; text-align: center;
+  background: #0d1117; color: #e6edf3; border: 1px solid #2a3340; border-left: 0; border-right: 0;
+  border-radius: 0; padding: 5px 2px; }
+/* The −/+ buttons replace the native number spinners. */
+.controls .stepper input::-webkit-outer-spin-button,
+.controls .stepper input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.controls .stepper input[type=number] { -moz-appearance: textfield; appearance: textfield; }
 
 .legend { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 6px; font-size: 11px; }
 /* Each legend swatch doubles as a class on/off toggle, so it's a <button>. Override

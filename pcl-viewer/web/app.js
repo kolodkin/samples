@@ -41,6 +41,16 @@ const EMPTY_FILTERS = {
   intensity: { min: '', max: '' },
 };
 
+// A "nice" step (1/2/5 × 10^k) near the requested magnitude, so the filter +/-
+// buttons move each field by a clean amount scaled to its own data range
+// (≈5 for 0–255 intensity, ≈0.005 for the tiny normalized height span, etc.).
+function niceStep(raw) {
+  if (!(raw > 0) || !Number.isFinite(raw)) return 1;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const norm = raw / mag; // 1..10
+  return (norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10) * mag;
+}
+
 function App() {
   const canvasRef = useRef(null);
   const viewerRef = useRef(null);
@@ -142,12 +152,33 @@ function App() {
   const onReset = () => viewerRef.current.resetCamera();
   // Empty / unparseable input means "no bound on this side" (the default, max = ∞).
   const toBound = (s) => (s === '' || Number.isNaN(parseFloat(s)) ? null : parseFloat(s));
+  const commitFilter = (field, range) => {
+    setFilters({ ...filters, [field]: range });
+    viewerRef.current.setFilter(field, { min: toBound(range.min), max: toBound(range.max) });
+  };
   const onFilter = (field, bound, e) => {
-    const next = { ...filters, [field]: { ...filters[field], [bound]: e.target.value } };
-    setFilters(next);
-    viewerRef.current.setFilter(field, {
-      min: toBound(next[field].min), max: toBound(next[field].max),
-    });
+    commitFilter(field, { ...filters[field], [bound]: e.target.value });
+  };
+  // The −/+ buttons nudge a bound by a range-scaled step. An empty (unbounded)
+  // bound first materializes at its data extreme — a full-range handle that clips
+  // nothing — then steps inward; values stay clamped to the (step-aligned) data
+  // envelope so the buttons never run off into meaningless territory.
+  const onFilterStep = (field, bound, dir) => {
+    const rng = stats.scalarRanges[field];
+    if (!rng) return;
+    const step = niceStep((rng.max - rng.min) / 40) || 1;
+    const lo = Math.floor(rng.min / step) * step;
+    const hi = Math.ceil(rng.max / step) * step;
+    const cur = filters[field][bound];
+    let v;
+    if (cur === '' || Number.isNaN(parseFloat(cur))) {
+      v = bound === 'max' ? hi : lo;
+    } else {
+      v = Math.round((parseFloat(cur) + dir * step) / step) * step;
+      v = Math.min(hi, Math.max(lo, v));
+    }
+    const decimals = Math.max(0, -Math.floor(Math.log10(step)));
+    commitFilter(field, { ...filters[field], [bound]: v.toFixed(decimals) });
   };
   const onToggleClass = (cls) => {
     const hidden = hiddenClasses.includes(cls);
@@ -234,17 +265,27 @@ function App() {
           .filter((f) => f.key !== 'intensity' || colorModes.includes('intensity'))
           .map((f) => {
             const rng = stats.scalarRanges[f.key];
+            const ph = { min: rng ? rng.min.toFixed(2) : 'min', max: rng ? rng.max.toFixed(2) : '∞' };
             return html`
               <div class="filter-row" data-testid=${`filter-${f.key}`}>
                 <span class="filter-name">${f.label}</span>
-                <input type="number" step="any" data-testid=${`filter-${f.key}-min`}
-                       placeholder=${rng ? rng.min.toFixed(2) : 'min'}
-                       value=${filters[f.key].min}
-                       onInput=${(e) => onFilter(f.key, 'min', e)} />
-                <input type="number" step="any" data-testid=${`filter-${f.key}-max`}
-                       placeholder=${rng ? rng.max.toFixed(2) : '∞'}
-                       value=${filters[f.key].max}
-                       onInput=${(e) => onFilter(f.key, 'max', e)} />
+                <div class="filter-bounds">
+                  ${['min', 'max'].map((bound) => html`
+                    <div class="stepper">
+                      <button type="button" class="step-btn"
+                              data-testid=${`filter-${f.key}-${bound}-dec`}
+                              aria-label=${`Decrease ${f.label} ${bound}`}
+                              onClick=${() => onFilterStep(f.key, bound, -1)}>−</button>
+                      <input type="number" step="any" data-testid=${`filter-${f.key}-${bound}`}
+                             placeholder=${ph[bound]}
+                             value=${filters[f.key][bound]}
+                             onInput=${(e) => onFilter(f.key, bound, e)} />
+                      <button type="button" class="step-btn"
+                              data-testid=${`filter-${f.key}-${bound}-inc`}
+                              aria-label=${`Increase ${f.label} ${bound}`}
+                              onClick=${() => onFilterStep(f.key, bound, 1)}>+</button>
+                    </div>`)}
+                </div>
               </div>`;
           })}
         <div class="row">
