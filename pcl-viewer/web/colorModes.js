@@ -25,9 +25,10 @@ export const HOT_STOPS = [
 ];
 
 // CSS `color pos%` stops sampling the viewer's blue->red HSL ramp (hue 0.7->0,
-// sat 0.9, light 0.5 — see rampColors in viewer.js), so the legend bar matches the
-// per-point coloring. Sampled at 9 stops since CSS interpolates linearly in sRGB,
-// not in hue, and wouldn't otherwise trace the same blue->cyan->green->yellow->red arc.
+// sat 0.9, light 0.5 — mirror the per-point formula in rampColors, viewer.js; keep
+// the two in sync), so the legend bar matches the per-point coloring. Sampled at 9
+// stops since CSS interpolates linearly in sRGB, not in hue, and wouldn't otherwise
+// trace the same blue->cyan->green->yellow->red arc.
 function blueRedStops() {
   const stops = [];
   for (let i = 0; i <= 8; i++) {
@@ -47,10 +48,12 @@ function hotStops() {
 }
 
 // id -> a left(low)-to-right(high) CSS linear-gradient for the continuous scalar
-// modes, used by the UI legend's gradient bar. Only scalar ramps have an entry;
-// `flat` (no color) and `class` (a discrete palette, shown as swatches) have none.
+// modes, used by the UI legend's gradient bar. height/distance share the blue->red
+// ramp (built once); only scalar ramps have an entry — `flat` (no color) and
+// `class` (a discrete palette, shown as swatches) have none.
+const blueRedGradient = `linear-gradient(to right, ${blueRedStops().join(', ')})`;
 export const RAMP_GRADIENT = {
-  height: `linear-gradient(to right, ${blueRedStops().join(', ')})`,
-  distance: `linear-gradient(to right, ${blueRedStops().join(', ')})`,
+  height: blueRedGradient,
+  distance: blueRedGradient,
   intensity: `linear-gradient(to right, ${hotStops().join(', ')})`,
 };

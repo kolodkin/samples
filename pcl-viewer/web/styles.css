@@ -78,8 +78,6 @@ html, body { margin: 0; height: 100%; background: #101418; color: #e6edf3;
 .color-legend .legend-classes { display: flex; flex-direction: column; gap: 4px; }
 .color-legend .legend-class { flex: 0 0 auto; display: inline-flex;
   align-items: center; gap: 4px; }
-.color-legend .swatch { width: 10px; height: 10px; border-radius: 2px;
-  display: inline-block; }
 
 /* Boot loader: centered over the blank canvas until the first frame renders. */
 .boot { position: absolute; inset: 0; z-index: 15; display: flex;
@@ -119,4 +117,6 @@ html, body { margin: 0; height: 100%; background: #101418; color: #e6edf3;
   padding: 1px 4px; cursor: pointer; font: inherit; }
 .legend .legend-item:hover { border-color: #2a3340; }
 .legend .legend-item.off { opacity: 0.4; text-decoration: line-through; }
-.legend .swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+/* Shared swatch chip — the Filters-tab class legend and the corner color legend
+   both use it. */
+.swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
