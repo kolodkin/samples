@@ -435,6 +435,34 @@ def test_point_range_filter_on_static_scene(server_url, page, output_path):
     assert page.get_by_test_id("filter-height-max").input_value() == ""
 
 
+def test_distance_filter_is_absolute(server_url, page):
+    # "By distance" coloring and the distance range filter must operate on the
+    # *absolute* radial distance from the sensor origin (the cloud's own metric
+    # units), not the post-normalization distance-from-bbox-center that the
+    # recenter+scale would otherwise leave behind. The viewer normalizes every
+    # cloud to sceneRadius 0.5, so a normalized distance would top out around 0.5;
+    # the KITTI scan spans tens of metres, so an absolute distance reaches well
+    # past that. Height, by contrast, stays in the normalized frame.
+    page.goto(server_url + DEFAULT)
+    _wait_ready(page)
+    page.get_by_test_id("menu-toggle").click()  # filter inputs live in the modal
+    _open_filters(page)  # range filters live under the Filters tab
+    dist = page.evaluate("() => window.__PCL.scalarRanges.distance")
+    height = page.evaluate("() => window.__PCL.scalarRanges.height")
+    # Distance is metric: far returns are many metres out, far beyond the 0.5
+    # normalized scene radius the old distance-from-center would have produced.
+    assert dist["max"] > 10, dist
+    # Height is still normalized: its span sits inside the unit cube.
+    assert abs(height["max"]) < 1 and abs(height["min"]) < 1, height
+
+    # The filter cores on those same metric units: clip everything past a metre
+    # threshold inside the data range and the near points survive.
+    total = page.evaluate("() => window.__PCL.pointCount")
+    _set_range(page, "filter-distance-max", dist["max"] / 2)
+    page.wait_for_function("() => window.__PCL.visibleCount < window.__PCL.pointCount")
+    assert 0 < page.evaluate("() => window.__PCL.visibleCount") < total
+
+
 def test_intensity_filter_on_movie(server_url, page, output_path):
     # Intensity is only offered where the cloud supplies it (the movie packs it in
     # a Draco color channel). Pause first so the visible count is stable, then

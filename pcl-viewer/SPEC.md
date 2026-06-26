@@ -112,7 +112,12 @@ absent, so filtering **fails open** — a geometry without it shows every point.
 
 - **Range filters** clip by a scalar field — **height**, **distance**, or
   **intensity** (offered only where the cloud supplies it, gated on the same
-  offered-modes set as the color dropdown). Each is a `min`/`max` pair; a blank
+  offered-modes set as the color dropdown). **Distance** is the *absolute* radial
+  distance from the sensor origin in the cloud's own (pre-normalization) units:
+  the normalize step stashes it on the geometry as `aDistance` **before** the
+  recenter+scale, so coring by distance acts on real metric distance rather than
+  distance-from-the-bbox-center in normalized units (the height ramp stays in the
+  normalized frame). Each is a `min`/`max` pair; a blank
   bound is unbounded (the default `null`/`null` passes everything, so **max = ∞**
   out of the box). Each bound carries **−/+ stepper buttons** sized to that field's
   data range (a "nice" 1/2/5×10^k step from `niceStep`, ≈5 for 0–255 intensity,
