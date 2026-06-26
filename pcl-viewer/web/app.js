@@ -3,7 +3,7 @@ import { h, render } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import htm from 'htm';
 import { createViewer } from './viewer.js';
-import { COLOR_MODES } from './colorModes.js';
+import { COLOR_MODES, RAMP_GRADIENT } from './colorModes.js';
 
 const html = htm.bind(h);
 
@@ -255,6 +255,17 @@ function App() {
   // the movie streaming its remaining frames while it already plays.
   const loadingText = stats.loading && stats.ready ? progressText : null;
 
+  // Top-right color legend: explains what the active color mode encodes. The
+  // scalar ramps (height/distance/intensity) show their colormap gradient with
+  // the field's min/max; "by class" shows the class swatches (read-only here —
+  // toggling them lives in the Filters tab); flat shading has nothing to explain.
+  const rampGradient = RAMP_GRADIENT[colorMode];
+  const legendRange = stats.scalarRanges[colorMode];
+  const showClassLegend = colorMode === 'class' && legendItems.length > 0;
+  const showColorLegend = !!rampGradient || showClassLegend;
+  // Whole numbers (e.g. 0–255 intensity) read cleaner without trailing zeros.
+  const fmtRange = (v) => (Number.isInteger(v) ? String(v) : v.toFixed(2));
+
   return html`
     <canvas id="scene" ref=${canvasRef}></canvas>
 
@@ -391,19 +402,43 @@ function App() {
       </div>
     `}
 
-    <div class="panel hud" data-testid="stats">
-      <div><b data-testid="point-count">${stats.pointCount.toLocaleString()}</b> pts
-           · <b>${stats.fps}</b> fps · d <b>${stats.cameraDistance.toFixed(2)}</b></div>
-      ${stats.visibleCount < stats.pointCount && html`
-        <div data-testid="visible-count"><b>${stats.visibleCount.toLocaleString()}</b> shown (filtered)</div>`}
-      ${isMovieLike && stats.frameCount > 0 && html`
-        <div>frame <b data-testid="frame-index">${stats.frameIndex + 1}</b> / ${stats.frameCount}</div>`}
-      ${isFile && stats.fileName && html`
-        <div>file <b data-testid="file-name">${stats.fileName}</b></div>`}
-      ${loadingText && html`<div data-testid="loading">${loadingText}</div>`}
-      ${stats.error && html`<div class="err" data-testid="error">${stats.error}</div>`}
-      <div class="vec">eye <b data-testid="cam-eye">${fmt(stats.eye)}</b></div>
-      <div class="vec">tgt <b data-testid="cam-target">${fmt(stats.target)}</b></div>
+    <div class="corner">
+      <div class="panel hud" data-testid="stats">
+        <div><b data-testid="point-count">${stats.pointCount.toLocaleString()}</b> pts
+             · <b>${stats.fps}</b> fps · d <b>${stats.cameraDistance.toFixed(2)}</b></div>
+        ${stats.visibleCount < stats.pointCount && html`
+          <div data-testid="visible-count"><b>${stats.visibleCount.toLocaleString()}</b> shown (filtered)</div>`}
+        ${isMovieLike && stats.frameCount > 0 && html`
+          <div>frame <b data-testid="frame-index">${stats.frameIndex + 1}</b> / ${stats.frameCount}</div>`}
+        ${isFile && stats.fileName && html`
+          <div>file <b data-testid="file-name">${stats.fileName}</b></div>`}
+        ${loadingText && html`<div data-testid="loading">${loadingText}</div>`}
+        ${stats.error && html`<div class="err" data-testid="error">${stats.error}</div>`}
+        <div class="vec">eye <b data-testid="cam-eye">${fmt(stats.eye)}</b></div>
+        <div class="vec">tgt <b data-testid="cam-target">${fmt(stats.target)}</b></div>
+      </div>
+
+      ${showColorLegend && html`
+        <div class="panel color-legend" data-testid="color-legend">
+          <div class="legend-title">${COLOR_MODE_LABEL[colorMode] || colorMode}</div>
+          ${rampGradient && html`
+            <div class="legend-ramp" data-testid="legend-ramp"
+                 style=${`background:${rampGradient}`}></div>
+            <div class="legend-scale">
+              <span>${legendRange ? fmtRange(legendRange.min) : 'low'}</span>
+              <span>${legendRange ? fmtRange(legendRange.max) : 'high'}</span>
+            </div>
+          `}
+          ${showClassLegend && html`
+            <div class="legend-classes">
+              ${legendItems.map((c) => html`
+                <span class="legend-class">
+                  <span class="swatch" style=${`background:#${c.hex}`}></span>${c.name}
+                </span>`)}
+            </div>
+          `}
+        </div>
+      `}
     </div>
   `;
 }

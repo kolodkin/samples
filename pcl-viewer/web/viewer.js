@@ -9,7 +9,7 @@ import {
   LUCY_URL, MOVIE_COUNT, frameUrl,
   SEG_MOVIE_COUNT, SEG_BOXES_URL, segFrameUrl,
 } from './config.js';
-import { COLOR_MODES } from './colorModes.js';
+import { COLOR_MODES, HOT_STOPS } from './colorModes.js';
 import { parseLocalFile } from './loaders.js';
 
 const BG = 0x101418;
@@ -276,22 +276,14 @@ export function createViewer(canvas, { onColorState } = {}) {
     return colors;
   }
 
-  // Map an already-normalized field (t in [0,1] per point) through a "hot" (thermal)
-  // colormap instead of the shared blue->red ramp: only the lowest values read as cool
-  // purple, and the bulk of the range climbs through magenta -> red -> orange -> yellow
-  // to near-white, so the cloud is mostly bright and reflective surfaces pop. Stops
-  // place purple in just the bottom ~15% of the range. The sole caller feeds
-  // histogram-equalized intensity (equalizeHistogram already spreads it uniformly
-  // across [0,1]), so this skips the percentile clamp/sort rampColors needs and maps
-  // straight through the stops; linear RGB interpolation between them.
-  const HOT_STOPS = [
-    { t: 0.00, c: [0.50, 0.16, 0.70] }, // bright purple (low intensity only)
-    { t: 0.15, c: [0.90, 0.22, 0.55] }, // magenta
-    { t: 0.35, c: [1.00, 0.38, 0.28] }, // red
-    { t: 0.60, c: [1.00, 0.64, 0.22] }, // orange
-    { t: 0.82, c: [1.00, 0.88, 0.45] }, // yellow
-    { t: 1.00, c: [1.00, 1.00, 0.92] }, // near-white    (high intensity)
-  ];
+  // Map an already-normalized field (t in [0,1] per point) through the shared "hot"
+  // (thermal) colormap (HOT_STOPS, from colorModes.js — the same stops the UI legend
+  // draws) instead of the blue->red ramp: only the lowest values read as cool purple,
+  // and the bulk of the range climbs through magenta -> red -> orange -> yellow to
+  // near-white, so the cloud is mostly bright and reflective surfaces pop. The sole
+  // caller feeds histogram-equalized intensity (equalizeHistogram already spreads it
+  // uniformly across [0,1]), so this skips the percentile clamp/sort rampColors needs
+  // and maps straight through the stops; linear RGB interpolation between them.
   function hotRampColors(t) {
     const n = t.length;
     const colors = new Float32Array(n * 3);
