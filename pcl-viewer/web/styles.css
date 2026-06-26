@@ -51,14 +51,35 @@ html, body { margin: 0; height: 100%; background: #101418; color: #e6edf3;
 .controls .load-pcl:focus-visible { outline: none; box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.5); }
 .controls .load-pcl .load-pcl-icon { flex: 0 0 auto; }
 
+/* Top-right corner column: the always-on stats HUD stacked above the color
+   legend. Holds the absolute position so its panels can flow normally. */
+.corner { position: absolute; top: 12px; right: 12px; z-index: 10;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
+  max-width: calc(100% - 24px); }
+.corner .panel { position: static; }
+
 /* Compact always-on HUD: live point/fps/camera readout. */
-.hud { top: 12px; right: 12px; z-index: 10; padding: 8px 10px; font-size: 12px;
-  font-variant-numeric: tabular-nums; }
+.hud { padding: 8px 10px; font-size: 12px; font-variant-numeric: tabular-nums; }
 .hud div { margin: 2px 0; }
 .hud .vec { color: #9fb0c0; white-space: pre; }
 .hud b { color: #58a6ff; }
 
 .hud .err { color: #ff8080; max-width: 18rem; }
+
+/* Color legend: shows what the active color mode encodes — a colormap gradient
+   bar with the field's min/max for the scalar ramps, or class swatches for
+   "by class". Read-only (the tickable class filter lives in the Filters tab). */
+.color-legend { padding: 8px 10px; font-size: 11px; min-width: 150px; }
+.color-legend .legend-title { color: #9fb0c0; margin-bottom: 6px; }
+.color-legend .legend-ramp { height: 10px; border-radius: 3px;
+  border: 1px solid #2a3340; }
+.color-legend .legend-scale { display: flex; justify-content: space-between;
+  margin-top: 3px; color: #e6edf3; font-variant-numeric: tabular-nums; }
+.color-legend .legend-classes { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.color-legend .legend-class { flex: 0 0 auto; display: inline-flex;
+  align-items: center; gap: 4px; }
+.color-legend .swatch { width: 10px; height: 10px; border-radius: 2px;
+  display: inline-block; }
 
 /* Boot loader: centered over the blank canvas until the first frame renders. */
 .boot { position: absolute; inset: 0; z-index: 15; display: flex;

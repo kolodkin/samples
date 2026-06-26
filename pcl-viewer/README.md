@@ -24,7 +24,9 @@ and reset-camera) and a **Filters** tab (per-point **range filters** that clip
 the cloud by height, distance, or intensity (min/max, blank = unbounded), a
 clickable class legend whose swatches toggle each semantic class in or out of
 the seg scene, and a box toggle for the seg scene) — plus an always-on live
-stats overlay. Frontend dependencies are vendored ES modules loaded via an import
+stats overlay and a top-right color legend that shows the active color mode's
+colormap (a gradient with min/max for the scalar ramps, class swatches when
+colored by class). Frontend dependencies are vendored ES modules loaded via an import
 map — no bundler — served by a small Python `http.server` and verified end-to-end
 with Python Playwright.
 

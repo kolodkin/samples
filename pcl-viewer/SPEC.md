@@ -23,8 +23,11 @@ Python server, never a CDN at test time). Preact renders via `htm` — no JSX/tr
   purely as parsers.
 - `app.js` — pure Preact UI; owns control state and drives the handle. No three.js
   internals.
-- `colorModes.js` — shared, ordered `COLOR_MODES` list (`{id, label}`) imported by
-  both `viewer.js` and `app.js`.
+- `colorModes.js` — shared color-mode source: the ordered `COLOR_MODES` list
+  (`{id, label}`), the intensity `HOT_STOPS` thermal stops (imported by `viewer.js`
+  for per-point coloring), and `RAMP_GRADIENT` (`{id → CSS gradient}` for the
+  scalar ramps, used by `app.js`'s color legend). Imported by both `viewer.js`
+  and `app.js`.
 - `serve.py` — `ThreadingHTTPServer` serving `web/` with JS/`.pcd` MIME types and
   `Cache-Control: no-store`.
 
@@ -74,6 +77,15 @@ shared blue→red `rampColors`: only the lowest returns read as cool **purple**,
 bulk of the equalized range climbs magenta→red→orange→yellow→near-white, so the cloud
 is mostly bright and reflective surfaces pop. The stops place purple in just the bottom
 ~15% of the range; height/distance keep the blue→red ramp.
+
+**Color legend.** An always-on overlay in the top-right corner (stacked under the
+stats HUD in a `.corner` flex column) explains the active mode: for the scalar
+ramps (height/distance/intensity) it draws the colormap as a CSS gradient bar
+(`RAMP_GRADIENT` in `colorModes.js`, sampled from the same blue→red HSL sweep /
+`HOT_STOPS` the per-point coloring uses) with the field's min/max from
+`state.scalarRanges` beneath it; for **by class** it lists read-only class
+swatches (the same `SEG_LEGEND` / loaded-file enumeration the Filters-tab legend
+uses — toggling stays in Filters); **flat** shading shows nothing.
 
 Color state is **pushed** to the UI rather than polled: `createViewer` takes an
 `onColorState({mode, modes})` callback that `applyColorMode` fires whenever the
@@ -147,6 +159,7 @@ across frames and scenes. `getStats()` exposes `visibleCount`, `scalarRanges`,
 | Point shape   | lit sphere impostor ("ball", default) vs. flat square sprite |
 | Point size    | `PointsMaterial.size` (0.002–0.05)                  |
 | Color mode    | flat vs. per-vertex ramp by height / distance (plus by-intensity where a source carries it), or palette by class (seg scene) |
+| Color legend  | top-right overlay of the active mode's colormap — gradient + min/max for the scalar ramps, class swatches for by-class (hidden on flat) |
 | Point filters | clip the cloud by height / distance / intensity range (min/max, blank = ∞) |
 | Classes (seg scene + loaded files with a class column) | click a legend swatch to filter that class in/out |
 | Movie (movie + seg scenes) | play/pause, frame step/seek (the sequence loops continuously) |

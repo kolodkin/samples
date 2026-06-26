@@ -129,6 +129,44 @@ def test_color_modes_match_scene(server_url, page):
     expect(page.get_by_test_id("color-mode")).to_have_value("flat")
 
 
+def test_color_legend_follows_mode(server_url, page):
+    # The top-right color legend explains the active color mode: a colormap
+    # gradient bar for the scalar ramps, class swatches for "by class", and
+    # nothing for flat. It is always on (outside the controls modal).
+    page.goto(
+        server_url
+        + DEFAULT
+        + "&segMovieBase=/fixtures/seg/&segMovieCount=4&segBoxesUrl=/fixtures/seg/boxes.json"
+    )
+    _wait_ready(page)
+    # The movie defaults to the distance ramp, so the gradient bar is shown.
+    legend = page.get_by_test_id("color-legend")
+    expect(legend).to_be_visible()
+    expect(page.get_by_test_id("legend-ramp")).to_be_visible()
+
+    page.get_by_test_id("menu-toggle").click()  # color-mode picker lives in the modal
+    # Flat shading has no mapping to explain — the legend disappears entirely.
+    page.get_by_test_id("color-mode").select_option("flat")
+    page.wait_for_function("() => window.__PCL.settings.colorMode === 'flat'")
+    expect(page.get_by_test_id("color-legend")).to_have_count(0)
+    # Every scalar ramp brings the gradient bar back.
+    for mode in ("height", "intensity", "distance"):
+        page.get_by_test_id("color-mode").select_option(mode)
+        page.wait_for_function(f"() => window.__PCL.settings.colorMode === '{mode}'")
+        expect(page.get_by_test_id("legend-ramp")).to_be_visible()
+
+    # The seg scene colors by class, so the legend shows swatches, not a ramp.
+    page.get_by_test_id("scene").select_option("seg")
+    page.wait_for_function(
+        "() => window.__PCL.scene === 'seg' && window.__PCL.ready === true"
+        " && window.__PCL.settings.colorMode === 'class'",
+        timeout=60000,
+    )
+    expect(page.get_by_test_id("color-legend")).to_be_visible()
+    expect(page.get_by_test_id("legend-ramp")).to_have_count(0)
+    assert page.get_by_test_id("color-legend").get_by_text("car").is_visible()
+
+
 def test_point_shape_toggle(server_url, page):
     page.goto(server_url + DEFAULT)
     _wait_ready(page)
