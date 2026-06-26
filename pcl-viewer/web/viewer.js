@@ -253,7 +253,8 @@ export function createViewer(canvas, { onColorState } = {}) {
 
   // Precompute, for every scalar mode the cloud can supply, both a ramp color
   // buffer (for "color by") and the raw per-point values (for range filtering):
-  // height (y), radial distance from the sensor (origin), and intensity. Movie/seg
+  // height (y), absolute radial distance from the sensor origin (see `aDistance`,
+  // captured pre-normalization), and intensity. Movie/seg
   // Draco frames pack scalars into the color attribute, so an explicit per-scene
   // channel map (`opts.classChannel`, `opts.intensityChannel`) says which channel
   // carries what; static clouds pass no map and fall back to native attributes.
@@ -263,10 +264,20 @@ export function createViewer(canvas, { onColorState } = {}) {
     const pos = geometry.getAttribute('position');
     const n = pos.count;
     const height = new Float32Array(n);
+    // `distance` is the *absolute* radial distance from the sensor origin, in the
+    // cloud's own (pre-normalization) units — captured by the normalize step into
+    // `aDistance` before the recenter+scale. Reading it here, rather than recomputing
+    // Math.hypot on the normalized positions, keeps "by distance" coloring and the
+    // distance range filter on real metric distance instead of distance-from-the
+    // -bbox-center in normalized units. Fall back to the live positions only if the
+    // attribute is missing (no normalize step ran).
+    const distAttr = geometry.getAttribute('aDistance');
     const distance = new Float32Array(n);
     for (let i = 0; i < n; i++) {
       height[i] = pos.getY(i);
-      distance[i] = Math.hypot(pos.getX(i), pos.getY(i), pos.getZ(i));
+      distance[i] = distAttr
+        ? distAttr.getX(i)
+        : Math.hypot(pos.getX(i), pos.getY(i), pos.getZ(i));
     }
     const colors = { height: rampColors(height), distance: rampColors(distance) };
     const scalars = { height, distance };
@@ -360,8 +371,23 @@ export function createViewer(canvas, { onColorState } = {}) {
   // the frame. The object profile (Lucy) is already y-up, so it skips the rotation
   // and instead scales by a robust *bounding extent* (98th-percentile L∞ radius)
   // so the tall figure fits the cube rather than being dominated by its height.
+  // Stash each point's absolute radial distance from the sensor origin onto the
+  // geometry (non-rendered `aDistance` attribute) BEFORE any recenter/scale, so
+  // "by distance" coloring and the distance filter read true metric distance
+  // rather than the post-normalization distance-from-bbox-center. Rotation about
+  // the origin preserves magnitude, so calling this after the z-up→y-up rotate is
+  // equivalent to the original sensor frame.
+  function attachAbsoluteDistance(geom) {
+    const pos = geom.getAttribute('position');
+    const n = pos.count;
+    const d = new Float32Array(n);
+    for (let i = 0; i < n; i++) d[i] = Math.hypot(pos.getX(i), pos.getY(i), pos.getZ(i));
+    geom.setAttribute('aDistance', new THREE.BufferAttribute(d, 1));
+  }
+
   function normalizeGeometry(geom, profile) {
     if (profile.kind !== 'object') geom.rotateX(-Math.PI / 2); // z-up -> y-up
+    attachAbsoluteDistance(geom);
     geom.computeBoundingBox();
     const center = geom.boundingBox.getCenter(new THREE.Vector3());
     geom.translate(-center.x, -center.y, -center.z);
@@ -382,6 +408,7 @@ export function createViewer(canvas, { onColorState } = {}) {
   // frame and reused for the rest.
   function normalizeMovieFrame(geom, shared) {
     geom.rotateX(-Math.PI / 2);
+    attachAbsoluteDistance(geom); // absolute sensor-frame distance, per frame, pre-recenter
     if (!shared.ready) {
       geom.computeBoundingBox();
       shared.center = geom.boundingBox.getCenter(new THREE.Vector3());
