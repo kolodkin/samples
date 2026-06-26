@@ -3,8 +3,7 @@
     "allow": [
       "mcp__plugin_devpowers_github",
       "mcp__plugin_devpowers_github__*",
-      "mcp__github",
-      "mcp__github__*"
+      "mcp__github"
     ]
   }
 }
