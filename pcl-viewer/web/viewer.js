@@ -244,7 +244,7 @@ export function createViewer(canvas, { onColorState } = {}) {
     const n = values.length;
     const eq = new Float32Array(n);
     if (!n) return eq;
-    const order = Array.from({ length: n }, (_, i) => i).sort((a, b) => values[a] - values[b]);
+    const order = Int32Array.from({ length: n }, (_, i) => i).sort((a, b) => values[a] - values[b]);
     let i = 0;
     while (i < n) {
       let j = i;
@@ -276,13 +276,14 @@ export function createViewer(canvas, { onColorState } = {}) {
     return colors;
   }
 
-  // Intensity gets its own "hot" (thermal) colormap instead of the shared blue->red
-  // ramp: only the lowest returns read as cool purple, and the bulk of the
-  // histogram-equalized range climbs through magenta -> red -> orange -> yellow to
-  // near-white, so the cloud is mostly bright and reflective surfaces pop. Stops are
-  // placed so purple occupies just the bottom ~15% of the range and everything above
-  // stays warm and bright. Same robust 2nd..98th percentile clamp as rampColors so a
-  // few outliers don't compress the map; linear RGB interpolation between stops.
+  // Map an already-normalized field (t in [0,1] per point) through a "hot" (thermal)
+  // colormap instead of the shared blue->red ramp: only the lowest values read as cool
+  // purple, and the bulk of the range climbs through magenta -> red -> orange -> yellow
+  // to near-white, so the cloud is mostly bright and reflective surfaces pop. Stops
+  // place purple in just the bottom ~15% of the range. The sole caller feeds
+  // histogram-equalized intensity (equalizeHistogram already spreads it uniformly
+  // across [0,1]), so this skips the percentile clamp/sort rampColors needs and maps
+  // straight through the stops; linear RGB interpolation between them.
   const HOT_STOPS = [
     { t: 0.00, c: [0.50, 0.16, 0.70] }, // bright purple (low intensity only)
     { t: 0.15, c: [0.90, 0.22, 0.55] }, // magenta
@@ -291,18 +292,15 @@ export function createViewer(canvas, { onColorState } = {}) {
     { t: 0.82, c: [1.00, 0.88, 0.45] }, // yellow
     { t: 1.00, c: [1.00, 1.00, 0.92] }, // near-white    (high intensity)
   ];
-  function hotRampColors(values) {
-    const n = values.length;
-    const sorted = Float32Array.from(values).sort();
-    const min = sorted[Math.floor(n * 0.02)];
-    const span = (sorted[Math.floor(n * 0.98)] - min) || 1;
+  function hotRampColors(t) {
+    const n = t.length;
     const colors = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) {
-      const t = Math.min(1, Math.max(0, (values[i] - min) / span));
+      const ti = t[i];
       let s = 0;
-      while (s < HOT_STOPS.length - 2 && t > HOT_STOPS[s + 1].t) s++;
+      while (s < HOT_STOPS.length - 2 && ti > HOT_STOPS[s + 1].t) s++;
       const a = HOT_STOPS[s], b = HOT_STOPS[s + 1];
-      const u = (t - a.t) / (b.t - a.t || 1);
+      const u = (ti - a.t) / (b.t - a.t || 1);
       colors[i * 3]     = a.c[0] + (b.c[0] - a.c[0]) * u;
       colors[i * 3 + 1] = a.c[1] + (b.c[1] - a.c[1]) * u;
       colors[i * 3 + 2] = a.c[2] + (b.c[2] - a.c[2]) * u;
@@ -327,6 +325,9 @@ export function createViewer(canvas, { onColorState } = {}) {
       height[i] = pos.getY(i);
       distance[i] = Math.hypot(pos.getX(i), pos.getY(i), pos.getZ(i));
     }
+    // Height/distance are spatial gradients — keep their raw distribution on the
+    // blue->red ramp (equalizing them would invent false structure). Only intensity,
+    // which is heavily clumped, is histogram-equalized below.
     const colors = { height: rampColors(height), distance: rampColors(distance) };
     const scalars = { height, distance };
     const color = geometry.getAttribute('color');
@@ -342,11 +343,10 @@ export function createViewer(canvas, { onColorState } = {}) {
       if (attr) intensity = Float32Array.from({ length: n }, (_, i) => attr.getX(i));
     }
     // Color "by intensity" off a histogram-equalized copy (eq_i) precomputed here
-    // at load, never by mutating the raw field: the equalized values drive the hot
-    // colormap (so the clumped LiDAR histogram spreads evenly — mostly bright, only
-    // the low tail purple), while raw intensity stays in scalars for range filtering
-    // and the HUD's 0–255 hints. eq_i is already a uniform [0,1] CDF, so the map's
-    // percentile clamp is a near-identity.
+    // at load, never by mutating the raw field: the equalized values (a uniform [0,1]
+    // CDF) drive the hot colormap directly, so the clumped LiDAR histogram spreads
+    // evenly — mostly bright, only the low tail purple. Raw intensity stays in scalars
+    // for range filtering and the HUD's 0–255 hints.
     if (intensity) {
       const eqIntensity = equalizeHistogram(intensity);
       colors.intensity = hotRampColors(eqIntensity);
