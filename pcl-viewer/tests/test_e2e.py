@@ -82,14 +82,15 @@ def test_color_modes_match_scene(server_url, page):
     # "intensity" is offered and "class" is not.
     page.goto(
         server_url
-        + "/?segMovieBase=/fixtures/seg/&segMovieCount=4&segBoxesUrl=/fixtures/seg/boxes.json"
+        + "/?movieBase=/fixtures/movie/&movieCount=4"
+        + "&segMovieBase=/fixtures/seg/&segMovieCount=4&segBoxesUrl=/fixtures/seg/boxes.json"
     )
     _wait_ready(page)
     page.get_by_test_id("menu-toggle").click()
     assert _color_mode_options(page) == ["flat", "height", "distance", "intensity"]
 
-    # The seg Draco frames carry per-point classes but no intensity, so the set
-    # flips: "class" appears, "intensity" drops.
+    # The seg Draco frames carry per-point classes AND intensity, so both "class"
+    # and "intensity" join the scalar ramps.
     page.get_by_test_id("scene").select_option("seg")
     page.wait_for_function(
         "() => window.__PCL.scene === 'seg' && window.__PCL.ready === true"
@@ -98,10 +99,22 @@ def test_color_modes_match_scene(server_url, page):
     )
     page.wait_for_function(
         "() => JSON.stringify(window.__PCL.handle.getStats().colorModes)"
-        " === JSON.stringify(['flat','class','height','distance'])")
-    assert _color_mode_options(page) == ["flat", "class", "height", "distance"]
+        " === JSON.stringify(['flat','class','height','distance','intensity'])")
+    assert _color_mode_options(page) == ["flat", "class", "height", "distance", "intensity"]
     # Seg defaults to by-class, and the dropdown reflects that applied mode.
     expect(page.get_by_test_id("color-mode")).to_have_value("class")
+
+    # The geometry movie now carries intensity too (positions + green-channel
+    # reflectance), so it offers the intensity ramp but no class.
+    page.get_by_test_id("scene").select_option("movie")
+    page.wait_for_function(
+        "() => window.__PCL.scene === 'movie' && window.__PCL.ready === true",
+        timeout=60000,
+    )
+    page.wait_for_function(
+        "() => JSON.stringify(window.__PCL.handle.getStats().colorModes)"
+        " === JSON.stringify(['flat','height','distance','intensity'])")
+    assert _color_mode_options(page) == ["flat", "height", "distance", "intensity"]
 
     # Switching back to a scene without "class" drops the stranded mode to flat in
     # both the viewer and the dropdown.
