@@ -18,6 +18,10 @@ on:
         description: 'Publish curated dataset to Hugging Face (requires HF_TOKEN)'
         type: boolean
         default: false
+      hf_repo_id:
+        description: 'Target Hugging Face dataset repo (owner/name); the HF_TOKEN must have write access to this namespace'
+        type: string
+        default: 'aaiclick/imdb-wikipedia-enriched'
       publish_airtable:
         description: 'Publish showcase sample to Airtable (requires AIRTABLE_* secrets)'
         type: boolean
@@ -85,6 +89,7 @@ jobs:
         env:
           SAMPLE: ${{ inputs.sample }}
           YEAR_FROM: ${{ inputs.year_from }}
+          HF_REPO_ID: ${{ inputs.hf_repo_id }}
           PUBLISH_HF: ${{ inputs.publish_hf }}
           PUBLISH_AIRTABLE: ${{ inputs.publish_airtable }}
           # Secrets only flow when the matching publish toggle is on.
