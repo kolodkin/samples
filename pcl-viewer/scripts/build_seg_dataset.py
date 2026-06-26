@@ -204,6 +204,17 @@ def remap_classes(raw: np.ndarray) -> np.ndarray:
     return out
 
 
+def intensity_to_byte(intensity: np.ndarray) -> np.ndarray:
+    """Map per-point remission to a 0–255 byte. SemanticKITTI stores remission as a
+    float in [0,1], so scale by 255; but some mirrors ship it already in 0–255,
+    where a blind *255 would saturate every point to white. Detect the range and
+    only scale when the values are normalized, then clip for safety."""
+    inten = np.asarray(intensity, dtype=np.float32)
+    if inten.size and inten.max() <= 1.0:  # [0,1] remission -> 0..255
+        inten = inten * 255.0
+    return np.clip(inten, 0, 255).astype(np.uint8)
+
+
 def derive_boxes(xyz: np.ndarray, cls: np.ndarray, inst: np.ndarray) -> list[dict]:
     boxes = []
     things = np.isin(cls, list(THING_CLASSES))
@@ -249,7 +260,7 @@ def process(seq: str, start: int, limit: int, src_dir: Path, out: Path) -> int:
         xyz_d, cls_d, inst_d = xyz[idx], cls[idx], inst[idx]
         colors = np.zeros((len(xyz_d), 3), dtype=np.uint8)
         colors[:, 0] = cls_d
-        colors[:, 1] = np.clip(intensity[idx] * 255.0, 0, 255).astype(np.uint8)
+        colors[:, 1] = intensity_to_byte(intensity[idx])
         buf = DracoPy.encode(xyz_d.astype(np.float32), colors=colors,
                              quantization_bits=QUANT_BITS)
         (out / f"{i:06d}.drc").write_bytes(buf)
