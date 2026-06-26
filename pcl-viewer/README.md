@@ -10,6 +10,9 @@ SemanticKITTI movie (from the same dataset's `seg/` folder) that colors every
 point by its semantic class and draws a 3D bounding box around each object
 instance — and **Stanford Lucy**, the famous winged-angel statue (50k-vertex
 binary PLY, framed upright and front-on) hot-linked from the three.js model repo.
+A **Load PCL…** button also loads your own point clouds from local `.pcd`, `.csv`,
+or `.parquet` files (schema `x,y,z` plus optional `i` intensity and `c` class
+string), parsed entirely in-browser with a dynamic per-class palette and legend.
 Each point renders as
 a lit sphere impostor (a round, shaded "3D ball", with the older flat square
 sprite still selectable) under `OrbitControls`, wrapped in a Preact UI whose

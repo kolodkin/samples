@@ -2,19 +2,25 @@
 
 ## ESM, no build
 Frontend uses native `import` with an import map in `index.html`. Bare specifiers
-(`three`, `three/addons/`, `preact`, `preact/hooks`, `htm`) resolve to files under
-`web/vendor/`, populated by `vendor.sh` from pinned unpkg builds:
-three 0.160.0, preact 10.19.3, htm 3.1.1. `web/vendor/` is gitignored and
+(`three`, `three/addons/`, `preact`, `preact/hooks`, `htm`, `hyparquet`) resolve to
+files under `web/vendor/`, populated by `vendor.sh` from pinned builds:
+three 0.160.0, preact 10.19.3, htm 3.1.1 (unpkg), and hyparquet 1.26.1 (the
+self-contained esm.sh bundle — unpkg serves hyparquet as un-bundled `src/*.js`).
+`web/vendor/` is gitignored and
 regenerated on demand, so e2e runs offline (the browser fetches libs from the local
 Python server, never a CDN at test time). Preact renders via `htm` — no JSX/transpile.
 
 ## Component boundaries
 - `viewer.js` — `createViewer(canvas, { onColorState })` returns an imperative
-  handle (`loadScene`, `play`, `pause`, `setPointSize`, `setColorMode`,
+  handle (`loadScene`, `loadFile`, `play`, `pause`, `setPointSize`, `setColorMode`,
   `setPointShape`, `setFilter`, `setClassHidden`, `resetFilters`, `resetCamera`,
   `getStats`, `visiblePixelCount`, `dispose`).
   Owns all three.js state. No Preact. The optional `onColorState` callback pushes
   color-mode changes back to the UI (see "Scene-dependent color modes").
+- `loaders.js` — `parseLocalFile(file)` parses a user-supplied `.pcd`/`.csv`/
+  `.parquet` into a plain `{positions, intensity, classIds, classNames}` (see
+  "Loading local files"). No three.js scene state; uses `PCDLoader`/`hyparquet`
+  purely as parsers.
 - `app.js` — pure Preact UI; owns control state and drives the handle. No three.js
   internals.
 - `colorModes.js` — shared, ordered `COLOR_MODES` list (`{id, label}`) imported by
@@ -51,6 +57,23 @@ flat/height/distance/intensity, **Lucy** flat/height/distance, **seg**
 flat/class/height/distance/intensity. (`computeColorBuffers` also reads `intensity`
 from a native PCD `intensity` field when a cloud carries one — the retired city PCD
 was the last to use that path; no current scene does.)
+
+**Intensity is histogram-equalized for display.** Raw LiDAR intensity is heavily
+clumped (most returns dark, a sparse bright tail), so a plain linear ramp wastes
+most of the color range on a narrow band. At scene load `computeColorBuffers`
+precomputes a per-point equalized copy (`eq_i`) via the field's empirical CDF — each
+value maps to the fraction of points at or below it (ties share the CDF at the top of
+their run, keeping the mapping monotonic) — and the **colormap draws off `eq_i`**,
+spreading the histogram evenly so faint structure (lane paint, signs) emerges. The raw
+field is never mutated: `scalars.intensity` keeps the original values so the **range
+filter** and the HUD's 0–255 hints stay in true intensity units. See
+<https://en.wikipedia.org/wiki/Histogram_equalization>.
+
+Intensity uses its own **"hot" (thermal) colormap** (`hotRampColors`) rather than the
+shared blue→red `rampColors`: only the lowest returns read as cool **purple**, and the
+bulk of the equalized range climbs magenta→red→orange→yellow→near-white, so the cloud
+is mostly bright and reflective surfaces pop. The stops place purple in just the bottom
+~15% of the range; height/distance keep the blue→red ramp.
 
 Color state is **pushed** to the UI rather than polled: `createViewer` takes an
 `onColorState({mode, modes})` callback that `applyColorMode` fires whenever the
@@ -99,10 +122,12 @@ absent, so filtering **fails open** — a geometry without it shows every point.
   ramp colors as before, plus the raw per-point values the filter reads — and the
   data's live min/max per field (`state.scalarRanges`) is shown as input
   placeholders.
-- **Class filters** make the seg legend tickable: each swatch is a toggle button
-  that adds/removes its class id from `state.settings.hiddenClasses` (the ids map
-  to `SEG_PALETTE` indices). Hidden classes drop out of the cloud; clicking again
-  brings them back.
+- **Class filters** make the class legend tickable: each swatch is a toggle button
+  that adds/removes its class id from `state.settings.hiddenClasses`. Hidden classes
+  drop out of the cloud; clicking again brings them back. The seg scene's ids map to
+  `SEG_PALETTE` indices; a loaded file with a class column gets the same treatment,
+  its ids being the enumeration index from its dynamic palette (both supply a
+  `scalars.classId`, so one filter path serves both).
 
 `applyFilter` recomputes `aHide` from the active filters whenever a setting changes
 and on every geometry install (so each movie frame is re-filtered against the live
@@ -118,9 +143,10 @@ across frames and scenes. `getStats()` exposes `visibleCount`, `scalarRanges`,
 | Point size    | `PointsMaterial.size` (0.002–0.05)                  |
 | Color mode    | flat vs. per-vertex ramp by height / distance (plus by-intensity where a source carries it), or palette by class (seg scene) |
 | Point filters | clip the cloud by height / distance / intensity range (min/max, blank = ∞) |
-| Classes (seg scene only) | click a legend swatch to filter that semantic class in/out |
+| Classes (seg scene + loaded files with a class column) | click a legend swatch to filter that class in/out |
 | Movie (movie + seg scenes) | play/pause, frame step/seek (the sequence loops continuously) |
 | Show boxes (seg scene only) | toggle the per-instance 3D bounding boxes |
+| Load PCL…     | load a local `.pcd`/`.csv`/`.parquet` cloud (see "Loading local files") |
 | Reset camera  | re-frames the low forward-facing view down the road  |
 | Stats overlay | point count, rolling FPS, camera distance, box count |
 
@@ -148,6 +174,50 @@ Scenes are offered in this order (the first, **KITTI movie**, is the default):
 The shared HF dataset holds both movies under sibling folders — `geometry/`
 (positions-only, from KITTI raw drive 0005) and `seg/` (SemanticKITTI, with
 per-point classes + `boxes.json`) — under one CC BY-NC-SA card.
+
+### Loading local files (Load PCL)
+Beyond the three remote scenes, a **Load PCL…** button opens the OS file picker
+(a hidden `<input type="file" accept=".pcd,.csv,.parquet">`) and loads a local
+cloud as a transient `file` scene via `viewer.loadFile(file)`. Parsing lives in
+`web/loaders.js` (`parseLocalFile`), dispatched by extension:
+
+- **`.pcd`** — three's `PCDLoader` as a pure parser; takes `position` plus, when
+  the header declares it, the `intensity` attribute. Standard PCD fields are
+  numeric, so this path carries no class.
+- **`.csv`** — text parse. Delimiter auto-detected among `, ; \t`; blank lines and
+  `#` comments skipped. A header row (first three cells not all numeric) maps
+  columns by name; otherwise columns are positional.
+- **`.parquet`** — `hyparquet.parquetReadObjects` over an in-memory `AsyncBuffer`
+  (uncompressed + snappy only; other codecs surface a clear error). Columns map by
+  name, else positionally in file order.
+
+**Schema.** Tabular inputs follow `x,y,z` plus optional `i` (numeric intensity)
+and `c` (per-point class **string**): `x,y,z` / `x,y,z,i` / `x,y,z,c` /
+`x,y,z,i,c`. Header names recognized: `x`/`y`/`z`, intensity (`i`, `intensity`,
+`reflectance`), class (`c`, `class`, `label`, `category`, `cls`). With no header,
+columns are inferred by count — 3 ⇒ `xyz`, 4 ⇒ `xyz` + (4th column numeric ⇒
+intensity, else class), 5+ ⇒ `x,y,z,i,c` (extras ignored). Rows with a non-finite
+`x`/`y`/`z` are skipped; an empty/short/garbage file sets `state.error` and the
+viewer stays usable.
+
+**Class enumeration + palette.** The class strings are enumerated in first-seen
+order into `classIds` + `classNames`; the viewer builds a dynamic vivid palette
+(`generateClassPalette`, golden-angle HSL) — the seg scene's fixed SemanticKITTI
+palette doesn't apply to arbitrary labels — and `computeColorBuffers` maps each id
+through it into the `class` buffer (the loaded path passes ids/colors directly
+rather than smuggling them through a Draco color channel like seg), and also fills
+`scalars.classId` so the loaded file's legend is **tickable** like the seg scene's —
+the same class-filter path serves both. A `name → swatch` legend
+(`state.classLegend`, surfaced via `getStats`) renders in the panel, reusing the seg
+scene's tickable `legend` markup (class id = enumeration index). Loading a file
+resets the range filters and hidden classes so the new cloud starts unfiltered.
+"By class" is the default mode when a file carries classes; otherwise the active
+scalar mode carries over (flat fallback as usual). Loaded clouds use the **object** normalization profile (no z-up rotation,
+centered, framed front-on). Point size is **auto-scaled to the cloud's density** on
+load (`autoPointSize`, ∝ 1/√count, clamped 0.004–0.02) so a sparse file reads
+clearly instead of vanishing at the dense-scan default; the size slider follows via
+`getStats`, and the user can still adjust it. The Scene dropdown gains a temporary
+entry showing the file name while loaded; switching to a built-in scene clears it.
 
 ### Per-scene normalization profiles
 `viewer.js` keys a small **profile** off the scene id. The KITTI clouds (movie,
@@ -193,7 +263,11 @@ committed fixtures (`tests/fixtures/movie/*.drc` for the movie, and
 `tests/fixtures/lucy/lucy_fixture.ply` — a small indexed-mesh PLY exercising the
 PLY/object path for the Lucy scene), built by `tests/fixtures/build_fixtures.py`,
 drive the offline e2e — conftest stages them into `web/fixtures/`. The real Lucy
-cloud is hot-linked, so it is not fetched in tests.
+cloud is hot-linked, so it is not fetched in tests. The **Load PCL** fixtures
+(`tests/fixtures/file/cloud.{csv,pcd,parquet}` + `cloud_noheader.csv`, one cloud in
+every format/schema, built by `build_file_fixtures.py`) are uploaded straight
+through the file input by `test_load_pcl.py`, exercising each loader and schema
+variant offline.
 
 ### Seg scene (`loadSegMovie` + `scripts/build_seg_dataset.py`, one-shot)
 

@@ -39,6 +39,18 @@ html, body { margin: 0; height: 100%; background: #101418; color: #e6edf3;
 .controls .tabs .tab:hover { background: #2a3340; color: #e6edf3; }
 .controls .tabs .tab.active { background: #1f6feb; color: #fff; border-color: #1f6feb; }
 
+/* "Load PCL" entry point: a full-width outlined-accent button with an upload
+   glyph, set apart from the solid scene/transport buttons. Fills on hover/focus. */
+.controls .load-pcl { display: flex; align-items: center; justify-content: center;
+  gap: 7px; width: 100%; margin-top: 8px; padding: 9px 12px;
+  background: rgba(31, 111, 235, 0.12); color: #58a6ff;
+  border: 1px solid #1f6feb; border-radius: 7px; cursor: pointer;
+  font: 600 13px/1 system-ui, sans-serif;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease; }
+.controls .load-pcl:hover { background: #1f6feb; color: #fff; }
+.controls .load-pcl:focus-visible { outline: none; box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.5); }
+.controls .load-pcl .load-pcl-icon { flex: 0 0 auto; }
+
 /* Compact always-on HUD: live point/fps/camera readout. */
 .hud { top: 12px; right: 12px; z-index: 10; padding: 8px 10px; font-size: 12px;
   font-variant-numeric: tabular-nums; }

@@ -10,6 +10,7 @@ import {
   SEG_MOVIE_COUNT, SEG_BOXES_URL, segFrameUrl,
 } from './config.js';
 import { COLOR_MODES } from './colorModes.js';
+import { parseLocalFile } from './loaders.js';
 
 const BG = 0x101418;
 const FLAT_COLOR = 0x66ccff;
@@ -40,7 +41,32 @@ const SCENE_DEFAULT_COLOR = { seg: 'class' };
 const PROFILES = { kitti: { kind: 'kitti' }, object: { kind: 'object' } };
 const SCENE_PROFILE = {
   lucy: PROFILES.object, movie: PROFILES.kitti, seg: PROFILES.kitti,
+  // A loaded file is an arbitrary cloud in its own frame: treat it like the
+  // object profile (no z-up rotation, centered, framed front-on three-quarter).
+  file: PROFILES.object,
 };
+
+// Build a palette of `n` visually distinct vivid colors for a loaded file's
+// class enumeration (the seg scene's fixed SemanticKITTI palette doesn't apply
+// to arbitrary class strings). Golden-angle hue stepping keeps adjacent ids far
+// apart on the color wheel.
+function generateClassPalette(n) {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const hue = (i * 0.61803398875) % 1; // golden ratio conjugate
+    out.push(new THREE.Color().setHSL(hue, 0.65, 0.55));
+  }
+  return out;
+}
+
+// Pick a clear point size for a loaded cloud from its density. The 0.004 default
+// is tuned for the dense ~30k-point KITTI scans; a sparser user cloud at that
+// size nearly vanishes, so scale up by 1/sqrt(count) (points cover area), clamped
+// so it never goes below the default or grows into fat blobs.
+function autoPointSize(count) {
+  const size = 0.004 * Math.sqrt(30000 / Math.max(count, 1));
+  return Math.min(0.02, Math.max(0.004, size));
+}
 
 // SemanticKITTI 19-class learning palette, indexed by class id (0 = unlabeled).
 const SEG_PALETTE = [
@@ -159,6 +185,8 @@ export function createViewer(canvas, { onColorState } = {}) {
       hiddenClasses: [],
     },
     framesRendered: 0,
+    fileName: null,       // name of the loaded local file (file scene only)
+    classLegend: [],      // [{name, hex}] for the loaded file's class enumeration
   };
   window.__PCL = state;
 
@@ -203,6 +231,31 @@ export function createViewer(canvas, { onColorState } = {}) {
     controls.update();
   }
 
+  // Histogram-equalize a scalar field to a roughly uniform [0,1] distribution via
+  // its empirical CDF: each value maps to the fraction of points at or below it.
+  // LiDAR intensity is heavily clumped (most returns dark, a sparse bright tail),
+  // so a plain linear ramp wastes most of the color range on a narrow band. Mapping
+  // through the CDF spreads the histogram evenly across the ramp, pulling faint
+  // structure (lane paint, signs, foliage) out of the murk. Ties share one
+  // equalized value (the CDF at the top of the run) so the mapping stays monotonic.
+  // See https://en.wikipedia.org/wiki/Histogram_equalization. Returns a fresh array;
+  // the caller keeps the raw field untouched for filtering and the HUD range hints.
+  function equalizeHistogram(values) {
+    const n = values.length;
+    const eq = new Float32Array(n);
+    if (!n) return eq;
+    const order = Int32Array.from({ length: n }, (_, i) => i).sort((a, b) => values[a] - values[b]);
+    let i = 0;
+    while (i < n) {
+      let j = i;
+      while (j + 1 < n && values[order[j + 1]] === values[order[i]]) j++;
+      const cdf = (j + 1) / n; // CDF at the top of this run of equal values
+      for (let k = i; k <= j; k++) eq[order[k]] = cdf;
+      i = j + 1;
+    }
+    return eq;
+  }
+
   // Map a per-point scalar field onto the blue->red HSL ramp. Robust 2nd..98th
   // percentile clamp so a handful of outliers don't compress the whole ramp
   // into one hue (low values stay blue, high values climb through green to red).
@@ -219,6 +272,38 @@ export function createViewer(canvas, { onColorState } = {}) {
       colors[i * 3] = c.r;
       colors[i * 3 + 1] = c.g;
       colors[i * 3 + 2] = c.b;
+    }
+    return colors;
+  }
+
+  // Map an already-normalized field (t in [0,1] per point) through a "hot" (thermal)
+  // colormap instead of the shared blue->red ramp: only the lowest values read as cool
+  // purple, and the bulk of the range climbs through magenta -> red -> orange -> yellow
+  // to near-white, so the cloud is mostly bright and reflective surfaces pop. Stops
+  // place purple in just the bottom ~15% of the range. The sole caller feeds
+  // histogram-equalized intensity (equalizeHistogram already spreads it uniformly
+  // across [0,1]), so this skips the percentile clamp/sort rampColors needs and maps
+  // straight through the stops; linear RGB interpolation between them.
+  const HOT_STOPS = [
+    { t: 0.00, c: [0.50, 0.16, 0.70] }, // bright purple (low intensity only)
+    { t: 0.15, c: [0.90, 0.22, 0.55] }, // magenta
+    { t: 0.35, c: [1.00, 0.38, 0.28] }, // red
+    { t: 0.60, c: [1.00, 0.64, 0.22] }, // orange
+    { t: 0.82, c: [1.00, 0.88, 0.45] }, // yellow
+    { t: 1.00, c: [1.00, 1.00, 0.92] }, // near-white    (high intensity)
+  ];
+  function hotRampColors(t) {
+    const n = t.length;
+    const colors = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      const ti = t[i];
+      let s = 0;
+      while (s < HOT_STOPS.length - 2 && ti > HOT_STOPS[s + 1].t) s++;
+      const a = HOT_STOPS[s], b = HOT_STOPS[s + 1];
+      const u = (ti - a.t) / (b.t - a.t || 1);
+      colors[i * 3]     = a.c[0] + (b.c[0] - a.c[0]) * u;
+      colors[i * 3 + 1] = a.c[1] + (b.c[1] - a.c[1]) * u;
+      colors[i * 3 + 2] = a.c[2] + (b.c[2] - a.c[2]) * u;
     }
     return colors;
   }
@@ -240,6 +325,9 @@ export function createViewer(canvas, { onColorState } = {}) {
       height[i] = pos.getY(i);
       distance[i] = Math.hypot(pos.getX(i), pos.getY(i), pos.getZ(i));
     }
+    // Height/distance are spatial gradients — keep their raw distribution on the
+    // blue->red ramp (equalizing them would invent false structure). Only intensity,
+    // which is heavily clumped, is histogram-equalized below.
     const colors = { height: rampColors(height), distance: rampColors(distance) };
     const scalars = { height, distance };
     const color = geometry.getAttribute('color');
@@ -254,11 +342,39 @@ export function createViewer(canvas, { onColorState } = {}) {
       const attr = geometry.getAttribute('intensity');
       if (attr) intensity = Float32Array.from({ length: n }, (_, i) => attr.getX(i));
     }
-    if (intensity) { colors.intensity = rampColors(intensity); scalars.intensity = intensity; }
+    // Color "by intensity" off a histogram-equalized copy (eq_i) precomputed here
+    // at load, never by mutating the raw field: the equalized values (a uniform [0,1]
+    // CDF) drive the hot colormap directly, so the clumped LiDAR histogram spreads
+    // evenly — mostly bright, only the low tail purple. Raw intensity stays in scalars
+    // for range filtering and the HUD's 0–255 hints.
+    if (intensity) {
+      const eqIntensity = equalizeHistogram(intensity);
+      colors.intensity = hotRampColors(eqIntensity);
+      scalars.intensity = intensity;
+    }
 
-    // Class: the seg scene packs the per-point id (raw integer) in a color channel;
-    // map each id through the fixed palette. DRACOLoader hands the color attribute
-    // back as raw, un-normalized floats, so the channel value already IS the id.
+    // Class (loaded files): per-point ids plus an explicit palette built from the
+    // file's class enumeration — map each id straight through the palette. The raw
+    // ids go into scalars.classId too, so the tickable legend filter works the
+    // same way it does for the seg scene.
+    if (opts.classIds && opts.classColors) {
+      const ids = opts.classIds;
+      const palette = opts.classColors;
+      const out = new Float32Array(n * 3);
+      const classId = new Float32Array(n);
+      for (let i = 0; i < n; i++) {
+        classId[i] = ids[i];
+        const c = palette[ids[i]] || palette[0];
+        out[i * 3] = c.r; out[i * 3 + 1] = c.g; out[i * 3 + 2] = c.b;
+      }
+      colors.class = out;
+      scalars.classId = classId;
+    }
+
+    // Class (seg scene): the seg scene packs the per-point id (raw integer) in a
+    // color channel; map each id through the fixed palette. DRACOLoader hands the
+    // color attribute back as raw, un-normalized floats, so the channel value
+    // already IS the id.
     if (opts.classChannel != null && color) {
       const ch = opts.classChannel;
       const out = new Float32Array(n * 3);
@@ -490,6 +606,73 @@ export function createViewer(canvas, { onColorState } = {}) {
     installGeometry(geom, colors, scalars);
     resize();
     frameCamera(profile);
+    state.ready = true;
+  }
+
+  // Load a user-supplied local file (.pcd/.csv/.parquet) as a transient "file"
+  // scene. Parsing lives in loaders.js; here we turn the parsed arrays into a
+  // normalized geometry, derive a dynamic class palette + legend when the file
+  // carries class strings, and install it like any other static cloud.
+  async function loadFile(file) {
+    loadToken++;
+    const token = loadToken;
+    state.ready = false;
+    state.error = null;
+    state.loading = false;
+    state.loadProgress = { loaded: 0, total: 0 };
+    state.scene = 'file';
+    state.fileName = file.name;
+    state.classLegend = [];
+    // A freshly loaded file starts unfiltered: stale range bounds or hidden class
+    // ids from a previous scene would otherwise clip its differently-scaled,
+    // differently-enumerated points.
+    state.settings.filters = {
+      height: { min: null, max: null },
+      distance: { min: null, max: null },
+      intensity: { min: null, max: null },
+    };
+    state.settings.hiddenClasses = [];
+    activeProfile = SCENE_PROFILE.file;
+    teardownScene();
+
+    let parsed;
+    try {
+      parsed = await parseLocalFile(file);
+    } catch (e) {
+      if (token !== loadToken) return;
+      state.error = `Could not load ${file.name}: ${e.message || e}`;
+      return;
+    }
+    if (token !== loadToken) return;
+
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(parsed.positions, 3));
+    if (parsed.intensity) {
+      geom.setAttribute('intensity', new THREE.BufferAttribute(parsed.intensity, 1));
+    }
+
+    // Size points to the cloud's density so it reads clearly regardless of how
+    // many points it has (the slider follows via getStats → app).
+    state.settings.pointSize = autoPointSize(parsed.positions.length / 3);
+
+    let classColors = null;
+    if (parsed.classIds && parsed.classNames) {
+      classColors = generateClassPalette(parsed.classNames.length);
+      state.classLegend = parsed.classNames.map((name, i) => ({
+        name, hex: classColors[i].getHexString(),
+      }));
+    }
+
+    normalizeGeometry(geom, activeProfile);
+    const { colors, scalars } = computeColorBuffers(geom, { classIds: parsed.classIds, classColors });
+    state.colorModes = offeredModes(colors); // once per load, before install
+    // Default to "by class" when the file carries classes (the point of loading
+    // labeled data); otherwise keep the active scalar mode (applyColorMode falls
+    // back to flat if the file can't supply it).
+    if (colors.class) state.settings.colorMode = 'class';
+    installGeometry(geom, colors, scalars);
+    resize();
+    frameCamera(activeProfile);
     state.ready = true;
   }
 
@@ -738,6 +921,10 @@ export function createViewer(canvas, { onColorState } = {}) {
     // leave the HUD's "Loading X / Y…" spinner stuck on forever over the new scene.
     state.loading = false;
     state.loadProgress = { loaded: 0, total: 0 };
+    // Leaving any loaded local file behind: clear its name + legend so the HUD
+    // and dynamic legend don't linger over a built-in scene.
+    state.fileName = null;
+    state.classLegend = [];
     state.scene = id;
     // Scenes with a forced default (seg → "by class") reset the mode before the
     // first frame installs; others carry the current mode into the new scene.
@@ -762,6 +949,7 @@ export function createViewer(canvas, { onColorState } = {}) {
 
   const handle = {
     loadScene,
+    loadFile,
     play,
     pause,
     step,
@@ -831,6 +1019,9 @@ export function createViewer(canvas, { onColorState } = {}) {
         boxCount: state.boxCount,
         colorMode: state.settings.colorMode, // the mode actually applied (post-fallback)
         colorModes: state.colorModes,         // modes the live cloud supports
+        pointSize: state.settings.pointSize,  // current size (auto-set on file load)
+        fileName: state.fileName,             // loaded local file name (file scene)
+        classLegend: state.classLegend,       // [{name, hex}] for loaded class enum
       };
     },
     // e2e helper: count non-background pixels in the rendered frame.
