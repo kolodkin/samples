@@ -21,7 +21,7 @@ on:
       hf_repo_id:
         description: 'Target Hugging Face dataset repo (owner/name); the HF_TOKEN must have write access to this namespace'
         type: string
-        default: 'kolodkin/imdb-wikipedia-enriched'
+        default: 'aaiclick/imdb-wikipedia-enriched'
       publish_airtable:
         description: 'Publish showcase sample to Airtable (requires AIRTABLE_* secrets)'
         type: boolean
