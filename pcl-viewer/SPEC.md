@@ -52,6 +52,17 @@ flat/class/height/distance/intensity. (`computeColorBuffers` also reads `intensi
 from a native PCD `intensity` field when a cloud carries one — the retired city PCD
 was the last to use that path; no current scene does.)
 
+**Intensity is histogram-equalized for display.** Raw LiDAR intensity is heavily
+clumped (most returns dark, a sparse bright tail), so a plain linear ramp wastes
+most of the color range on a narrow band. At scene load `computeColorBuffers`
+precomputes a per-point equalized copy (`eq_i`) via the field's empirical CDF — each
+value maps to the fraction of points at or below it (ties share the CDF at the top of
+their run, keeping the mapping monotonic) — and the **color ramp draws off `eq_i`**,
+spreading the histogram evenly across blue→red so faint structure (lane paint, signs)
+emerges. The raw field is never mutated: `scalars.intensity` keeps the original
+values so the **range filter** and the HUD's 0–255 hints stay in true intensity units.
+See <https://en.wikipedia.org/wiki/Histogram_equalization>.
+
 Color state is **pushed** to the UI rather than polled: `createViewer` takes an
 `onColorState({mode, modes})` callback that `applyColorMode` fires whenever the
 applied mode or the offered set changes (guarded against the per-frame movie

@@ -203,6 +203,31 @@ export function createViewer(canvas, { onColorState } = {}) {
     controls.update();
   }
 
+  // Histogram-equalize a scalar field to a roughly uniform [0,1] distribution via
+  // its empirical CDF: each value maps to the fraction of points at or below it.
+  // LiDAR intensity is heavily clumped (most returns dark, a sparse bright tail),
+  // so a plain linear ramp wastes most of the color range on a narrow band. Mapping
+  // through the CDF spreads the histogram evenly across the ramp, pulling faint
+  // structure (lane paint, signs, foliage) out of the murk. Ties share one
+  // equalized value (the CDF at the top of the run) so the mapping stays monotonic.
+  // See https://en.wikipedia.org/wiki/Histogram_equalization. Returns a fresh array;
+  // the caller keeps the raw field untouched for filtering and the HUD range hints.
+  function equalizeHistogram(values) {
+    const n = values.length;
+    const eq = new Float32Array(n);
+    if (!n) return eq;
+    const order = Array.from({ length: n }, (_, i) => i).sort((a, b) => values[a] - values[b]);
+    let i = 0;
+    while (i < n) {
+      let j = i;
+      while (j + 1 < n && values[order[j + 1]] === values[order[i]]) j++;
+      const cdf = (j + 1) / n; // CDF at the top of this run of equal values
+      for (let k = i; k <= j; k++) eq[order[k]] = cdf;
+      i = j + 1;
+    }
+    return eq;
+  }
+
   // Map a per-point scalar field onto the blue->red HSL ramp. Robust 2nd..98th
   // percentile clamp so a handful of outliers don't compress the whole ramp
   // into one hue (low values stay blue, high values climb through green to red).
@@ -254,7 +279,17 @@ export function createViewer(canvas, { onColorState } = {}) {
       const attr = geometry.getAttribute('intensity');
       if (attr) intensity = Float32Array.from({ length: n }, (_, i) => attr.getX(i));
     }
-    if (intensity) { colors.intensity = rampColors(intensity); scalars.intensity = intensity; }
+    // Color "by intensity" off a histogram-equalized copy (eq_i) precomputed here
+    // at load, never by mutating the raw field: the equalized values drive the ramp
+    // (so the clumped LiDAR histogram spreads across the full blue->red range),
+    // while raw intensity stays in scalars for range filtering and the HUD's 0–255
+    // hints. setHSL needs roughly the same span rampColors expects, and eq_i is
+    // already a uniform [0,1] CDF, so the ramp's percentile clamp is a near-identity.
+    if (intensity) {
+      const eqIntensity = equalizeHistogram(intensity);
+      colors.intensity = rampColors(eqIntensity);
+      scalars.intensity = intensity;
+    }
 
     // Class: the seg scene packs the per-point id (raw integer) in a color channel;
     // map each id through the fixed palette. DRACOLoader hands the color attribute
