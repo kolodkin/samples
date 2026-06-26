@@ -1,4 +1,5 @@
 """End-to-end test of the PCL viewer using Playwright (Chromium)."""
+import os
 import time
 
 from playwright.sync_api import expect
@@ -344,10 +345,22 @@ def _set_range(page, tid, value):
     )
 
 
-def test_point_range_filter_on_static_scene(server_url, page):
+def _shot(page, output_path, name):
+    """Save a screenshot into this test's Playwright artifact folder so the
+    e2e-screenshots-report bundles it. Names sort within the folder, so a
+    `1-before` / `2-after` pair renders adjacent in the report."""
+    page.screenshot(path=os.path.join(output_path, f"{name}.png"))
+
+
+def _visible_pixels(page):
+    return page.evaluate("() => window.__PCL.handle.visiblePixelCount()")
+
+
+def test_point_range_filter_on_static_scene(server_url, page, output_path):
     # Range filters clip points by a scalar field. Exercise on the static Lucy
     # scene so the cloud is fixed (no per-frame churn) and the visible count is
-    # deterministic. Height and distance are available on every scene.
+    # deterministic. Height and distance are available on every scene. Capture a
+    # before/after pair showing a clear — but partial — change.
     page.goto(server_url + DEFAULT + "&lucyUrl=/fixtures/lucy/lucy_fixture.ply")
     _wait_ready(page)
     page.get_by_test_id("menu-toggle").click()
@@ -358,6 +371,8 @@ def test_point_range_filter_on_static_scene(server_url, page):
     total = page.evaluate("() => window.__PCL.pointCount")
     # Nothing filtered by default: every point is visible.
     assert page.evaluate("() => window.__PCL.visibleCount") == total
+    before_px = _visible_pixels(page)
+    _shot(page, output_path, "1-before-height-filter")
 
     # Clip the top half off by height: cap the max at the middle of the data range.
     rng = page.evaluate("() => window.__PCL.scalarRanges.height")
@@ -365,9 +380,11 @@ def test_point_range_filter_on_static_scene(server_url, page):
     _set_range(page, "filter-height-max", mid)
     page.wait_for_function("() => window.__PCL.visibleCount < window.__PCL.pointCount")
     clipped = page.evaluate("() => window.__PCL.visibleCount")
+    # Some points are clipped, but never all of them — the cloud stays on screen.
     assert 0 < clipped < total
-    # Fewer points are actually drawn.
-    assert page.evaluate("() => window.__PCL.handle.visiblePixelCount()") > 0
+    after_px = _visible_pixels(page)
+    assert 0 < after_px < before_px  # visibly fewer points drawn, not a blank frame
+    _shot(page, output_path, "2-after-height-filter")
 
     # Reset clears every range and brings all points back.
     page.get_by_test_id("reset-filters").click()
@@ -375,27 +392,38 @@ def test_point_range_filter_on_static_scene(server_url, page):
     assert page.get_by_test_id("filter-height-max").input_value() == ""
 
 
-def test_intensity_filter_on_movie(server_url, page):
+def test_intensity_filter_on_movie(server_url, page, output_path):
     # Intensity is only offered where the cloud supplies it (the movie packs it in
-    # a Draco color channel). Pause first so the visible count is stable.
+    # a Draco color channel). Pause first so the visible count is stable, then
+    # capture a before/after pair across the intensity clip.
     page.goto(server_url + DEFAULT)
     _wait_ready(page)
     page.get_by_test_id("menu-toggle").click()
     page.wait_for_function("() => window.__PCL.playing === true")
     page.get_by_test_id("play-pause").click()
     page.wait_for_function("() => window.__PCL.playing === false")
+    total = page.evaluate("() => window.__PCL.pointCount")
+    before_px = _visible_pixels(page)
+    _shot(page, output_path, "1-before-intensity-filter")
 
+    # Drop the low-intensity returns: clip the min to the middle of the data range.
     rng = page.evaluate("() => window.__PCL.scalarRanges.intensity")
     mid = (rng["min"] + rng["max"]) / 2
     _set_range(page, "filter-intensity-min", mid)
     page.wait_for_function("() => window.__PCL.visibleCount < window.__PCL.pointCount")
-    assert page.evaluate("() => window.__PCL.visibleCount") > 0
+    clipped = page.evaluate("() => window.__PCL.visibleCount")
+    # Some points clipped, but the cloud never empties.
+    assert 0 < clipped < total
+    after_px = _visible_pixels(page)
+    assert 0 < after_px < before_px
+    _shot(page, output_path, "2-after-intensity-filter")
 
 
-def test_class_toggle_filters_points(server_url, page):
+def test_class_toggle_filters_points(server_url, page, output_path):
     # Each legend class is a toggle: clicking it filters that class out of the
     # cloud, clicking again brings it back. Vegetation (id 15) is the densest class
-    # in every fixture frame, so toggling it visibly drops the point count.
+    # in every fixture frame, so toggling it visibly drops the point count — but
+    # the other classes stay on screen, so the cloud is never fully filtered.
     page.goto(
         server_url
         + DEFAULT
@@ -413,13 +441,19 @@ def test_class_toggle_filters_points(server_url, page):
     page.get_by_test_id("play-pause").click()
     page.wait_for_function("() => window.__PCL.playing === false")
     before = page.evaluate("() => window.__PCL.visibleCount")
+    before_px = _visible_pixels(page)
+    _shot(page, output_path, "1-before-class-toggle")
 
     page.get_by_test_id("class-toggle-vegetation").click()
     page.wait_for_function(
         "() => window.__PCL.settings.hiddenClasses.includes(15)")
     page.wait_for_function(
         f"() => window.__PCL.visibleCount < {before}")
+    # The toggled class is gone, but the rest of the cloud remains.
     assert page.evaluate("() => window.__PCL.visibleCount") > 0
+    after_px = _visible_pixels(page)
+    assert 0 < after_px < before_px
+    _shot(page, output_path, "2-after-class-toggle")
 
     # Toggling again restores the hidden class.
     page.get_by_test_id("class-toggle-vegetation").click()
