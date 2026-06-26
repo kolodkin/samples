@@ -75,7 +75,7 @@ html, body { margin: 0; height: 100%; background: #101418; color: #e6edf3;
   border: 1px solid #2a3340; }
 .color-legend .legend-scale { display: flex; justify-content: space-between;
   margin-top: 3px; color: #e6edf3; font-variant-numeric: tabular-nums; }
-.color-legend .legend-classes { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.color-legend .legend-classes { display: flex; flex-direction: column; gap: 4px; }
 .color-legend .legend-class { flex: 0 0 auto; display: inline-flex;
   align-items: center; gap: 4px; }
 .color-legend .swatch { width: 10px; height: 10px; border-radius: 2px;
