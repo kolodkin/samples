@@ -14,6 +14,13 @@ def _wait_ready(page):
                            timeout=60000)
 
 
+def _open_filters(page):
+    """The controls are split into View / Filters tabs; range filters, the
+    seg boxes toggle, and the class legend live under Filters. The menu must
+    already be open."""
+    page.get_by_test_id("tab-filters").click()
+
+
 def test_point_cloud_loads_and_renders(server_url, page):
     page.goto(server_url + DEFAULT)
     _wait_ready(page)
@@ -159,6 +166,24 @@ def test_menu_toggle(server_url, page):
     # Tapping the backdrop closes it again.
     page.get_by_test_id("backdrop").click()
     expect(page.get_by_test_id("controls")).to_have_count(0)
+
+
+def test_menu_tabs_switch(server_url, page):
+    page.goto(server_url + DEFAULT)
+    _wait_ready(page)
+    page.get_by_test_id("menu-toggle").click()
+    # The View tab is shown by default: its controls are present, the Filters
+    # tab's are not.
+    expect(page.get_by_test_id("scene")).to_be_visible()
+    expect(page.get_by_test_id("filter-height")).to_have_count(0)
+    # Switching to Filters swaps the bodies: range filters appear, View controls go.
+    page.get_by_test_id("tab-filters").click()
+    expect(page.get_by_test_id("filter-height")).to_be_visible()
+    expect(page.get_by_test_id("scene")).to_have_count(0)
+    # And back to View.
+    page.get_by_test_id("tab-view").click()
+    expect(page.get_by_test_id("scene")).to_be_visible()
+    expect(page.get_by_test_id("filter-height")).to_have_count(0)
 
 
 def test_camera_readout(server_url, page):
@@ -328,6 +353,8 @@ def test_seg_scene_classes_and_boxes(server_url, page):
     assert page.evaluate("() => window.__PCL.handle.colorfulPixelCount()") > 100
     # Boxes render (the fixture has one car box per frame).
     page.wait_for_function("() => window.__PCL.handle.getStats().boxCount >= 1", timeout=5000)
+    # Boxes toggle + legend live under the Filters tab.
+    _open_filters(page)
     # The toggle hides them...
     page.get_by_test_id("show-boxes").click()
     page.wait_for_function("() => window.__PCL.settings.showBoxes === false")
@@ -368,6 +395,7 @@ def test_point_range_filter_on_static_scene(server_url, page, output_path):
     page.wait_for_function(
         "() => window.__PCL.scene === 'lucy' && window.__PCL.ready === true",
         timeout=20000)
+    _open_filters(page)
     total = page.evaluate("() => window.__PCL.pointCount")
     # Nothing filtered by default: every point is visible.
     assert page.evaluate("() => window.__PCL.visibleCount") == total
@@ -402,6 +430,7 @@ def test_intensity_filter_on_movie(server_url, page, output_path):
     page.wait_for_function("() => window.__PCL.playing === true")
     page.get_by_test_id("play-pause").click()
     page.wait_for_function("() => window.__PCL.playing === false")
+    _open_filters(page)
     total = page.evaluate("() => window.__PCL.pointCount")
     before_px = _visible_pixels(page)
     _shot(page, output_path, "1-before-intensity-filter")
@@ -440,6 +469,8 @@ def test_class_toggle_filters_points(server_url, page, output_path):
     # Pause so the frame (and its class mix) is fixed under us.
     page.get_by_test_id("play-pause").click()
     page.wait_for_function("() => window.__PCL.playing === false")
+    # The class legend lives under the Filters tab.
+    _open_filters(page)
     before = page.evaluate("() => window.__PCL.visibleCount")
     before_px = _visible_pixels(page)
     _shot(page, output_path, "1-before-class-toggle")
@@ -474,6 +505,7 @@ def test_filter_stepper_buttons(server_url, page):
     page.wait_for_function(
         "() => window.__PCL.scene === 'lucy' && window.__PCL.ready === true",
         timeout=20000)
+    _open_filters(page)
     total = page.evaluate("() => window.__PCL.pointCount")
     assert page.evaluate("() => window.__PCL.visibleCount") == total
 
