@@ -356,6 +356,20 @@ def _visible_pixels(page):
     return page.evaluate("() => window.__PCL.handle.visiblePixelCount()")
 
 
+def _wait_pixels_below(page, baseline):
+    """Wait until the GPU frame reflects a just-applied range filter. applyFilter
+    updates visibleCount (CPU state) synchronously, but the `aHide` discard only
+    shows up in the framebuffer on the next rAF paint — so reading pixels right
+    after the filter can catch the pre-filter frame (a render-timing flake seen on
+    slower CI GPUs). Poll the painted pixel count until it drops below the
+    unfiltered baseline (and is non-blank)."""
+    page.wait_for_function(
+        "(b) => { const px = window.__PCL.handle.visiblePixelCount();"
+        " return px > 0 && px < b; }",
+        arg=baseline,
+    )
+
+
 def test_point_range_filter_on_static_scene(server_url, page, output_path):
     # Range filters clip points by a scalar field. Exercise on the static Lucy
     # scene so the cloud is fixed (no per-frame churn) and the visible count is
@@ -382,6 +396,7 @@ def test_point_range_filter_on_static_scene(server_url, page, output_path):
     clipped = page.evaluate("() => window.__PCL.visibleCount")
     # Some points are clipped, but never all of them — the cloud stays on screen.
     assert 0 < clipped < total
+    _wait_pixels_below(page, before_px)  # let the filtered frame paint first
     after_px = _visible_pixels(page)
     assert 0 < after_px < before_px  # visibly fewer points drawn, not a blank frame
     _shot(page, output_path, "2-after-height-filter")
@@ -414,6 +429,7 @@ def test_intensity_filter_on_movie(server_url, page, output_path):
     clipped = page.evaluate("() => window.__PCL.visibleCount")
     # Some points clipped, but the cloud never empties.
     assert 0 < clipped < total
+    _wait_pixels_below(page, before_px)  # let the filtered frame paint first
     after_px = _visible_pixels(page)
     assert 0 < after_px < before_px
     _shot(page, output_path, "2-after-intensity-filter")
