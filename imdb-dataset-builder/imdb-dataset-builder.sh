@@ -37,9 +37,14 @@ PYTHON="${PYTHON:-uv run python}"
 export AAICLICK_SQL_URL="${AAICLICK_SQL_URL:-postgresql+asyncpg://aaiclick:secret@localhost:5432/aaiclick}"
 export AAICLICK_CH_URL="${AAICLICK_CH_URL:-clickhouse://default:benchmark@localhost:8123/default}"
 
+# Orchestration logs: aaiclick defaults to /var/log/aaiclick in distributed
+# mode on Linux, which a non-root user (e.g. a CI runner) cannot create. Point
+# it at a writable tmp/logs dir by default; override AAICLICK_LOG_DIR to relocate.
+export AAICLICK_LOG_DIR="${AAICLICK_LOG_DIR:-tmp/logs}"
+
 WORKER_LOG="tmp/imdb_worker.log"
 export AAICLICK_REPORT_FILE="tmp/imdb_report.md"
-mkdir -p tmp
+mkdir -p tmp "$AAICLICK_LOG_DIR"
 
 # Parse flags
 PARAMS_PARTS=()

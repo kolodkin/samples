@@ -18,6 +18,9 @@ on:
         description: 'Publish curated dataset to Hugging Face (requires HF_TOKEN)'
         type: boolean
         default: false
+      hf_repo_id:
+        description: 'Target Hugging Face dataset repo (owner/name); the HF_TOKEN must have write access to this namespace. Leave blank to use the pipeline default.'
+        type: string
       publish_airtable:
         description: 'Publish showcase sample to Airtable (requires AIRTABLE_* secrets)'
         type: boolean
@@ -85,6 +88,8 @@ jobs:
         env:
           SAMPLE: ${{ inputs.sample }}
           YEAR_FROM: ${{ inputs.year_from }}
+          # Blank input is dropped below so the pipeline's own default applies.
+          HF_REPO_ID_INPUT: ${{ inputs.hf_repo_id }}
           PUBLISH_HF: ${{ inputs.publish_hf }}
           PUBLISH_AIRTABLE: ${{ inputs.publish_airtable }}
           # Secrets only flow when the matching publish toggle is on.
@@ -92,6 +97,9 @@ jobs:
           AIRTABLE_API_KEY: ${{ inputs.publish_airtable && secrets.AIRTABLE_API_KEY || '' }}
           AIRTABLE_BASE_ID: ${{ inputs.publish_airtable && secrets.AIRTABLE_BASE_ID || '' }}
         run: |
+          # Only export HF_REPO_ID when the input was given; an empty value
+          # would override the pipeline's built-in default with "".
+          if [ -n "$HF_REPO_ID_INPUT" ]; then export HF_REPO_ID="$HF_REPO_ID_INPUT"; fi
           FLAGS=()
           if [ "$SAMPLE" = "true" ]; then FLAGS+=(--sample); fi
           FLAGS+=(--year-from "$YEAR_FROM")

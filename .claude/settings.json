@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "mcp__plugin_devpowers_github"
+      "mcp__plugin_devpowers_github",
+      "mcp__plugin_devpowers_github__*"
     ]
   }
 }
