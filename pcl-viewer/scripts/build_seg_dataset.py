@@ -69,10 +69,11 @@ tags: [point-cloud, lidar, kitti, semantic-kitti, draco]
 Draco-compressed LiDAR frames for the
 [pcl-viewer](https://github.com/kolodkin/samples) demo, in two folders:
 
-- **`geometry/`** — positions-only sweeps from KITTI raw drive `2011_09_26_drive_0005`.
-- **`seg/`** — SemanticKITTI sequence slice with a per-point **class id** packed in
-  the Draco color attribute, plus `boxes.json` (one axis-aligned 3D box per thing
-  instance per frame).
+- **`geometry/`** — sweeps from KITTI raw drive `2011_09_26_drive_0005`, positions
+  plus per-point intensity (Draco color green channel).
+- **`seg/`** — SemanticKITTI sequence slice with a per-point **class id** (Draco
+  color red channel) and **intensity** (green channel), plus `boxes.json` (one
+  axis-aligned 3D box per thing instance per frame).
 
 ## Attribution & license
 
@@ -88,8 +89,9 @@ ANNOTATIONS = """\
 # Annotations — seg/
 
 Each `NNNNNN.drc` is a SemanticKITTI sweep, voxel-downsampled to ~{target:,}
-points (positions only), Draco-encoded with the per-point **19-class learning id**
-stored in the color attribute's red channel ({bits}-bit positions). `boxes.json`
+points, Draco-encoded ({bits}-bit positions) with the per-point **19-class
+learning id** in the color attribute's red channel and per-point **intensity**
+(laser reflectance, 0–255) in the green channel. `boxes.json`
 maps each frame to a list of axis-aligned 3D boxes (one per thing instance):
 `{{ "NNNNNN": [ {{"cls": id, "center": [x,y,z], "size": [sx,sy,sz]}} ] }}`, in the
 source Velodyne frame (metres, z-up, sensor at origin).
@@ -239,6 +241,7 @@ def process(seq: str, start: int, limit: int, src_dir: Path, out: Path) -> int:
     for i, binpath in enumerate(bins):
         raw = np.fromfile(binpath, dtype=np.float32).reshape(-1, 4)
         xyz = raw[:, :3]
+        intensity = raw[:, 3]
         lab = np.fromfile(label_dir / f"{binpath.stem}.label", dtype=np.uint32)
         cls = remap_classes(lab & 0xFFFF)
         inst = (lab >> 16).astype(np.uint32)
@@ -246,6 +249,7 @@ def process(seq: str, start: int, limit: int, src_dir: Path, out: Path) -> int:
         xyz_d, cls_d, inst_d = xyz[idx], cls[idx], inst[idx]
         colors = np.zeros((len(xyz_d), 3), dtype=np.uint8)
         colors[:, 0] = cls_d
+        colors[:, 1] = np.clip(intensity[idx] * 255.0, 0, 255).astype(np.uint8)
         buf = DracoPy.encode(xyz_d.astype(np.float32), colors=colors,
                              quantization_bits=QUANT_BITS)
         (out / f"{i:06d}.drc").write_bytes(buf)
