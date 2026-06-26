@@ -13,6 +13,13 @@ const SCENES = [
   { id: 'lucy', label: 'Stanford Lucy' },
 ];
 
+// The menu's two tabs: View owns scene/transport/appearance, Filters owns the
+// range filters + class legend. Rendered as a segmented button bar.
+const TABS = [
+  { id: 'view', label: 'View' },
+  { id: 'filters', label: 'Filters' },
+];
+
 // id -> label lookup over the shared mode list. Which modes are actually offered
 // per scene (and the applied one) is decided by the viewer and pushed in via the
 // onColorState callback below; the dropdown renders only those.
@@ -267,12 +274,10 @@ function App() {
       <div class="panel controls" data-testid="controls">
         <h1>PCL Viewer</h1>
         <div class="tabs" role="tablist">
-          <button class=${`tab${tab === 'view' ? ' active' : ''}`} role="tab"
-                  data-testid="tab-view" aria-selected=${tab === 'view' ? 'true' : 'false'}
-                  onClick=${() => setTab('view')}>View</button>
-          <button class=${`tab${tab === 'filters' ? ' active' : ''}`} role="tab"
-                  data-testid="tab-filters" aria-selected=${tab === 'filters' ? 'true' : 'false'}
-                  onClick=${() => setTab('filters')}>Filters</button>
+          ${TABS.map((t) => html`
+            <button class=${tab === t.id ? 'tab active' : 'tab'} role="tab"
+                    data-testid=${`tab-${t.id}`} aria-selected=${tab === t.id ? 'true' : 'false'}
+                    onClick=${() => setTab(t.id)}>${t.label}</button>`)}
         </div>
         ${tab === 'view' && html`
           <label>Scene</label>
