@@ -1,4 +1,5 @@
 """End-to-end test of the PCL viewer using Playwright (Chromium)."""
+import os
 import time
 
 from playwright.sync_api import expect
@@ -335,3 +336,164 @@ def test_seg_scene_classes_and_boxes(server_url, page):
     page.wait_for_function("() => window.__PCL.settings.showBoxes === true")
     # Legend is shown for the seg scene.
     assert page.get_by_test_id("legend").is_visible()
+
+
+def _set_range(page, tid, value):
+    page.get_by_test_id(tid).evaluate(
+        "(el, v) => { el.value = v; el.dispatchEvent(new Event('input', {bubbles:true})); }",
+        str(value),
+    )
+
+
+def _shot(page, output_path, name):
+    """Save a screenshot into this test's Playwright artifact folder so the
+    e2e-screenshots-report bundles it. Names sort within the folder, so a
+    `1-before` / `2-after` pair renders adjacent in the report."""
+    page.screenshot(path=os.path.join(output_path, f"{name}.png"))
+
+
+def _visible_pixels(page):
+    return page.evaluate("() => window.__PCL.handle.visiblePixelCount()")
+
+
+def test_point_range_filter_on_static_scene(server_url, page, output_path):
+    # Range filters clip points by a scalar field. Exercise on the static Lucy
+    # scene so the cloud is fixed (no per-frame churn) and the visible count is
+    # deterministic. Height and distance are available on every scene. Capture a
+    # before/after pair showing a clear — but partial — change.
+    page.goto(server_url + DEFAULT + "&lucyUrl=/fixtures/lucy/lucy_fixture.ply")
+    _wait_ready(page)
+    page.get_by_test_id("menu-toggle").click()
+    page.get_by_test_id("scene").select_option("lucy")
+    page.wait_for_function(
+        "() => window.__PCL.scene === 'lucy' && window.__PCL.ready === true",
+        timeout=20000)
+    total = page.evaluate("() => window.__PCL.pointCount")
+    # Nothing filtered by default: every point is visible.
+    assert page.evaluate("() => window.__PCL.visibleCount") == total
+    before_px = _visible_pixels(page)
+    _shot(page, output_path, "1-before-height-filter")
+
+    # Clip the top half off by height: cap the max at the middle of the data range.
+    rng = page.evaluate("() => window.__PCL.scalarRanges.height")
+    mid = (rng["min"] + rng["max"]) / 2
+    _set_range(page, "filter-height-max", mid)
+    page.wait_for_function("() => window.__PCL.visibleCount < window.__PCL.pointCount")
+    clipped = page.evaluate("() => window.__PCL.visibleCount")
+    # Some points are clipped, but never all of them — the cloud stays on screen.
+    assert 0 < clipped < total
+    after_px = _visible_pixels(page)
+    assert 0 < after_px < before_px  # visibly fewer points drawn, not a blank frame
+    _shot(page, output_path, "2-after-height-filter")
+
+    # Reset clears every range and brings all points back.
+    page.get_by_test_id("reset-filters").click()
+    page.wait_for_function("() => window.__PCL.visibleCount === window.__PCL.pointCount")
+    assert page.get_by_test_id("filter-height-max").input_value() == ""
+
+
+def test_intensity_filter_on_movie(server_url, page, output_path):
+    # Intensity is only offered where the cloud supplies it (the movie packs it in
+    # a Draco color channel). Pause first so the visible count is stable, then
+    # capture a before/after pair across the intensity clip.
+    page.goto(server_url + DEFAULT)
+    _wait_ready(page)
+    page.get_by_test_id("menu-toggle").click()
+    page.wait_for_function("() => window.__PCL.playing === true")
+    page.get_by_test_id("play-pause").click()
+    page.wait_for_function("() => window.__PCL.playing === false")
+    total = page.evaluate("() => window.__PCL.pointCount")
+    before_px = _visible_pixels(page)
+    _shot(page, output_path, "1-before-intensity-filter")
+
+    # Drop the low-intensity returns: clip the min to the middle of the data range.
+    rng = page.evaluate("() => window.__PCL.scalarRanges.intensity")
+    mid = (rng["min"] + rng["max"]) / 2
+    _set_range(page, "filter-intensity-min", mid)
+    page.wait_for_function("() => window.__PCL.visibleCount < window.__PCL.pointCount")
+    clipped = page.evaluate("() => window.__PCL.visibleCount")
+    # Some points clipped, but the cloud never empties.
+    assert 0 < clipped < total
+    after_px = _visible_pixels(page)
+    assert 0 < after_px < before_px
+    _shot(page, output_path, "2-after-intensity-filter")
+
+
+def test_class_toggle_filters_points(server_url, page, output_path):
+    # Each legend class is a toggle: clicking it filters that class out of the
+    # cloud, clicking again brings it back. Vegetation (id 15) is the densest class
+    # in every fixture frame, so toggling it visibly drops the point count — but
+    # the other classes stay on screen, so the cloud is never fully filtered.
+    page.goto(
+        server_url
+        + DEFAULT
+        + "&segMovieBase=/fixtures/seg/&segMovieCount=4&segBoxesUrl=/fixtures/seg/boxes.json"
+    )
+    _wait_ready(page)
+    page.get_by_test_id("menu-toggle").click()
+    page.get_by_test_id("scene").select_option("seg")
+    page.wait_for_function(
+        "() => window.__PCL.scene === 'seg' && window.__PCL.ready === true"
+        " && window.__PCL.frameCount === 4",
+        timeout=60000,
+    )
+    # Pause so the frame (and its class mix) is fixed under us.
+    page.get_by_test_id("play-pause").click()
+    page.wait_for_function("() => window.__PCL.playing === false")
+    before = page.evaluate("() => window.__PCL.visibleCount")
+    before_px = _visible_pixels(page)
+    _shot(page, output_path, "1-before-class-toggle")
+
+    page.get_by_test_id("class-toggle-vegetation").click()
+    page.wait_for_function(
+        "() => window.__PCL.settings.hiddenClasses.includes(15)")
+    page.wait_for_function(
+        f"() => window.__PCL.visibleCount < {before}")
+    # The toggled class is gone, but the rest of the cloud remains.
+    assert page.evaluate("() => window.__PCL.visibleCount") > 0
+    after_px = _visible_pixels(page)
+    assert 0 < after_px < before_px
+    _shot(page, output_path, "2-after-class-toggle")
+
+    # Toggling again restores the hidden class.
+    page.get_by_test_id("class-toggle-vegetation").click()
+    page.wait_for_function(
+        "() => !window.__PCL.settings.hiddenClasses.includes(15)")
+    page.wait_for_function(
+        f"() => window.__PCL.visibleCount === {before}")
+
+
+def test_filter_stepper_buttons(server_url, page):
+    # Each filter bound has −/+ buttons. From an empty (unbounded) bound the first
+    # click materializes a full-range handle, and further clicks step it inward
+    # until points are clipped; the opposite button steps back out to all-visible.
+    page.goto(server_url + DEFAULT + "&lucyUrl=/fixtures/lucy/lucy_fixture.ply")
+    _wait_ready(page)
+    page.get_by_test_id("menu-toggle").click()
+    page.get_by_test_id("scene").select_option("lucy")
+    page.wait_for_function(
+        "() => window.__PCL.scene === 'lucy' && window.__PCL.ready === true",
+        timeout=20000)
+    total = page.evaluate("() => window.__PCL.pointCount")
+    assert page.evaluate("() => window.__PCL.visibleCount") == total
+
+    # Stepping the max bound down: first click fills the input with a number.
+    dec = page.get_by_test_id("filter-height-max-dec")
+    dec.click()
+    assert page.get_by_test_id("filter-height-max").input_value() != ""
+    page.wait_for_function(
+        "() => window.__PCL.handle.getStats().filters.height.max !== null")
+    # Keep stepping inward until some points are clipped (never all).
+    for _ in range(15):
+        if page.evaluate("() => window.__PCL.visibleCount") < total:
+            break
+        dec.click()
+    assert 0 < page.evaluate("() => window.__PCL.visibleCount") < total
+
+    # The + button steps the max back out until every point is visible again.
+    inc = page.get_by_test_id("filter-height-max-inc")
+    for _ in range(15):
+        if page.evaluate("() => window.__PCL.visibleCount") == total:
+            break
+        inc.click()
+    assert page.evaluate("() => window.__PCL.visibleCount") == total

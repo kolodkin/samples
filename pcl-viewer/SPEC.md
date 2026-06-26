@@ -12,11 +12,11 @@ Python server, never a CDN at test time). Preact renders via `htm` — no JSX/tr
 
 ## Component boundaries
 - `viewer.js` — `createViewer(canvas, { onColorState })` returns an imperative
-  handle (`loadScene`, `loadFile`, `play`, `pause`, `setPointSize`,
-  `setColorMode`, `setPointShape`, `resetCamera`, `getStats`,
-  `visiblePixelCount`, `dispose`). Owns all three.js state. No Preact. The optional
-  `onColorState` callback pushes color-mode changes back to the UI (see
-  "Scene-dependent color modes").
+  handle (`loadScene`, `loadFile`, `play`, `pause`, `setPointSize`, `setColorMode`,
+  `setPointShape`, `setFilter`, `setClassHidden`, `resetFilters`, `resetCamera`,
+  `getStats`, `visiblePixelCount`, `dispose`).
+  Owns all three.js state. No Preact. The optional `onColorState` callback pushes
+  color-mode changes back to the UI (see "Scene-dependent color modes").
 - `loaders.js` — `parseLocalFile(file)` parses a user-supplied `.pcd`/`.csv`/
   `.parquet` into a plain `{positions, intensity, classIds, classNames}` (see
   "Loading local files"). No three.js scene state; uses `PCDLoader`/`hyparquet`
@@ -87,12 +87,46 @@ flips the uniform at runtime — no shader recompile. Going through `onBeforeCom
 and per-vertex color ramps working unchanged — the shading multiplies into
 `diffuseColor`, whatever its source.
 
+## Point filters (range + class)
+Two filter kinds clip which points draw, sharing one mechanism: a per-point
+`aHide` vertex attribute (1 = filtered out) that the same `onBeforeCompile` shader
+forwards to the fragment stage and `discard`s. The attribute defaults to 0 when
+absent, so filtering **fails open** — a geometry without it shows every point.
+
+- **Range filters** clip by a scalar field — **height**, **distance**, or
+  **intensity** (offered only where the cloud supplies it, gated on the same
+  offered-modes set as the color dropdown). Each is a `min`/`max` pair; a blank
+  bound is unbounded (the default `null`/`null` passes everything, so **max = ∞**
+  out of the box). Each bound carries **−/+ stepper buttons** sized to that field's
+  data range (a "nice" 1/2/5×10^k step from `niceStep`, ≈5 for 0–255 intensity,
+  ≈0.005 for the tiny normalized height span); from an empty bound the first click
+  materializes a full-range handle that clips nothing, then steps inward, staying
+  clamped to the step-aligned data envelope. `computeColorBuffers` now returns `{colors, scalars}` — the
+  ramp colors as before, plus the raw per-point values the filter reads — and the
+  data's live min/max per field (`state.scalarRanges`) is shown as input
+  placeholders.
+- **Class filters** make the class legend tickable: each swatch is a toggle button
+  that adds/removes its class id from `state.settings.hiddenClasses`. Hidden classes
+  drop out of the cloud; clicking again brings them back. The seg scene's ids map to
+  `SEG_PALETTE` indices; a loaded file with a class column gets the same treatment,
+  its ids being the enumeration index from its dynamic palette (both supply a
+  `scalars.classId`, so one filter path serves both).
+
+`applyFilter` recomputes `aHide` from the active filters whenever a setting changes
+and on every geometry install (so each movie frame is re-filtered against the live
+settings), tracking the survivor count in `state.visibleCount`. **Reset filters**
+clears every range and un-hides all classes. Filters and hidden classes **persist**
+across frames and scenes. `getStats()` exposes `visibleCount`, `scalarRanges`,
+`filters`, and `hiddenClasses` for e2e introspection.
+
 ## Controls
 | Control       | Effect                                              |
 |---------------|-----------------------------------------------------|
 | Point shape   | lit sphere impostor ("ball", default) vs. flat square sprite |
 | Point size    | `PointsMaterial.size` (0.002–0.05)                  |
 | Color mode    | flat vs. per-vertex ramp by height / distance (plus by-intensity where a source carries it), or palette by class (seg scene) |
+| Point filters | clip the cloud by height / distance / intensity range (min/max, blank = ∞) |
+| Classes (seg scene + loaded files with a class column) | click a legend swatch to filter that class in/out |
 | Movie (movie + seg scenes) | play/pause, frame step/seek (the sequence loops continuously) |
 | Show boxes (seg scene only) | toggle the per-instance 3D bounding boxes |
 | Load PCL…     | load a local `.pcd`/`.csv`/`.parquet` cloud (see "Loading local files") |
@@ -154,11 +188,14 @@ order into `classIds` + `classNames`; the viewer builds a dynamic vivid palette
 (`generateClassPalette`, golden-angle HSL) — the seg scene's fixed SemanticKITTI
 palette doesn't apply to arbitrary labels — and `computeColorBuffers` maps each id
 through it into the `class` buffer (the loaded path passes ids/colors directly
-rather than smuggling them through a Draco color channel like seg). A `name →
-swatch` legend (`state.classLegend`, surfaced via `getStats`) renders in the panel,
-reusing the seg scene's `legend` markup. "By class" is the default mode when a file
-carries classes; otherwise the active scalar mode carries over (flat fallback as
-usual). Loaded clouds use the **object** normalization profile (no z-up rotation,
+rather than smuggling them through a Draco color channel like seg), and also fills
+`scalars.classId` so the loaded file's legend is **tickable** like the seg scene's —
+the same class-filter path serves both. A `name → swatch` legend
+(`state.classLegend`, surfaced via `getStats`) renders in the panel, reusing the seg
+scene's tickable `legend` markup (class id = enumeration index). Loading a file
+resets the range filters and hidden classes so the new cloud starts unfiltered.
+"By class" is the default mode when a file carries classes; otherwise the active
+scalar mode carries over (flat fallback as usual). Loaded clouds use the **object** normalization profile (no z-up rotation,
 centered, framed front-on). The Scene dropdown gains a temporary entry showing the
 file name while loaded; switching to a built-in scene clears it.
 

@@ -75,13 +75,24 @@ const SEG_PALETTE = [
 // shade it (ambient + diffuse + a tight specular highlight) so every point reads
 // as a tiny 3D ball. The light is fixed in view space, so the highlights stay
 // put as the cloud orbits — like a studio key light on the lens.
+// Per-point range/class filtering rides the same custom shader. Each geometry
+// carries an `aHide` attribute (1 = filtered out, 0 = shown) computed on the CPU
+// in applyFilter; the vertex stage forwards it and the fragment stage discards
+// hidden points. The attribute defaults to 0 when absent, so a geometry without
+// it (or before applyFilter runs) shows every point — filtering fails open.
 function installPointShapeShading(material) {
   material.userData.ballUniform = { value: 1 }; // 1 = ball, 0 = square
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uBall = material.userData.ballUniform;
-    shader.fragmentShader = 'uniform float uBall;\n' + shader.fragmentShader.replace(
+    shader.vertexShader = 'attribute float aHide;\nvarying float vHide;\n' +
+      shader.vertexShader.replace(
+        '#include <begin_vertex>',
+        '#include <begin_vertex>\n  vHide = aHide;');
+    shader.fragmentShader = 'uniform float uBall;\nvarying float vHide;\n' +
+      shader.fragmentShader.replace(
       '#include <color_fragment>',
       `#include <color_fragment>
+      if (vHide > 0.5) discard;
       if (uBall > 0.5) {
         // gl_PointCoord is top-left origin; map to [-1,1] and flip Y so the
         // light reads as coming from above-front. Outside the unit disc -> clip.
@@ -125,6 +136,7 @@ export function createViewer(canvas, { onColorState } = {}) {
 
   let points = null;       // the live THREE.Points object
   let colorBuffers = {};   // mode name -> Float32Array of per-point ramp colors
+  let currentScalars = null; // { height, distance, intensity?, classId? } raw per-point fields
   let sceneRadius = 0.5;   // normalized robust radius of the scan
   let activeProfile = PROFILES.kitti; // normalization/framing for the live scene
 
@@ -149,7 +161,20 @@ export function createViewer(canvas, { onColorState } = {}) {
     error: null,
     boxCount: 0,
     colorModes: ['flat'], // modes the live cloud supports (drives the UI dropdown)
-    settings: { pointSize: 0.004, colorMode: 'distance', pointShape: 'ball', showBoxes: true },
+    visibleCount: 0,      // points passing the active filters (== pointCount when none)
+    scalarRanges: {},     // field -> { min, max } over the live cloud (UI hints)
+    settings: {
+      pointSize: 0.004, colorMode: 'distance', pointShape: 'ball', showBoxes: true,
+      // Range filters per scalar field; null bound = unbounded (the default, so
+      // nothing is filtered). hiddenClasses lists class ids toggled off via the
+      // seg legend. Both persist across frames/scenes and are applied in applyFilter.
+      filters: {
+        height: { min: null, max: null },
+        distance: { min: null, max: null },
+        intensity: { min: null, max: null },
+      },
+      hiddenClasses: [],
+    },
     framesRendered: 0,
     fileName: null,       // name of the loaded local file (file scene only)
     classLegend: [],      // [{name, hex}] for the loaded file's class enumeration
@@ -217,11 +242,14 @@ export function createViewer(canvas, { onColorState } = {}) {
     return colors;
   }
 
-  // Precompute a ramp buffer for every scalar mode the cloud can supply: height
-  // (y), radial distance from the sensor (origin), and intensity. Movie/seg Draco
-  // frames pack scalars into the color attribute, so an explicit per-scene channel
-  // map (`opts.classChannel`, `opts.intensityChannel`) says which channel carries
-  // what; static clouds pass no map and fall back to native attributes.
+  // Precompute, for every scalar mode the cloud can supply, both a ramp color
+  // buffer (for "color by") and the raw per-point values (for range filtering):
+  // height (y), radial distance from the sensor (origin), and intensity. Movie/seg
+  // Draco frames pack scalars into the color attribute, so an explicit per-scene
+  // channel map (`opts.classChannel`, `opts.intensityChannel`) says which channel
+  // carries what; static clouds pass no map and fall back to native attributes.
+  // Returns { colors, scalars }: colors keyed by mode id (drives offeredModes/the
+  // color dropdown), scalars the raw fields the filter reads.
   function computeColorBuffers(geometry, opts = {}) {
     const pos = geometry.getAttribute('position');
     const n = pos.count;
@@ -231,34 +259,38 @@ export function createViewer(canvas, { onColorState } = {}) {
       height[i] = pos.getY(i);
       distance[i] = Math.hypot(pos.getX(i), pos.getY(i), pos.getZ(i));
     }
-    const buffers = { height: rampColors(height), distance: rampColors(distance) };
+    const colors = { height: rampColors(height), distance: rampColors(distance) };
+    const scalars = { height, distance };
     const color = geometry.getAttribute('color');
 
     // Intensity: a movie channel if the scene maps one, else a native PCD
     // `intensity` field. Raw channel bytes are fine — rampColors clamps relatively.
+    let intensity;
     if (opts.intensityChannel != null && color) {
       const ch = opts.intensityChannel;
-      const vals = Float32Array.from({ length: n }, (_, i) => color.getComponent(i, ch));
-      buffers.intensity = rampColors(vals);
+      intensity = Float32Array.from({ length: n }, (_, i) => color.getComponent(i, ch));
     } else {
-      const intensity = geometry.getAttribute('intensity');
-      if (intensity) {
-        const vals = Float32Array.from({ length: n }, (_, i) => intensity.getX(i));
-        buffers.intensity = rampColors(vals);
-      }
+      const attr = geometry.getAttribute('intensity');
+      if (attr) intensity = Float32Array.from({ length: n }, (_, i) => attr.getX(i));
     }
+    if (intensity) { colors.intensity = rampColors(intensity); scalars.intensity = intensity; }
 
     // Class (loaded files): per-point ids plus an explicit palette built from the
-    // file's class enumeration — map each id straight through the palette.
+    // file's class enumeration — map each id straight through the palette. The raw
+    // ids go into scalars.classId too, so the tickable legend filter works the
+    // same way it does for the seg scene.
     if (opts.classIds && opts.classColors) {
       const ids = opts.classIds;
       const palette = opts.classColors;
       const out = new Float32Array(n * 3);
+      const classId = new Float32Array(n);
       for (let i = 0; i < n; i++) {
+        classId[i] = ids[i];
         const c = palette[ids[i]] || palette[0];
         out[i * 3] = c.r; out[i * 3 + 1] = c.g; out[i * 3 + 2] = c.b;
       }
-      buffers.class = out;
+      colors.class = out;
+      scalars.classId = classId;
     }
 
     // Class (seg scene): the seg scene packs the per-point id (raw integer) in a
@@ -268,14 +300,17 @@ export function createViewer(canvas, { onColorState } = {}) {
     if (opts.classChannel != null && color) {
       const ch = opts.classChannel;
       const out = new Float32Array(n * 3);
+      const classId = new Float32Array(n);
       for (let i = 0; i < n; i++) {
         const id = Math.round(color.getComponent(i, ch));
+        classId[i] = id;
         const c = SEG_PALETTE[id] || SEG_PALETTE[0];
         out[i * 3] = c.r; out[i * 3 + 1] = c.g; out[i * 3 + 2] = c.b;
       }
-      buffers.class = out;
+      colors.class = out;
+      scalars.classId = classId;
     }
-    return buffers;
+    return { colors, scalars };
   }
 
   // Push the applied mode + available modes to the UI, but only when either
@@ -367,17 +402,72 @@ export function createViewer(canvas, { onColorState } = {}) {
     return m;
   }
 
+  // True when a scalar value falls outside an inclusive [min, max] range; a null
+  // bound is treated as unbounded on that side (so the default null/null passes
+  // everything).
+  function outOfRange(v, range) {
+    return (range.min != null && v < range.min) || (range.max != null && v > range.max);
+  }
+
+  // Record the min/max of each filterable scalar over the live cloud so the UI can
+  // hint the achievable range (and so callers know what to type). Cheap O(n) pass,
+  // run once per geometry install rather than per filter change.
+  function computeScalarRanges() {
+    const ranges = {};
+    for (const key of ['height', 'distance', 'intensity']) {
+      const a = currentScalars && currentScalars[key];
+      if (!a || !a.length) continue;
+      let mn = Infinity, mx = -Infinity;
+      for (let i = 0; i < a.length; i++) {
+        if (a[i] < mn) mn = a[i];
+        if (a[i] > mx) mx = a[i];
+      }
+      ranges[key] = { min: mn, max: mx };
+    }
+    state.scalarRanges = ranges;
+  }
+
+  // Recompute the per-point `aHide` attribute from the active filters and push it
+  // onto the live geometry. A point is hidden if any ranged field falls outside
+  // its range or its class is toggled off. Runs on every geometry install (so each
+  // movie frame is filtered) and whenever a filter setting changes.
+  function applyFilter() {
+    if (!points || !currentScalars) return;
+    const geom = points.geometry;
+    const n = geom.getAttribute('position').count;
+    const { height, distance, intensity, classId } = currentScalars;
+    const f = state.settings.filters;
+    const hidden = state.settings.hiddenClasses;
+    const hiddenSet = hidden.length ? new Set(hidden) : null;
+    const hide = new Float32Array(n);
+    let visible = 0;
+    for (let i = 0; i < n; i++) {
+      const out =
+        (height && outOfRange(height[i], f.height)) ||
+        (distance && outOfRange(distance[i], f.distance)) ||
+        (intensity && outOfRange(intensity[i], f.intensity)) ||
+        (hiddenSet && classId && hiddenSet.has(classId[i]));
+      hide[i] = out ? 1 : 0;
+      if (!out) visible++;
+    }
+    geom.setAttribute('aHide', new THREE.BufferAttribute(hide, 1));
+    state.visibleCount = visible;
+  }
+
   // Install (or swap to) a normalized geometry + its precomputed ramp buffers.
   // The material persists across movie frame swaps so point size/shape stick.
-  function installGeometry(geometry, buffers) {
+  function installGeometry(geometry, colors, scalars) {
     if (!points) {
       points = new THREE.Points(geometry, makeMaterial());
       scene.add(points);
     } else {
       points.geometry = geometry;
     }
-    colorBuffers = buffers;
+    colorBuffers = colors;
+    currentScalars = scalars;
     applyColorMode(state.settings.colorMode);
+    computeScalarRanges();
+    applyFilter();
     state.pointCount = geometry.getAttribute('position').count;
   }
 
@@ -407,6 +497,7 @@ export function createViewer(canvas, { onColorState } = {}) {
       points = null;
     }
     colorBuffers = {};
+    currentScalars = null;
   }
 
   // Load a static cloud's geometry, picking the loader by file extension. PCD
@@ -432,9 +523,9 @@ export function createViewer(canvas, { onColorState } = {}) {
     const geom = await loadGeometry(url);
     if (token !== loadToken) { geom.dispose(); return; }
     normalizeGeometry(geom, profile);
-    const buffers = computeColorBuffers(geom);
-    state.colorModes = offeredModes(buffers); // once per scene, before install
-    installGeometry(geom, buffers);
+    const { colors, scalars } = computeColorBuffers(geom);
+    state.colorModes = offeredModes(colors); // once per scene, before install
+    installGeometry(geom, colors, scalars);
     resize();
     frameCamera(profile);
     state.ready = true;
@@ -454,6 +545,15 @@ export function createViewer(canvas, { onColorState } = {}) {
     state.scene = 'file';
     state.fileName = file.name;
     state.classLegend = [];
+    // A freshly loaded file starts unfiltered: stale range bounds or hidden class
+    // ids from a previous scene would otherwise clip its differently-scaled,
+    // differently-enumerated points.
+    state.settings.filters = {
+      height: { min: null, max: null },
+      distance: { min: null, max: null },
+      intensity: { min: null, max: null },
+    };
+    state.settings.hiddenClasses = [];
     activeProfile = SCENE_PROFILE.file;
     teardownScene();
 
@@ -482,13 +582,13 @@ export function createViewer(canvas, { onColorState } = {}) {
     }
 
     normalizeGeometry(geom, activeProfile);
-    const buffers = computeColorBuffers(geom, { classIds: parsed.classIds, classColors });
-    state.colorModes = offeredModes(buffers); // once per load, before install
+    const { colors, scalars } = computeColorBuffers(geom, { classIds: parsed.classIds, classColors });
+    state.colorModes = offeredModes(colors); // once per load, before install
     // Default to "by class" when the file carries classes (the point of loading
     // labeled data); otherwise keep the active scalar mode (applyColorMode falls
     // back to flat if the file can't supply it).
-    if (buffers.class) state.settings.colorMode = 'class';
-    installGeometry(geom, buffers);
+    if (colors.class) state.settings.colorMode = 'class';
+    installGeometry(geom, colors, scalars);
     resize();
     frameCamera(activeProfile);
     state.ready = true;
@@ -514,7 +614,8 @@ export function createViewer(canvas, { onColorState } = {}) {
     const geom = await dracoLoad(urlFn(i));
     if (token !== loadToken) { geom.dispose(); return null; }
     normalizeMovieFrame(geom, shared);
-    return { geometry: geom, buffers: computeColorBuffers(geom, colorChannels) };
+    const { colors, scalars } = computeColorBuffers(geom, colorChannels);
+    return { geometry: geom, colors, scalars };
   }
 
   // Transform an axis-aligned source-frame (z-up, metres) box through the same
@@ -593,8 +694,8 @@ export function createViewer(canvas, { onColorState } = {}) {
     state.frameCount = count;
     state.frameIndex = 0;
     state.loadProgress = { loaded: 1, total: count };
-    state.colorModes = offeredModes(first.buffers); // every frame shares these
-    installGeometry(first.geometry, first.buffers);
+    state.colorModes = offeredModes(first.colors); // every frame shares these
+    installGeometry(first.geometry, first.colors, first.scalars);
     if (movie.onFrame) movie.onFrame(0, shared);
     resize();
     frameCamera();
@@ -656,7 +757,7 @@ export function createViewer(canvas, { onColorState } = {}) {
     if (!movie || !movie.frames[i]) return;
     movie.index = i;
     state.frameIndex = i;
-    installGeometry(movie.frames[i].geometry, movie.frames[i].buffers);
+    installGeometry(movie.frames[i].geometry, movie.frames[i].colors, movie.frames[i].scalars);
     if (movie.onFrame) movie.onFrame(i, movie.shared);
   }
 
@@ -776,6 +877,30 @@ export function createViewer(canvas, { onColorState } = {}) {
       if (points) { points.material.size = n; points.material.needsUpdate = true; }
     },
     setColorMode(mode) { applyColorMode(mode); },
+    // Set one field's range filter. `range` carries min/max; pass null (or omit) a
+    // bound to leave it unbounded. Reapplies immediately to the live cloud.
+    setFilter(field, range = {}) {
+      const f = state.settings.filters[field];
+      if (!f) return;
+      f.min = range.min == null ? null : range.min;
+      f.max = range.max == null ? null : range.max;
+      applyFilter();
+    },
+    // Toggle a class id in/out of the cloud (driven by the seg legend).
+    setClassHidden(id, hidden) {
+      const set = new Set(state.settings.hiddenClasses);
+      if (hidden) set.add(id); else set.delete(id);
+      state.settings.hiddenClasses = [...set].sort((a, b) => a - b);
+      applyFilter();
+    },
+    // Clear every range filter and un-hide all classes.
+    resetFilters() {
+      for (const k of Object.keys(state.settings.filters)) {
+        state.settings.filters[k] = { min: null, max: null };
+      }
+      state.settings.hiddenClasses = [];
+      applyFilter();
+    },
     setShowBoxes(on) {
       showBoxes = !!on;
       state.settings.showBoxes = showBoxes;
@@ -795,6 +920,10 @@ export function createViewer(canvas, { onColorState } = {}) {
       return {
         ready: state.ready,
         pointCount: state.pointCount,
+        visibleCount: state.visibleCount,     // points passing the active filters
+        scalarRanges: state.scalarRanges,     // field -> {min,max} over the live cloud
+        filters: state.settings.filters,      // active range filters
+        hiddenClasses: state.settings.hiddenClasses, // class ids toggled off
         cameraDistance: e.distanceTo(t),
         eye: vec(e),
         target: vec(t),

@@ -46,6 +46,22 @@ def test_load_csv_with_header(server_url, page):
     expect(page.get_by_test_id("file-name")).to_have_text("cloud.csv")
 
 
+def test_loaded_file_class_legend_filters(server_url, page):
+    # A loaded file's class legend is tickable like the seg scene's: toggling a
+    # class off drops its points from the cloud (shared class-filter path).
+    _open_menu(page, server_url)
+    _load(page, "cloud.csv")
+    total = page.evaluate("() => window.__PCL.pointCount")
+    assert page.evaluate("() => window.__PCL.visibleCount") == total
+    # Hide the 'car' class → fewer points shown, but the geometry is unchanged.
+    page.get_by_test_id("class-toggle-car").click()
+    page.wait_for_function("() => window.__PCL.visibleCount < window.__PCL.pointCount")
+    assert page.evaluate("() => window.__PCL.pointCount") == total
+    # Bring it back → all points shown again.
+    page.get_by_test_id("class-toggle-car").click()
+    page.wait_for_function("() => window.__PCL.visibleCount === window.__PCL.pointCount")
+
+
 def test_load_csv_without_header_positional(server_url, page):
     _open_menu(page, server_url)
     _load(page, "cloud_noheader.csv")

@@ -19,7 +19,9 @@ sprite still selectable) under `OrbitControls`, wrapped in a Preact UI (scene
 selector, movie play/pause, point-shape and point-size controls, a
 color-mode picker that lists only the modes the current scene can supply
 (flat/by-height/by-distance always, plus by-intensity where the source carries it
-and by-class on the seg scene), a class legend and
+and by-class on the seg scene), per-point **range filters** that clip the cloud by
+height, distance, or intensity (min/max, blank = unbounded), a clickable class
+legend whose swatches toggle each semantic class in or out of the seg scene, a
 box toggle for the seg scene, a live stats overlay, and
 reset-camera). Frontend dependencies are vendored ES modules loaded via an import
 map — no bundler — served by a small Python `http.server` and verified end-to-end
