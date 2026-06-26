@@ -10,6 +10,7 @@ import {
   SEG_MOVIE_COUNT, SEG_BOXES_URL, segFrameUrl,
 } from './config.js';
 import { COLOR_MODES } from './colorModes.js';
+import { parseLocalFile } from './loaders.js';
 
 const BG = 0x101418;
 const FLAT_COLOR = 0x66ccff;
@@ -40,7 +41,23 @@ const SCENE_DEFAULT_COLOR = { seg: 'class' };
 const PROFILES = { kitti: { kind: 'kitti' }, object: { kind: 'object' } };
 const SCENE_PROFILE = {
   lucy: PROFILES.object, movie: PROFILES.kitti, seg: PROFILES.kitti,
+  // A loaded file is an arbitrary cloud in its own frame: treat it like the
+  // object profile (no z-up rotation, centered, framed front-on three-quarter).
+  file: PROFILES.object,
 };
+
+// Build a palette of `n` visually distinct vivid colors for a loaded file's
+// class enumeration (the seg scene's fixed SemanticKITTI palette doesn't apply
+// to arbitrary class strings). Golden-angle hue stepping keeps adjacent ids far
+// apart on the color wheel.
+function generateClassPalette(n) {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const hue = (i * 0.61803398875) % 1; // golden ratio conjugate
+    out.push(new THREE.Color().setHSL(hue, 0.65, 0.55));
+  }
+  return out;
+}
 
 // SemanticKITTI 19-class learning palette, indexed by class id (0 = unlabeled).
 const SEG_PALETTE = [
@@ -134,6 +151,8 @@ export function createViewer(canvas, { onColorState } = {}) {
     colorModes: ['flat'], // modes the live cloud supports (drives the UI dropdown)
     settings: { pointSize: 0.004, colorMode: 'distance', pointShape: 'ball', showBoxes: true },
     framesRendered: 0,
+    fileName: null,       // name of the loaded local file (file scene only)
+    classLegend: [],      // [{name, hex}] for the loaded file's class enumeration
   };
   window.__PCL = state;
 
@@ -229,9 +248,23 @@ export function createViewer(canvas, { onColorState } = {}) {
       }
     }
 
-    // Class: the seg scene packs the per-point id (raw integer) in a color channel;
-    // map each id through the fixed palette. DRACOLoader hands the color attribute
-    // back as raw, un-normalized floats, so the channel value already IS the id.
+    // Class (loaded files): per-point ids plus an explicit palette built from the
+    // file's class enumeration — map each id straight through the palette.
+    if (opts.classIds && opts.classColors) {
+      const ids = opts.classIds;
+      const palette = opts.classColors;
+      const out = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        const c = palette[ids[i]] || palette[0];
+        out[i * 3] = c.r; out[i * 3 + 1] = c.g; out[i * 3 + 2] = c.b;
+      }
+      buffers.class = out;
+    }
+
+    // Class (seg scene): the seg scene packs the per-point id (raw integer) in a
+    // color channel; map each id through the fixed palette. DRACOLoader hands the
+    // color attribute back as raw, un-normalized floats, so the channel value
+    // already IS the id.
     if (opts.classChannel != null && color) {
       const ch = opts.classChannel;
       const out = new Float32Array(n * 3);
@@ -404,6 +437,60 @@ export function createViewer(canvas, { onColorState } = {}) {
     installGeometry(geom, buffers);
     resize();
     frameCamera(profile);
+    state.ready = true;
+  }
+
+  // Load a user-supplied local file (.pcd/.csv/.parquet) as a transient "file"
+  // scene. Parsing lives in loaders.js; here we turn the parsed arrays into a
+  // normalized geometry, derive a dynamic class palette + legend when the file
+  // carries class strings, and install it like any other static cloud.
+  async function loadFile(file) {
+    loadToken++;
+    const token = loadToken;
+    state.ready = false;
+    state.error = null;
+    state.loading = false;
+    state.loadProgress = { loaded: 0, total: 0 };
+    state.scene = 'file';
+    state.fileName = file.name;
+    state.classLegend = [];
+    activeProfile = SCENE_PROFILE.file;
+    teardownScene();
+
+    let parsed;
+    try {
+      parsed = await parseLocalFile(file);
+    } catch (e) {
+      if (token !== loadToken) return;
+      state.error = `Could not load ${file.name}: ${e.message || e}`;
+      return;
+    }
+    if (token !== loadToken) return;
+
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(parsed.positions, 3));
+    if (parsed.intensity) {
+      geom.setAttribute('intensity', new THREE.BufferAttribute(parsed.intensity, 1));
+    }
+
+    let classColors = null;
+    if (parsed.classIds && parsed.classNames) {
+      classColors = generateClassPalette(parsed.classNames.length);
+      state.classLegend = parsed.classNames.map((name, i) => ({
+        name, hex: classColors[i].getHexString(),
+      }));
+    }
+
+    normalizeGeometry(geom, activeProfile);
+    const buffers = computeColorBuffers(geom, { classIds: parsed.classIds, classColors });
+    state.colorModes = offeredModes(buffers); // once per load, before install
+    // Default to "by class" when the file carries classes (the point of loading
+    // labeled data); otherwise keep the active scalar mode (applyColorMode falls
+    // back to flat if the file can't supply it).
+    if (buffers.class) state.settings.colorMode = 'class';
+    installGeometry(geom, buffers);
+    resize();
+    frameCamera(activeProfile);
     state.ready = true;
   }
 
@@ -651,6 +738,10 @@ export function createViewer(canvas, { onColorState } = {}) {
     // leave the HUD's "Loading X / Y…" spinner stuck on forever over the new scene.
     state.loading = false;
     state.loadProgress = { loaded: 0, total: 0 };
+    // Leaving any loaded local file behind: clear its name + legend so the HUD
+    // and dynamic legend don't linger over a built-in scene.
+    state.fileName = null;
+    state.classLegend = [];
     state.scene = id;
     // Scenes with a forced default (seg → "by class") reset the mode before the
     // first frame installs; others carry the current mode into the new scene.
@@ -675,6 +766,7 @@ export function createViewer(canvas, { onColorState } = {}) {
 
   const handle = {
     loadScene,
+    loadFile,
     play,
     pause,
     step,
@@ -716,6 +808,8 @@ export function createViewer(canvas, { onColorState } = {}) {
         boxCount: state.boxCount,
         colorMode: state.settings.colorMode, // the mode actually applied (post-fallback)
         colorModes: state.colorModes,         // modes the live cloud supports
+        fileName: state.fileName,             // loaded local file name (file scene)
+        classLegend: state.classLegend,       // [{name, hex}] for loaded class enum
       };
     },
     // e2e helper: count non-background pixels in the rendered frame.

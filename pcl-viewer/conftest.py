@@ -1,6 +1,7 @@
 """Pytest fixtures: ensure vendored libs exist, run the static server."""
 from __future__ import annotations
 
+import glob
 import os
 import shutil
 import socket
@@ -44,6 +45,31 @@ def vendored():
         subprocess.run(["bash", os.path.join(HERE, "vendor.sh")], check=True)
     assert os.path.exists(sentinel), "vendor.sh did not populate web/vendor/"
     _stage_fixtures()
+
+
+@pytest.fixture(scope="session")
+def browser_type_launch_args(browser_type_launch_args):
+    """Use Playwright's own bundled Chromium when present; otherwise fall back to
+    a pre-provisioned Chromium under PLAYWRIGHT_BROWSERS_PATH. CI/web-session
+    images often ship a pinned Chromium at a different revision than the installed
+    Playwright expects, which would otherwise fail with "Executable doesn't
+    exist". On a normal dev machine the bundled browser exists, so this is a no-op."""
+    args = dict(browser_type_launch_args)
+    if "executable_path" in args:
+        return args
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            bundled = p.chromium.executable_path
+        if os.path.exists(bundled):
+            return args
+    except Exception:
+        pass
+    base = os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers")
+    found = sorted(glob.glob(os.path.join(base, "chromium-*", "chrome-linux", "chrome")))
+    if found:
+        args["executable_path"] = found[-1]
+    return args
 
 
 @pytest.fixture()

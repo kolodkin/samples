@@ -7,6 +7,7 @@ cd "$(dirname "$0")"
 THREE=0.160.0
 PREACT=10.19.3
 HTM=3.1.1
+HYPARQUET=1.26.1
 BASE=https://unpkg.com
 DEST=web/vendor
 
@@ -29,5 +30,9 @@ fetch "$BASE/three@$THREE/examples/jsm/libs/draco/draco_decoder.js"      "$DEST/
 fetch "$BASE/preact@$PREACT/dist/preact.module.js"                   "$DEST/preact.module.js"
 fetch "$BASE/preact@$PREACT/hooks/dist/hooks.module.js"              "$DEST/preact-hooks.module.js"
 fetch "$BASE/htm@$HTM/dist/htm.module.js"                            "$DEST/htm.module.js"
+# Self-contained ESM bundle of hyparquet (pure-JS Parquet reader, snappy built
+# in, no external imports) for the "Load PCL" local .parquet path. unpkg serves
+# hyparquet as un-bundled src/*.js, so pull the flattened esm.sh bundle instead.
+fetch "https://esm.sh/hyparquet@$HYPARQUET/es2022/hyparquet.bundle.mjs"  "$DEST/hyparquet.module.js"
 
 echo "vendored into $DEST"
