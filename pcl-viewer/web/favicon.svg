@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="14" fill="#101418"/>
+  <!-- An abstract point cluster colored by height, mirroring the viewer's
+       by-height color mode: warm up top, through cyan/green, to blue down low.
+       Dot size and opacity encode depth (near = big/bright, far = small/dim). -->
+  <g>
+    <!-- far / dim, small -->
+    <circle cx="44" cy="19" r="1.7" fill="#f2b13b" opacity="0.45"/>
+    <circle cx="21" cy="23" r="1.7" fill="#cfe255" opacity="0.5"/>
+    <circle cx="48" cy="39" r="1.9" fill="#3f9bdf" opacity="0.5"/>
+    <circle cx="17" cy="37" r="1.9" fill="#49a8d6" opacity="0.55"/>
+    <circle cx="38" cy="47" r="1.9" fill="#2f7bf0" opacity="0.55"/>
+    <!-- mid -->
+    <circle cx="30" cy="17" r="2.3" fill="#f7a032" opacity="0.85"/>
+    <circle cx="42" cy="29" r="2.5" fill="#5fe6ad" opacity="0.9"/>
+    <circle cx="23" cy="34" r="2.5" fill="#45a6d8" opacity="0.9"/>
+    <circle cx="34" cy="41" r="2.5" fill="#3b86f2" opacity="0.9"/>
+    <!-- near / bright, big -->
+    <circle cx="32" cy="30" r="3.5" fill="#58e0b8"/>
+    <circle cx="26" cy="25" r="3.0" fill="#9fe86f"/>
+    <circle cx="39" cy="23" r="2.8" fill="#e6cf45"/>
+    <circle cx="29" cy="38" r="2.9" fill="#2f7bf0"/>
+  </g>
+</svg>
