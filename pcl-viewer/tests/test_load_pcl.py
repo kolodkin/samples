@@ -83,6 +83,11 @@ def test_unsupported_file_shows_error(server_url, page, tmp_path):
     page.wait_for_function("() => window.__PCL.error && /Unsupported/.test(window.__PCL.error)",
                            timeout=10000)
     expect(page.get_by_test_id("error")).to_be_visible()
+    # The viewer recovers from a bad load: a subsequent valid file renders and
+    # clears the error (also leaves the final-state screenshot on a real cloud).
+    _load(page, "cloud.csv")
+    assert page.evaluate("() => window.__PCL.error") is None
+    assert page.evaluate("() => window.__PCL.handle.visiblePixelCount()") > 500
 
 
 def test_load_file_then_switch_to_builtin_scene(server_url, page):

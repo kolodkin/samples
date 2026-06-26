@@ -72,6 +72,23 @@ def browser_type_launch_args(browser_type_launch_args):
     return args
 
 
+@pytest.fixture(autouse=True)
+def _unobstructed_final_frame(page):
+    """Leave each test on an unobstructed rendered cloud for its final-state
+    screenshot: close the controls modal (if open) before pytest-playwright
+    captures the PNG, so the e2e report shows the point cloud rather than the
+    menu panel sitting over it. Requesting `page` orders this fixture's teardown
+    before the `page` fixture's screenshot capture."""
+    yield
+    try:
+        if page.get_by_test_id("controls").count() > 0:
+            page.get_by_test_id("menu-toggle").click()
+            page.get_by_test_id("controls").wait_for(state="detached", timeout=2000)
+        page.wait_for_timeout(150)  # settle a frame so the cloud, not a transition, is caught
+    except Exception:
+        pass
+
+
 @pytest.fixture()
 def server_url(vendored):
     from serve import make_server  # imported here so HERE is on sys.path
