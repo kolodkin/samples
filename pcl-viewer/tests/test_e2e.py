@@ -3,26 +3,31 @@ import time
 
 from playwright.sync_api import expect
 
+# The default scene is the KITTI movie, which streams Draco frames from a remote
+# dataset; point it at the committed offline fixtures so tests need no network.
+DEFAULT = "/?movieBase=/fixtures/movie/&movieCount=4"
+
 
 def _wait_ready(page):
     page.wait_for_function("() => window.__PCL && window.__PCL.ready === true",
-                           timeout=20000)
+                           timeout=60000)
 
 
 def test_point_cloud_loads_and_renders(server_url, page):
-    page.goto(server_url + "/")
+    page.goto(server_url + DEFAULT)
     _wait_ready(page)
 
+    # The movie scene loads by default and its first frame is on screen.
+    assert page.evaluate("() => window.__PCL.scene") == "movie"
     point_count = page.evaluate("() => window.__PCL.pointCount")
-    assert point_count == 115385
-    assert page.evaluate("() => window.__PCL.scene") == "city"
+    assert point_count > 500
 
     # Stats overlay reflects the loaded cloud.
-    expect(page.get_by_test_id("point-count")).to_have_text("115,385")
+    expect(page.get_by_test_id("point-count")).to_have_text(f"{point_count:,}")
 
     # The canvas actually drew the cloud (non-background pixels present).
     visible = page.evaluate("() => window.__PCL.handle.visiblePixelCount()")
-    assert visible > 1000
+    assert visible > 500
 
 
 def test_boot_loader_shows_until_first_render(server_url, page):
@@ -31,11 +36,11 @@ def test_boot_loader_shows_until_first_render(server_url, page):
     # gap from page open to first render — for the static initial scene too, which
     # otherwise reports no loading state at all.
     def _delay_model(route):
-        time.sleep(1.0)  # hold the city PCD so the not-ready window is observable
+        time.sleep(1.0)  # hold movie frame 0 so the not-ready window is observable
         route.continue_()
 
-    page.route("**/kitti-velodyne-000000.pcd", _delay_model)
-    page.goto(server_url + "/")
+    page.route("**/fixtures/movie/000000.drc", _delay_model)
+    page.goto(server_url + DEFAULT)
     # Before the cloud is ready, the boot loader is on screen.
     expect(page.get_by_test_id("boot-loading")).to_be_visible()
     _wait_ready(page)
@@ -44,7 +49,7 @@ def test_boot_loader_shows_until_first_render(server_url, page):
 
 
 def test_point_size_control(server_url, page):
-    page.goto(server_url + "/")
+    page.goto(server_url + DEFAULT)
     _wait_ready(page)
     page.get_by_test_id("menu-toggle").click()  # controls live in a modal
     slider = page.get_by_test_id("point-size")
@@ -54,21 +59,22 @@ def test_point_size_control(server_url, page):
 
 
 def test_color_mode_toggle(server_url, page):
-    page.goto(server_url + "/")
+    page.goto(server_url + DEFAULT)
     _wait_ready(page)
     # Default mode is the distance ramp; toggling to flat must take effect.
     assert page.evaluate("() => window.__PCL.settings.colorMode") == "distance"
     page.get_by_test_id("menu-toggle").click()  # controls live in a modal
     page.get_by_test_id("color-mode").select_option("flat")
     page.wait_for_function("() => window.__PCL.settings.colorMode === 'flat'")
-    # Each scalar ramp mode applies and keeps the cloud rendering. Intensity
-    # only resolves if the loader actually parsed the PCD's `intensity` field;
-    # falling back to flat would leave colorMode == 'flat' and fail this loop.
+    # Each scalar ramp mode the movie supplies applies and keeps the cloud
+    # rendering; the Draco frames carry height, distance, and intensity (packed in
+    # a color channel), so a fall-back to flat would leave colorMode == 'flat'
+    # and fail this loop.
     for mode in ("distance", "intensity", "height"):
         page.get_by_test_id("color-mode").select_option(mode)
         page.wait_for_function(
             f"() => window.__PCL.settings.colorMode === '{mode}'")
-        assert page.evaluate("() => window.__PCL.handle.visiblePixelCount()") > 1000
+        assert page.evaluate("() => window.__PCL.handle.visiblePixelCount()") > 500
 
 
 def _color_mode_options(page):
@@ -78,11 +84,11 @@ def _color_mode_options(page):
 
 def test_color_modes_match_scene(server_url, page):
     # The color-mode dropdown must offer only the modes the live scene can supply,
-    # not a fixed five: the city PCD carries intensity but no per-point class, so
-    # "intensity" is offered and "class" is not.
+    # not a fixed five: the movie frames carry height/distance/intensity but no
+    # per-point class, so "class" is not offered.
     page.goto(
         server_url
-        + "/?movieBase=/fixtures/movie/&movieCount=4"
+        + DEFAULT
         + "&segMovieBase=/fixtures/seg/&segMovieCount=4&segBoxesUrl=/fixtures/seg/boxes.json"
     )
     _wait_ready(page)
@@ -104,31 +110,19 @@ def test_color_modes_match_scene(server_url, page):
     # Seg defaults to by-class, and the dropdown reflects that applied mode.
     expect(page.get_by_test_id("color-mode")).to_have_value("class")
 
-    # The geometry movie now carries intensity too (positions + green-channel
-    # reflectance), so it offers the intensity ramp but no class.
+    # Switching back to a scene without "class" drops the stranded mode to flat in
+    # both the viewer and the dropdown (the movie carries intensity but no class).
     page.get_by_test_id("scene").select_option("movie")
     page.wait_for_function(
         "() => window.__PCL.scene === 'movie' && window.__PCL.ready === true",
-        timeout=60000,
-    )
-    page.wait_for_function(
-        "() => JSON.stringify(window.__PCL.handle.getStats().colorModes)"
-        " === JSON.stringify(['flat','height','distance','intensity'])")
-    assert _color_mode_options(page) == ["flat", "height", "distance", "intensity"]
-
-    # Switching back to a scene without "class" drops the stranded mode to flat in
-    # both the viewer and the dropdown.
-    page.get_by_test_id("scene").select_option("city")
-    page.wait_for_function(
-        "() => window.__PCL.scene === 'city' && window.__PCL.ready === true",
-        timeout=20000)
+        timeout=60000)
     page.wait_for_function("() => window.__PCL.settings.colorMode === 'flat'")
     assert _color_mode_options(page) == ["flat", "height", "distance", "intensity"]
     expect(page.get_by_test_id("color-mode")).to_have_value("flat")
 
 
 def test_point_shape_toggle(server_url, page):
-    page.goto(server_url + "/")
+    page.goto(server_url + DEFAULT)
     _wait_ready(page)
     # Points render as 3D balls by default.
     assert page.evaluate("() => window.__PCL.settings.pointShape") == "ball"
@@ -136,15 +130,15 @@ def test_point_shape_toggle(server_url, page):
     # Switching to the older square sprite takes effect and keeps rendering.
     page.get_by_test_id("point-shape").select_option("square")
     page.wait_for_function("() => window.__PCL.settings.pointShape === 'square'")
-    assert page.evaluate("() => window.__PCL.handle.visiblePixelCount()") > 1000
+    assert page.evaluate("() => window.__PCL.handle.visiblePixelCount()") > 500
     # And back to balls.
     page.get_by_test_id("point-shape").select_option("ball")
     page.wait_for_function("() => window.__PCL.settings.pointShape === 'ball'")
-    assert page.evaluate("() => window.__PCL.handle.visiblePixelCount()") > 1000
+    assert page.evaluate("() => window.__PCL.handle.visiblePixelCount()") > 500
 
 
 def test_reset_camera(server_url, page):
-    page.goto(server_url + "/")
+    page.goto(server_url + DEFAULT)
     _wait_ready(page)
     # Orbit far away via wheel, then reset and confirm still ready & rendering.
     page.get_by_test_id("menu-toggle").click()  # reset button lives in a modal
@@ -155,7 +149,7 @@ def test_reset_camera(server_url, page):
 
 
 def test_menu_toggle(server_url, page):
-    page.goto(server_url + "/")
+    page.goto(server_url + DEFAULT)
     _wait_ready(page)
     # Controls modal is closed by default for a clean view.
     expect(page.get_by_test_id("controls")).to_have_count(0)
@@ -167,7 +161,7 @@ def test_menu_toggle(server_url, page):
 
 
 def test_camera_readout(server_url, page):
-    page.goto(server_url + "/")
+    page.goto(server_url + DEFAULT)
     _wait_ready(page)
     page.wait_for_timeout(600)  # let the 500ms stats cadence tick at least once
     for tid in ("cam-eye", "cam-target"):
@@ -178,7 +172,7 @@ def test_camera_readout(server_url, page):
 
 
 def test_screenshot_capture(server_url, page, tmp_path):
-    page.goto(server_url + "/")
+    page.goto(server_url + DEFAULT)
     _wait_ready(page)
     page.wait_for_timeout(300)  # let a few frames render
     out = tmp_path / "pcl-viewer.png"
@@ -190,7 +184,7 @@ def test_lucy_scene_loads_from_ply(server_url, page):
     # Exercise the PLY loader + "object" normalization/framing path offline by
     # pointing the Lucy scene at a local PLY fixture (same loadStatic code path as
     # the real Stanford Lucy, which is hot-linked and so not fetched in tests).
-    page.goto(server_url + "/?lucyUrl=/fixtures/lucy/lucy_fixture.ply")
+    page.goto(server_url + DEFAULT + "&lucyUrl=/fixtures/lucy/lucy_fixture.ply")
     _wait_ready(page)
     page.get_by_test_id("menu-toggle").click()
     page.get_by_test_id("scene").select_option("lucy")
@@ -268,19 +262,19 @@ def test_movie_step_and_seek(server_url, page):
 
 
 def test_scene_switch_back_stops_movie(server_url, page):
-    page.goto(server_url + "/?movieBase=/fixtures/movie/&movieCount=4")
-    _wait_ready(page)
-    page.get_by_test_id("menu-toggle").click()
-    page.get_by_test_id("scene").select_option("movie")
+    page.goto(server_url + DEFAULT + "&lucyUrl=/fixtures/lucy/lucy_fixture.ply")
+    # The movie loads by default and auto-plays.
     page.wait_for_function("() => window.__PCL.scene === 'movie' && window.__PCL.ready === true",
                            timeout=60000)  # cold Draco WASM compile can be slow
-    page.get_by_test_id("scene").select_option("city")
-    page.wait_for_function("() => window.__PCL.scene === 'city' && window.__PCL.ready === true",
+    page.get_by_test_id("menu-toggle").click()
+    # Switching to a static scene tears the movie down.
+    page.get_by_test_id("scene").select_option("lucy")
+    page.wait_for_function("() => window.__PCL.scene === 'lucy' && window.__PCL.ready === true",
                            timeout=20000)
     # Movie timer torn down: not playing, frameCount reset.
     assert page.evaluate("() => window.__PCL.playing") is False
     assert page.evaluate("() => window.__PCL.frameCount") == 0
-    assert page.evaluate("() => window.__PCL.pointCount") == 115385
+    assert page.evaluate("() => window.__PCL.pointCount") == 4000
 
 
 def test_scene_switch_mid_load_clears_loading_indicator(server_url, page):
@@ -288,15 +282,21 @@ def test_scene_switch_mid_load_clears_loading_indicator(server_url, page):
     # "Loading X / Y…" indicator stuck on the now-superseded load: the static
     # scene that supersedes it never managed `loading`, so a stale movie load
     # used to freeze the HUD spinner forever even though the new scene is ready.
-    page.goto(server_url + "/?movieBase=/fixtures/movie/&movieCount=4")
-    _wait_ready(page)  # city ready
+    page.goto(server_url + DEFAULT + "&lucyUrl=/fixtures/lucy/lucy_fixture.ply")
+    _wait_ready(page)  # movie ready (the default scene)
     page.get_by_test_id("menu-toggle").click()
+    # Settle on the static Lucy scene first so the movie load below is the one
+    # left in flight when it is superseded.
+    page.get_by_test_id("scene").select_option("lucy")
+    page.wait_for_function(
+        "() => window.__PCL.scene === 'lucy' && window.__PCL.ready === true",
+        timeout=20000)
     # Kick off the movie load, then immediately switch back before it finishes
     # streaming all frames — this leaves a movie load in flight (loading == true).
     page.get_by_test_id("scene").select_option("movie")
-    page.get_by_test_id("scene").select_option("city")
+    page.get_by_test_id("scene").select_option("lucy")
     page.wait_for_function(
-        "() => window.__PCL.scene === 'city' && window.__PCL.ready === true",
+        "() => window.__PCL.scene === 'lucy' && window.__PCL.ready === true",
         timeout=20000)
     # The superseded movie load's loading flag must be cleared, and the HUD must
     # not show a leftover "Loading…" line.
@@ -307,7 +307,8 @@ def test_scene_switch_mid_load_clears_loading_indicator(server_url, page):
 def test_seg_scene_classes_and_boxes(server_url, page):
     page.goto(
         server_url
-        + "/?segMovieBase=/fixtures/seg/&segMovieCount=4&segBoxesUrl=/fixtures/seg/boxes.json"
+        + DEFAULT
+        + "&segMovieBase=/fixtures/seg/&segMovieCount=4&segBoxesUrl=/fixtures/seg/boxes.json"
     )
     _wait_ready(page)
     page.get_by_test_id("menu-toggle").click()

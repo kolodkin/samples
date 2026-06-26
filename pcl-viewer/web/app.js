@@ -8,10 +8,9 @@ import { COLOR_MODES } from './colorModes.js';
 const html = htm.bind(h);
 
 const SCENES = [
-  { id: 'city', label: 'KITTI city view' },
-  { id: 'lucy', label: 'Stanford Lucy' },
   { id: 'movie', label: 'KITTI movie' },
   { id: 'seg', label: 'KITTI seg' },
+  { id: 'lucy', label: 'Stanford Lucy' },
 ];
 
 // id -> label lookup over the shared mode list. Which modes are actually offered
@@ -37,14 +36,14 @@ function App() {
   const [colorMode, setColorMode] = useState('distance');
   const [colorModes, setColorModes] = useState(ALL_MODE_IDS);
   const [pointShape, setPointShape] = useState('ball');
-  const [sceneId, setSceneId] = useState('city');
+  const [sceneId, setSceneId] = useState('movie');
   const [menuOpen, setMenuOpen] = useState(false);
   const [frame, setFrame] = useState(0);
   const [showBoxes, setShowBoxes] = useState(true);
   const origin = { x: 0, y: 0, z: 0 }; // placeholder until the first stats tick
   const [stats, setStats] = useState({
     ready: false, pointCount: 0, fps: 0, cameraDistance: 0, eye: origin, target: origin,
-    scene: 'city', frameIndex: 0, frameCount: 0, playing: false,
+    scene: 'movie', frameIndex: 0, frameCount: 0, playing: false,
     loading: false, loadProgress: { loaded: 0, total: 0 }, error: null,
   });
 

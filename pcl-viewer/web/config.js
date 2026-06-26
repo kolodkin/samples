@@ -6,8 +6,6 @@ const cfg = (typeof window !== 'undefined' && window.__PCL_CONFIG) || {};
 
 const pick = (key, def) => params.get(key) ?? cfg[key] ?? def;
 
-export const CITY_URL = './models/kitti-velodyne-000000.pcd';
-
 // The "shape" scene: Stanford Lucy — the famous winged-angel statue (decimated to
 // ~50k vertices, binary PLY) hot-linked from the three.js model repo. A detailed,
 // recognizable structure rather than a flat tabletop. Overridable via ?lucyUrl=

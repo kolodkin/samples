@@ -6,7 +6,7 @@ import { PCDLoader } from 'three/addons/loaders/PCDLoader.js';
 import { PLYLoader } from 'three/addons/loaders/PLYLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import {
-  CITY_URL, LUCY_URL, MOVIE_COUNT, frameUrl,
+  LUCY_URL, MOVIE_COUNT, frameUrl,
   SEG_MOVIE_COUNT, SEG_BOXES_URL, segFrameUrl,
 } from './config.js';
 import { COLOR_MODES } from './colorModes.js';
@@ -26,10 +26,11 @@ const offeredModes = (buffers) =>
 // Scenes listed here reset the color mode to the given value each time they load:
 // the seg scene is *about* its per-point classes, so it always opens "by class".
 // Scenes not listed keep whatever mode is active, falling back to flat (via
-// applyColorMode) if the new cloud can't supply it.
+// applyColorMode) if the new cloud can't supply it (e.g. carrying seg's "by class"
+// onto the movie, which has no class buffer).
 const SCENE_DEFAULT_COLOR = { seg: 'class' };
 
-// Per-scene normalization + framing. KITTI clouds (city, movie, seg) are z-up
+// Per-scene normalization + framing. KITTI clouds (movie, seg) are z-up
 // sensor frames spread over a wide ground plane: rotate to y-up, scale by a robust
 // *horizontal* radius so the dense scene fills the view, and frame from a low
 // chase camera looking down the road. The Lucy statue is a compact object already
@@ -38,7 +39,7 @@ const SCENE_DEFAULT_COLOR = { seg: 'class' };
 // behavior in normalizeGeometry/frameCamera.
 const PROFILES = { kitti: { kind: 'kitti' }, object: { kind: 'object' } };
 const SCENE_PROFILE = {
-  city: PROFILES.kitti, lucy: PROFILES.object, movie: PROFILES.kitti, seg: PROFILES.kitti,
+  lucy: PROFILES.object, movie: PROFILES.kitti, seg: PROFILES.kitti,
 };
 
 // SemanticKITTI 19-class learning palette, indexed by class id (0 = unlabeled).
@@ -214,8 +215,8 @@ export function createViewer(canvas, { onColorState } = {}) {
     const buffers = { height: rampColors(height), distance: rampColors(distance) };
     const color = geometry.getAttribute('color');
 
-    // Intensity: a movie channel if the scene maps one, else a native PCD field
-    // (the city scene). Raw channel bytes are fine — rampColors clamps relatively.
+    // Intensity: a movie channel if the scene maps one, else a native PCD
+    // `intensity` field. Raw channel bytes are fine — rampColors clamps relatively.
     if (opts.intensityChannel != null && color) {
       const ch = opts.intensityChannel;
       const vals = Float32Array.from({ length: n }, (_, i) => color.getComponent(i, ch));
@@ -656,8 +657,7 @@ export function createViewer(canvas, { onColorState } = {}) {
     if (SCENE_DEFAULT_COLOR[id]) state.settings.colorMode = SCENE_DEFAULT_COLOR[id];
     activeProfile = SCENE_PROFILE[id] || PROFILES.kitti;
     teardownScene();
-    if (id === 'city') await loadStatic(CITY_URL, activeProfile);
-    else if (id === 'lucy') await loadStatic(LUCY_URL, activeProfile);
+    if (id === 'lucy') await loadStatic(LUCY_URL, activeProfile);
     else if (id === 'movie') await loadMovie(MOVIE_COUNT, { colorChannels: { intensityChannel: 1 } });
     else if (id === 'seg') await loadSegMovie(SEG_MOVIE_COUNT);
   }
@@ -671,7 +671,7 @@ export function createViewer(canvas, { onColorState } = {}) {
   }
   resize();
   tick();
-  loadScene('city');
+  loadScene('movie');
 
   const handle = {
     loadScene,
