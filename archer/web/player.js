@@ -11,11 +11,13 @@ function buildBowViewmodel() {
   const limb = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.014, 6, 24, Math.PI), wood);
   limb.rotation.z = Math.PI / 2; // tips at (0, ±0.16), bulge -x (pre-rotation)
   limbGroup.add(limb);
-  const string = new THREE.Mesh(
-    new THREE.BoxGeometry(0.003, 0.32, 0.003),
-    new THREE.MeshBasicMaterial({ color: 0xeeeeee }),
-  );
-  limbGroup.add(string);
+  // String: two segments pinned at the limb tips, meeting at the nock —
+  // they fold into a V as the draw pulls the nock back (see updateString).
+  const stringMat = new THREE.MeshBasicMaterial({ color: 0xeeeeee });
+  const segGeo = new THREE.BoxGeometry(0.003, 1, 0.003); // unit length, scaled per frame
+  const stringTop = new THREE.Mesh(segGeo, stringMat);
+  const stringBottom = new THREE.Mesh(segGeo, stringMat);
+  limbGroup.add(stringTop, stringBottom);
   limbGroup.rotation.y = -Math.PI / 2 + 0.25; // bulge → forward, slight angle so the curve reads
   g.add(limbGroup);
   // Nocked arrow: shaft + head along the aim line. The nock sits on the
@@ -46,8 +48,10 @@ function buildBowViewmodel() {
   nocked.add(fletch);
   g.add(nocked);
   g.position.set(0.26, -0.22, -0.6);
-  return { group: g, string, nocked };
+  return { group: g, stringTop, stringBottom, nocked };
 }
+
+const STRING_TIP_Y = 0.16; // limb tip height (torus radius)
 
 export class Player {
   constructor(camera) {
@@ -100,10 +104,15 @@ export class Player {
     const targetFov = this.drawPower >= 1 ? CONFIG.bow.zoomFov : CONFIG.bow.baseFov;
     this.camera.fov += (targetFov - this.camera.fov) * Math.min(1, dt * 8);
     this.camera.updateProjectionMatrix();
-    // Pull the string and nocked arrow back with draw power.
+    // Pull the string and nocked arrow back with draw power. Each string
+    // half runs from its limb tip to the nock at (pull, 0), forming a V.
     const pull = this.drawPower * 0.15;
-    this.bow.string.position.x = pull;
-    this.bow.string.scale.y = 1 - this.drawPower * 0.2;
+    for (const [seg, side] of [[this.bow.stringTop, 1], [this.bow.stringBottom, -1]]) {
+      const v = new THREE.Vector3(pull, -side * STRING_TIP_Y, 0); // tip → nock
+      seg.scale.y = v.length();
+      seg.position.set(pull / 2, side * STRING_TIP_Y / 2, 0);
+      seg.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), v.normalize());
+    }
     this.bow.nocked.position.z = pull;
   }
 }
