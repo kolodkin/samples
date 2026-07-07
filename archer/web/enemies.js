@@ -42,7 +42,26 @@ function buildOgre(c) {
   return g;
 }
 
-const BUILDERS = { goblin: buildGoblin, ogre: buildOgre }; // skeleton arrives in Task 6
+function buildSkeleton(c) {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.22, 0.3, c.height * 0.8, 6), lambert(c.color),
+  );
+  body.position.y = c.height * 0.4;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(c.headRadius, 8, 6), lambert(0xe8e4d8));
+  head.position.y = c.height;
+  const bow = new THREE.Mesh(
+    new THREE.TorusGeometry(0.3, 0.03, 5, 16, Math.PI), lambert(0x6b4a2f),
+  );
+  bow.position.set(0.35, c.height * 0.65, 0.1);
+  bow.rotation.y = Math.PI / 2;
+  g.add(body, head, bow);
+  return g;
+}
+
+const BUILDERS = { goblin: buildGoblin, ogre: buildOgre, skeleton: buildSkeleton };
+
+const PROJ_GRAVITY = 4; // m/s² drop on skeleton projectiles (shoot() compensates)
 
 export class EnemySystem {
   constructor(game) {
@@ -188,6 +207,100 @@ export class EnemySystem {
     e.mesh.rotation.y = Math.atan2(dir.x, dir.z);
   }
 
-  updateArcher(e, dt, playerPos) {} // Task 6
-  updateProjectiles(dt, playerPos) {} // Task 6
+  updateArcher(e, dt, playerPos) {
+    const pos = e.mesh.position;
+    const dist = Math.hypot(playerPos.x - pos.x, playerPos.z - pos.z);
+    if (e.state === 'advance') {
+      if (dist > e.c.range) { this.moveToward(e, playerPos, dt, this.speedOf(e)); return; }
+      e.cover = this.pickCover(e, playerPos);
+      e.state = 'cover';
+      e.coverTimer = e.c.hideTime * 0.5; // first hide is short: pressure early
+    }
+    const speed = this.speedOf(e);
+    if (e.state === 'cover') {
+      if (e.cover) this.moveToward(e, this.coverPoint(e.cover, playerPos), dt, speed);
+      e.coverTimer -= dt;
+      if (e.coverTimer <= 0) { e.state = 'peek'; e.coverTimer = e.c.peekTime; e.hasShot = false; }
+    } else if (e.state === 'peek') {
+      if (e.cover) this.moveToward(e, this.peekPoint(e, playerPos), dt, speed);
+      if (!e.hasShot && e.coverTimer <= e.c.peekTime * 0.5) {
+        this.shoot(e, playerPos);
+        e.hasShot = true;
+      }
+      e.coverTimer -= dt;
+      if (e.coverTimer <= 0) { e.state = 'cover'; e.coverTimer = e.c.hideTime; }
+    }
+  }
+
+  // Nearest obstacle roughly on the line between this archer and the player.
+  pickCover(e, playerPos) {
+    const pos = e.mesh.position;
+    let best = null;
+    let bestD = 18;
+    for (const o of this.game.obstacles) {
+      const d = Math.hypot(o.x - pos.x, o.z - pos.z);
+      if (d >= bestD) continue;
+      const toObstacle = new THREE.Vector2(o.x - playerPos.x, o.z - playerPos.z);
+      const toArcher = new THREE.Vector2(pos.x - playerPos.x, pos.z - playerPos.z);
+      if (toObstacle.length() >= toArcher.length()) continue; // must shield the archer
+      if (toObstacle.normalize().dot(toArcher.normalize()) < 0.7) continue;
+      best = o;
+      bestD = d;
+    }
+    return best;
+  }
+
+  coverPoint(cover, playerPos) {
+    const away = new THREE.Vector3(cover.x - playerPos.x, 0, cover.z - playerPos.z).normalize();
+    return new THREE.Vector3(cover.x, 0, cover.z).addScaledVector(away, cover.radius + 0.7);
+  }
+
+  peekPoint(e, playerPos) {
+    const c = this.coverPoint(e.cover, playerPos);
+    const away = new THREE.Vector3(e.cover.x - playerPos.x, 0, e.cover.z - playerPos.z).normalize();
+    const perp = new THREE.Vector3(-away.z, 0, away.x);
+    return c.addScaledVector(perp, e.peekSide * (e.cover.radius + 0.5));
+  }
+
+  shoot(e, playerPos) {
+    const from = this.headCenter(e);
+    const dir = new THREE.Vector3().subVectors(playerPos, from);
+    const dist = dir.length();
+    dir.normalize();
+    // Compensate the projectile's drop (see PROJ_GRAVITY in updateProjectiles).
+    const tof = dist / e.c.projectileSpeed;
+    dir.y += 0.5 * PROJ_GRAVITY * tof * tof / dist;
+    const rng = this.game.rng;
+    dir.x += rng.range(-e.c.spread, e.c.spread);
+    dir.y += rng.range(-e.c.spread, e.c.spread);
+    dir.z += rng.range(-e.c.spread, e.c.spread);
+    dir.normalize();
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.09, 6, 5),
+      new THREE.MeshBasicMaterial({ color: 0x332222 }),
+    );
+    mesh.position.copy(from);
+    this.game.scene.add(mesh);
+    this.projectiles.push({ mesh, vel: dir.multiplyScalar(e.c.projectileSpeed), age: 0 });
+  }
+
+  updateProjectiles(dt, playerPos) {
+    for (const p of [...this.projectiles]) {
+      p.vel.y -= PROJ_GRAVITY * dt; // gentle drop so long shots arc
+      p.mesh.position.addScaledVector(p.vel, dt);
+      p.age += dt;
+      let dead = false;
+      if (p.mesh.position.distanceTo(playerPos) < 0.9) {
+        this.game.player.takeDamage(CONFIG.enemies.skeleton.damage);
+        this.game.onPlayerHit();
+        dead = true;
+      } else if (p.mesh.position.y < 0 || p.age > 5) {
+        dead = true;
+      }
+      if (dead) {
+        this.game.scene.remove(p.mesh);
+        this.projectiles.splice(this.projectiles.indexOf(p), 1);
+      }
+    }
+  }
 }

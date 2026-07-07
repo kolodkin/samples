@@ -117,3 +117,37 @@ def test_player_death_shows_game_over(server_url, page):
     page.evaluate("() => window.__ARCHER.setPlayerHp(5)")
     page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32)")
     page.wait_for_function("() => window.__ARCHER.state.screen === 'gameOver'", timeout=10000)
+
+
+def _nearest_obstacle_gap(state):
+    """Min distance from the first enemy to any obstacle edge."""
+    e = state["enemies"][0]
+    return min(
+        ((o["x"] - e["x"]) ** 2 + (o["z"] - e["z"]) ** 2) ** 0.5 - o["radius"]
+        for o in state["obstacles"]
+    )
+
+
+def test_skeleton_takes_cover_behind_obstacle(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
+    # Spawn already inside firing range so it immediately seeks cover.
+    page.evaluate("() => window.__ARCHER.spawnEnemy('skeleton', 0, 12)")
+    # It must actually find a cover obstacle (deterministic: seed 42 layout).
+    page.wait_for_function(
+        "() => window.__ARCHER.state.enemies[0].hasCover", timeout=10000
+    )
+    page.wait_for_timeout(3000)  # let it walk to its chosen cover
+    state = page.evaluate("() => window.__ARCHER.state")
+    # Hugging its obstacle (cover point is edge+0.7; a peek adds ~edge+0.5
+    # sideways, worst case ~2 m from the edge).
+    assert _nearest_obstacle_gap(state) < 2.0
+
+
+def test_skeleton_shoots_the_player(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.spawnEnemy('skeleton', 0, 12)")
+    # Peek/shoot cycle is ~3.4 s; several volleys land within 25 s.
+    page.wait_for_function("() => window.__ARCHER.state.hp < 100", timeout=25000)
