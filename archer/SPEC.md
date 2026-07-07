@@ -1,8 +1,6 @@
 Archer — technical spec
 ---
 
-Design doc: `docs/superpowers/specs/2026-07-07-archer-game-design.md`.
-
 ## Controls
 
 | Input | Action |
