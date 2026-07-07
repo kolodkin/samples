@@ -80,3 +80,9 @@ pcl-viewer/test-results/
 
 # pcl-viewer test fixtures staged into the served web/ dir (by conftest)
 pcl-viewer/web/fixtures/
+
+# archer vendored ESM libs (fetched by archer/vendor.sh)
+archer/web/vendor/
+
+# archer Playwright test output
+archer/test-results/
