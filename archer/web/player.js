@@ -18,16 +18,35 @@ function buildBowViewmodel() {
   limbGroup.add(string);
   limbGroup.rotation.y = -Math.PI / 2 + 0.25; // bulge → forward, slight angle so the curve reads
   g.add(limbGroup);
-  // Nocked arrow: shaft along the aim line, sliding back with the draw.
+  // Nocked arrow: shaft + head along the aim line. The nock sits on the
+  // string (z=0) and the head protrudes past the bow's front (-0.16) —
+  // even at full draw, when the whole arrow slides back with the string.
+  const nocked = new THREE.Group();
   const shaft = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.006, 0.006, 0.5, 5),
+    new THREE.CylinderGeometry(0.006, 0.006, 0.36, 5),
     new THREE.MeshLambertMaterial({ color: 0xd8c9a3 }),
   );
   shaft.rotation.x = Math.PI / 2;
-  shaft.position.z = 0.05;
-  g.add(shaft);
+  shaft.position.z = -0.18;
+  nocked.add(shaft);
+  const tip = new THREE.Mesh(
+    new THREE.ConeGeometry(0.016, 0.05, 6),
+    new THREE.MeshLambertMaterial({ color: 0x555555 }),
+  );
+  tip.rotation.x = -Math.PI / 2; // cone points downrange
+  tip.position.z = -0.385;
+  nocked.add(tip);
+  // Fletching: feather vanes at the nock, tapering forward from the string.
+  const fletch = new THREE.Mesh(
+    new THREE.ConeGeometry(0.02, 0.09, 4),
+    new THREE.MeshLambertMaterial({ color: 0xcc4444 }),
+  );
+  fletch.rotation.x = -Math.PI / 2;
+  fletch.position.z = -0.045;
+  nocked.add(fletch);
+  g.add(nocked);
   g.position.set(0.26, -0.22, -0.6);
-  return { group: g, string, shaft };
+  return { group: g, string, nocked };
 }
 
 export class Player {
@@ -85,6 +104,6 @@ export class Player {
     const pull = this.drawPower * 0.15;
     this.bow.string.position.x = pull;
     this.bow.string.scale.y = 1 - this.drawPower * 0.2;
-    this.bow.shaft.position.z = 0.05 + pull;
+    this.bow.nocked.position.z = pull;
   }
 }
