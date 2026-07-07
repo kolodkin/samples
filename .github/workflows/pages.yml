@@ -1,0 +1,73 @@
+name: pages
+
+# GitHub Pages serves ONE artifact per repo, so every web sample is staged
+# into the same site here: /pcl-viewer and /archer side by side, with the
+# root redirect to /pcl-viewer unchanged. PRs to main build the site as a
+# check; pushes to main deploy it.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'pcl-viewer/web/**'
+      - 'pcl-viewer/vendor.sh'
+      - 'pcl-viewer/pages-index.html'
+      - 'archer/web/**'
+      - 'archer/vendor.sh'
+      - '.github/workflows/pages.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'pcl-viewer/web/**'
+      - 'pcl-viewer/vendor.sh'
+      - 'pcl-viewer/pages-index.html'
+      - 'archer/web/**'
+      - 'archer/vendor.sh'
+      - '.github/workflows/pages.yml'
+
+# Allow the GITHUB_TOKEN to deploy to GitHub Pages.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deployment; don't cancel an in-progress one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Vendor frontend ES modules
+        run: |
+          ./pcl-viewer/vendor.sh
+          ./archer/vendor.sh
+
+      - name: Stage site (/pcl-viewer + /archer)
+        run: |
+          mkdir -p _site
+          cp -r pcl-viewer/web _site/pcl-viewer           # viewer at <gh-pages>/pcl-viewer/
+          cp -r archer/web _site/archer                   # game at <gh-pages>/archer/
+          cp pcl-viewer/pages-index.html _site/index.html # root redirect to ./pcl-viewer/
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  # PRs only build (validates vendoring + staging); pushes to main deploy.
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
