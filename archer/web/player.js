@@ -4,17 +4,21 @@ import { CONFIG } from './config.js';
 function buildBowViewmodel() {
   const g = new THREE.Group();
   const wood = new THREE.MeshLambertMaterial({ color: 0x7a5230 });
-  // Limb: a half-circle arc with tips at (0, ±0.16), bulging left toward
-  // the screen center; the string closes the chord between the tips.
+  // Limb + string live in their own group, rotated so the bow's plane
+  // contains the aim line: the limb bulges downrange (toward the target)
+  // and the string sits on the archer's side, like a bow actually held.
+  const limbGroup = new THREE.Group();
   const limb = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.014, 6, 24, Math.PI), wood);
-  limb.rotation.z = Math.PI / 2;
-  g.add(limb);
+  limb.rotation.z = Math.PI / 2; // tips at (0, ±0.16), bulge -x (pre-rotation)
+  limbGroup.add(limb);
   const string = new THREE.Mesh(
     new THREE.BoxGeometry(0.003, 0.32, 0.003),
     new THREE.MeshBasicMaterial({ color: 0xeeeeee }),
   );
-  g.add(string);
-  // Nocked arrow: shaft pointing forward (-z), sliding back with the draw.
+  limbGroup.add(string);
+  limbGroup.rotation.y = -Math.PI / 2 + 0.25; // bulge → forward, slight angle so the curve reads
+  g.add(limbGroup);
+  // Nocked arrow: shaft along the aim line, sliding back with the draw.
   const shaft = new THREE.Mesh(
     new THREE.CylinderGeometry(0.006, 0.006, 0.5, 5),
     new THREE.MeshLambertMaterial({ color: 0xd8c9a3 }),
@@ -23,7 +27,6 @@ function buildBowViewmodel() {
   shaft.position.z = 0.05;
   g.add(shaft);
   g.position.set(0.26, -0.22, -0.6);
-  g.rotation.y = -0.3;
   return { group: g, string, shaft };
 }
 
