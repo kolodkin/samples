@@ -18,3 +18,27 @@ def test_boot_renders(server_url, page):
     assert state["screen"] == "playing"
     # The canvas actually drew something (sky background is excluded).
     assert page.evaluate("() => window.__ARCHER.visiblePixelCount()") > 500
+
+
+def test_stage_param_and_determinism(server_url, page):
+    # Each named stage builds a scene with obstacles; same seed → same layout.
+    page.goto(server_url + "/?autostart=1&seed=7&stage=desert")
+    _wait_ready(page)
+    s1 = page.evaluate("() => window.__ARCHER.state")
+    assert s1["stage"] == "desert"
+    assert len(s1["obstacles"]) > 5
+    assert page.evaluate("() => window.__ARCHER.visiblePixelCount()") > 500
+
+    page.goto(server_url + "/?autostart=1&seed=7&stage=desert")
+    _wait_ready(page)
+    s2 = page.evaluate("() => window.__ARCHER.state")
+    assert s1["obstacles"] == s2["obstacles"]
+
+
+def test_each_stage_builds(server_url, page):
+    for name in ("forest", "desert", "iceberg"):
+        page.goto(server_url + f"/?autostart=1&seed=3&stage={name}")
+        _wait_ready(page)
+        state = page.evaluate("() => window.__ARCHER.state")
+        assert state["stage"] == name
+        assert len(state["obstacles"]) > 5

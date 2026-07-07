@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
 import { createRng, seedFromQuery } from './rng.js';
-// [task-2] stage imports
+import { buildStage, STAGE_ORDER } from './stages.js';
 // [task-3] player import
 // [task-4] arrows import
 // [task-5] enemies import
@@ -43,16 +43,21 @@ const game = {
   obstacles: [],
   syncUI: () => {}, // replaced by the UI task
 };
-// Temporary ground so the boot test has visible pixels; Task 2 replaces
-// this with real stage building.
-const tmpGround = new THREE.Mesh(
-  new THREE.PlaneGeometry(120, 120),
-  new THREE.MeshBasicMaterial({ color: 0x3e7a3a }),
-);
-tmpGround.rotation.x = -Math.PI / 2;
-scene.add(tmpGround);
-camera.lookAt(0, 2, 0);
-// [task-2] stage loading
+let stageHandle = null;
+function loadStage(index) {
+  if (stageHandle) scene.remove(stageHandle.group);
+  const name = STAGE_ORDER[index];
+  stageHandle = buildStage(name, game.rng);
+  scene.add(stageHandle.group);
+  scene.background = new THREE.Color(stageHandle.sky);
+  const [fogColor, near, far] = stageHandle.fog;
+  scene.fog = new THREE.Fog(fogColor, near, far);
+  game.stage = name;
+  game.stageIndex = index;
+  game.obstacles = stageHandle.obstacles;
+}
+const initialStage = Math.max(0, STAGE_ORDER.indexOf(params.get('stage') || 'forest'));
+loadStage(initialStage);
 // [task-3] player setup
 // [task-4] arrow system setup
 // [task-5] enemy system setup + kill/hit callbacks
@@ -100,7 +105,8 @@ window.__ARCHER = {
       score: game.stats.score,
       ammo: { ...game.stats.ammo },
       selected: game.stats.selected,
-      // [task-2] stage/obstacles state
+      stage: game.stage,
+      obstacles: game.obstacles,
       // [task-3] hp/drawPower state
       // [task-4] arrowCount state
       // [task-5] enemies state
