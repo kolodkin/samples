@@ -5,7 +5,7 @@ import { buildStage, STAGE_ORDER } from './stages.js';
 import { Player } from './player.js';
 import { ArrowSystem, TrajectoryHint } from './arrows.js';
 import { EnemySystem } from './enemies.js';
-// [task-7] effects import
+import { Effects } from './effects.js';
 // [task-8] waves import
 // [task-10] ui imports
 
@@ -55,6 +55,9 @@ function loadStage(index) {
   game.stage = name;
   game.stageIndex = index;
   game.obstacles = stageHandle.obstacles;
+  // Optional-chained: the boot-time call runs before game.effects exists
+  // (the setup block re-applies snow for that first load).
+  game.effects?.setSnow(name === 'iceberg');
 }
 const initialStage = Math.max(0, STAGE_ORDER.indexOf(params.get('stage') || 'forest'));
 loadStage(initialStage);
@@ -93,7 +96,21 @@ function gameOver() {
   document.exitPointerLock?.();
   game.syncUI();
 }
-// [task-7] effects setup
+game.effects = new Effects(scene);
+game.effects.setSnow(game.stage === 'iceberg');
+const ARROW_ORDER = ['normal', 'exploding', 'freezing', 'burning'];
+const TYPE_KEYS = { Digit1: 'normal', Digit2: 'exploding', Digit3: 'freezing', Digit4: 'burning' };
+document.addEventListener('keydown', (e) => {
+  if (game.screen !== 'playing') return;
+  const type = TYPE_KEYS[e.code];
+  if (type) { game.stats.selected = type; game.syncUI(); }
+});
+document.addEventListener('wheel', (e) => {
+  if (game.screen !== 'playing') return;
+  const i = ARROW_ORDER.indexOf(game.stats.selected);
+  game.stats.selected = ARROW_ORDER[(i + (e.deltaY > 0 ? 1 : -1) + 4) % 4];
+  game.syncUI();
+});
 // [task-8] wave manager setup
 // [task-9] progression (start/stage-clear/game-over/retry)
 // [task-10] ui wiring
@@ -147,7 +164,7 @@ function tick(now) {
     game.enemies.update(dt);
     // [task-8] waves.update(dt)
   }
-  // [task-7] effects.update(dt)
+  game.effects.update(dt);
   document.documentElement.style.setProperty('--draw', game.player.drawPower.toFixed(3));
   renderer.render(scene, camera);
   framesRendered++;
@@ -193,6 +210,7 @@ window.__ARCHER = {
   },
   spawnEnemy: (type, x, z) => { game.enemies.spawn(type, x, z); },
   setPlayerHp: (n) => { game.player.hp = n; game.syncUI(); },
+  giveAmmo: (type, n) => { game.stats.ammo[type] += n; game.syncUI(); },
   // [task-8] setDropChance, killAll, skipToWave
   // [task-9] start, nextStage, retryStage
   // e2e helper: count pixels that differ from the sky background.

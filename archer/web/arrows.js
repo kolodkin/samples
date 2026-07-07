@@ -103,7 +103,7 @@ export class ArrowSystem {
 
       if (consumed) { this.remove(a); continue; }
       if (pos.y <= 0.05 || a.age > CONFIG.arrow.lifetime) {
-        // [task-7] explode on ground impact for exploding arrows
+        if (a.type === 'exploding') this.explode(pos);
         this.remove(a);
       }
     }
@@ -112,7 +112,22 @@ export class ArrowSystem {
   hit(e, isHead, arrow) {
     const t = CONFIG.arrow.types[arrow.type];
     this.game.enemies.damage(e, t.damage * (isHead ? CONFIG.arrow.headshotMult : 1), isHead);
-    // [task-7] arrow-type status effects + explosion
+    const alive = e.hp > 0;
+    if (arrow.type === 'freezing' && alive) this.game.enemies.freeze(e);
+    if (arrow.type === 'burning' && alive) this.game.enemies.ignite(e);
+    if (arrow.type === 'exploding') this.explode(arrow.mesh.position);
+    else this.game.effects?.burst(arrow.mesh.position, 0xaa3333, 10, 4);
+  }
+
+  // AoE with linear falloff. Deliberately no line-of-sight check: splash
+  // reaches enemies hiding behind cover (the counter to skeleton archers).
+  explode(pos) {
+    this.game.effects?.burst(pos, 0xffaa33, 40, 12);
+    const t = CONFIG.arrow.types.exploding;
+    for (const e of [...this.game.enemies.list]) {
+      const d = this.game.enemies.bodyCenter(e).distanceTo(pos);
+      if (d < t.radius) this.game.enemies.damage(e, t.aoeDamage * (1 - d / t.radius));
+    }
   }
 }
 
