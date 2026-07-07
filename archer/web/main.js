@@ -3,7 +3,7 @@ import { CONFIG } from './config.js';
 import { createRng, seedFromQuery } from './rng.js';
 import { buildStage, STAGE_ORDER } from './stages.js';
 import { Player } from './player.js';
-// [task-4] arrows import
+import { ArrowSystem, TrajectoryHint } from './arrows.js';
 // [task-5] enemies import
 // [task-7] effects import
 // [task-8] waves import
@@ -59,8 +59,17 @@ function loadStage(index) {
 const initialStage = Math.max(0, STAGE_ORDER.indexOf(params.get('stage') || 'forest'));
 loadStage(initialStage);
 game.player = new Player(camera);
-// [task-4] arrow system setup
-function fireArrow(power) {} // stub; Task 4 replaces the body
+game.arrows = new ArrowSystem(game);
+const trajectoryHint = new TrajectoryHint(scene);
+function fireArrow(power) {
+  const type = game.stats.selected;
+  if (type !== 'normal') {
+    if (game.stats.ammo[type] <= 0) return; // no ammo: the release fizzles
+    game.stats.ammo[type] -= 1;
+  }
+  game.arrows.fire(game.player.aimOrigin(), game.player.aimDir(), power, type);
+  game.syncUI();
+}
 // [task-5] enemy system setup + kill/hit callbacks
 // [task-7] effects setup
 // [task-8] wave manager setup
@@ -111,7 +120,8 @@ function tick(now) {
   last = now;
   if (game.screen === 'playing') {
     game.player.update(dt);
-    // [task-4] arrows.update(dt)
+    game.arrows.update(dt);
+    trajectoryHint.update(game.player, true);
     // [task-5] enemies.update(dt)
     // [task-8] waves.update(dt)
   }
@@ -136,12 +146,24 @@ window.__ARCHER = {
       obstacles: game.obstacles,
       hp: game.player.hp,
       drawPower: game.player.drawPower,
-      // [task-4] arrowCount state
+      arrowCount: game.arrows.count,
       // [task-5] enemies state
       // [task-8] wave/pickup state
     };
   },
-  // [task-4] fireAt
+  // Test helper: fire at a world point with ballistic gravity compensation.
+  // Does NOT consume ammo (input-path firing does).
+  fireAt(x, y, z, type = 'normal', power = 1) {
+    const origin = camera.getWorldPosition(new THREE.Vector3());
+    const target = new THREE.Vector3(x, y, z);
+    const dist = origin.distanceTo(target);
+    const speed = CONFIG.bow.minSpeed + (CONFIG.bow.maxSpeed - CONFIG.bow.minSpeed) * power;
+    const dir = target.sub(origin).normalize();
+    const tof = dist / speed;
+    dir.y += 0.5 * -CONFIG.arrow.gravity * tof * tof / dist;
+    dir.normalize();
+    game.arrows.fire(origin.addScaledVector(dir, 0.7), dir, power, type);
+  },
   // [task-5] spawnEnemy, setPlayerHp
   // [task-8] setDropChance, killAll, skipToWave
   // [task-9] start, nextStage, retryStage

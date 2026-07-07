@@ -54,3 +54,22 @@ def test_bow_draw_charges_and_releases(server_url, page):
     assert 0.4 < power <= 1.0
     page.mouse.up()
     assert page.evaluate("() => window.__ARCHER.state.drawPower") == 0
+
+
+def test_arrow_flies_and_lands(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.fireAt(0, 1, 0)")
+    assert page.evaluate("() => window.__ARCHER.state.arrowCount") == 1
+    # Gravity brings it down; ground impact removes it.
+    page.wait_for_function("() => window.__ARCHER.state.arrowCount === 0", timeout=10000)
+
+
+def test_mouse_release_fires_arrow(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.mouse.move(640, 360)
+    page.mouse.down()
+    page.wait_for_function("() => window.__ARCHER.state.drawPower > 0.5", timeout=5000)
+    page.mouse.up()
+    page.wait_for_function("() => window.__ARCHER.state.arrowCount === 1", timeout=2000)
