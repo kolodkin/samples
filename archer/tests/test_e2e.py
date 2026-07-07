@@ -1,8 +1,9 @@
 """End-to-end tests for the archer game (Playwright, Chromium)."""
 from playwright.sync_api import expect
 
-# Deterministic, menu-skipping boot used by most tests.
-BOOT = "/?autostart=1&seed=42"
+# Deterministic, menu-skipping boot with wave spawning disabled — combat
+# tests spawn their own enemies on an empty battlefield.
+BOOT = "/?autostart=1&seed=42&waves=0"
 
 
 def _wait_ready(page):
@@ -225,3 +226,41 @@ def test_special_ammo_is_consumed_and_gated(server_url, page):
     page.mouse.up()
     page.wait_for_function("() => window.__ARCHER.state.arrowCount === 1", timeout=2000)
     assert page.evaluate("() => window.__ARCHER.state.ammo.freezing") == 1
+
+
+def test_wave_one_spawns_forest_mix(server_url, page):
+    page.goto(server_url + "/?autostart=1&seed=42")  # waves ON
+    _wait_ready(page)
+    # Forest wave 1 = 4 goblins, staggered by spawnInterval.
+    page.wait_for_function("() => window.__ARCHER.state.enemyCount === 4", timeout=15000)
+    assert page.evaluate("() => window.__ARCHER.state.wave") == 1
+    types = page.evaluate("() => window.__ARCHER.state.enemies.map(e => e.type)")
+    assert types == ["goblin"] * 4
+
+
+def test_skip_to_wave(server_url, page):
+    page.goto(server_url + "/?autostart=1&seed=42")
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.skipToWave(3)")
+    # Forest wave 3 = 5 goblins + 2 skeletons.
+    page.wait_for_function("() => window.__ARCHER.state.enemyCount === 7", timeout=15000)
+    assert page.evaluate("() => window.__ARCHER.state.wave") == 3
+
+
+def test_drops_spawn_and_are_shot_to_collect(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
+    page.evaluate("() => window.__ARCHER.setDropChance(1)")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32)")
+    page.evaluate("() => window.__ARCHER.killAll()")
+    page.wait_for_function("() => window.__ARCHER.state.pickupCount === 1", timeout=2000)
+    pickup = page.evaluate("() => window.__ARCHER.state.pickups[0]")
+    ammo0 = page.evaluate("(t) => window.__ARCHER.state.ammo[t]", pickup["type"])
+    page.evaluate(
+        "(p) => window.__ARCHER.fireAt(p.x, p.y, p.z)",
+        {"x": pickup["x"], "y": pickup["y"], "z": pickup["z"]},
+    )
+    page.wait_for_function("() => window.__ARCHER.state.pickupCount === 0", timeout=5000)
+    ammo1 = page.evaluate("(t) => window.__ARCHER.state.ammo[t]", pickup["type"])
+    assert 3 <= ammo1 - ammo0 <= 5

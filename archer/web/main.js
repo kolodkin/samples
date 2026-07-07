@@ -6,7 +6,7 @@ import { Player } from './player.js';
 import { ArrowSystem, TrajectoryHint } from './arrows.js';
 import { EnemySystem } from './enemies.js';
 import { Effects } from './effects.js';
-// [task-8] waves import
+import { WaveManager } from './waves.js';
 // [task-10] ui imports
 
 const params = new URLSearchParams(location.search);
@@ -111,7 +111,11 @@ document.addEventListener('wheel', (e) => {
   game.stats.selected = ARROW_ORDER[(i + (e.deltaY > 0 ? 1 : -1) + 4) % 4];
   game.syncUI();
 });
-// [task-8] wave manager setup
+game.waves = new WaveManager(game);
+game.onStageCleared = () => { // stub; Task 9 adds real progression
+  game.screen = 'stageClear';
+  game.syncUI();
+};
 // [task-9] progression (start/stage-clear/game-over/retry)
 // [task-10] ui wiring
 
@@ -162,7 +166,7 @@ function tick(now) {
     game.arrows.update(dt);
     trajectoryHint.update(game.player, true);
     game.enemies.update(dt);
-    // [task-8] waves.update(dt)
+    game.waves.update(dt);
   }
   game.effects.update(dt);
   document.documentElement.style.setProperty('--draw', game.player.drawPower.toFixed(3));
@@ -192,7 +196,12 @@ window.__ARCHER = {
         hp: e.hp, state: e.state, frozen: e.frozen > 0, burning: e.burn > 0,
         hasCover: !!e.cover,
       })),
-      // [task-8] wave/pickup state
+      wave: game.waves.waveIndex,
+      waveState: game.waves.state,
+      pickupCount: game.waves.pickups.length,
+      pickups: game.waves.pickups.map((p) => ({
+        type: p.type, x: p.mesh.position.x, y: p.mesh.position.y, z: p.mesh.position.z,
+      })),
     };
   },
   // Test helper: fire at a world point with ballistic gravity compensation.
@@ -211,7 +220,11 @@ window.__ARCHER = {
   spawnEnemy: (type, x, z) => { game.enemies.spawn(type, x, z); },
   setPlayerHp: (n) => { game.player.hp = n; game.syncUI(); },
   giveAmmo: (type, n) => { game.stats.ammo[type] += n; game.syncUI(); },
-  // [task-8] setDropChance, killAll, skipToWave
+  setDropChance: (c) => { CONFIG.drops.chance = c; },
+  killAll: () => {
+    for (const e of [...game.enemies.list]) game.enemies.damage(e, 1e9);
+  },
+  skipToWave: (n) => { game.waves.skipToWave(n); },
   // [task-9] start, nextStage, retryStage
   // e2e helper: count pixels that differ from the sky background.
   visiblePixelCount() {
@@ -232,5 +245,6 @@ window.__ARCHER = {
 // Boot: tests (and impatient humans) skip the title screen.
 if (params.get('autostart') === '1') {
   game.screen = 'playing'; // [task-9] replaced by startGame()
+  if (params.get('waves') !== '0') game.waves.startWave(1);
   game.syncUI();
 }
