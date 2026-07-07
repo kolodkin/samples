@@ -84,10 +84,12 @@ def test_arrow_kills_goblin_and_scores(server_url, page):
     page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
     page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32)")  # parked at melee reach
     assert page.evaluate("() => window.__ARCHER.state.enemyCount") == 1
-    # Goblin: 40 hp; normal arrow: 34 dmg → two body shots.
-    page.evaluate("() => window.__ARCHER.fireAt(0, 0.65, 32)")
+    # Goblin: 40 hp; normal arrow: 34 dmg → two body shots. Aim below the
+    # body center: shooting down from the perch, a y=0.65 aim line grazes
+    # the head sphere at exactly the hit threshold and can score a flaky 2×.
+    page.evaluate("() => window.__ARCHER.fireAt(0, 0.5, 32)")
     page.wait_for_function("() => window.__ARCHER.state.arrowCount === 0", timeout=5000)
-    page.evaluate("() => window.__ARCHER.fireAt(0, 0.65, 32)")
+    page.evaluate("() => window.__ARCHER.fireAt(0, 0.5, 32)")
     page.wait_for_function("() => window.__ARCHER.state.enemyCount === 0", timeout=5000)
     assert page.evaluate("() => window.__ARCHER.state.score") == 100
 
