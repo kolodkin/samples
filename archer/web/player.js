@@ -4,27 +4,26 @@ import { CONFIG } from './config.js';
 function buildBowViewmodel() {
   const g = new THREE.Group();
   const wood = new THREE.MeshLambertMaterial({ color: 0x7a5230 });
-  // Limb: a torus arc standing vertically.
-  const limb = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.025, 6, 24, Math.PI * 1.5), wood);
-  limb.rotation.z = Math.PI * 0.75;
+  // Limb: a half-circle arc with tips at (0, ±0.16), bulging left toward
+  // the screen center; the string closes the chord between the tips.
+  const limb = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.014, 6, 24, Math.PI), wood);
+  limb.rotation.z = Math.PI / 2;
   g.add(limb);
-  // String: a stretched box between the limb tips; scales back with draw.
   const string = new THREE.Mesh(
-    new THREE.BoxGeometry(0.004, 0.52, 0.004),
+    new THREE.BoxGeometry(0.003, 0.32, 0.003),
     new THREE.MeshBasicMaterial({ color: 0xeeeeee }),
   );
-  string.position.x = 0.1;
   g.add(string);
-  // Nocked arrow: shaft pointing forward (-z).
+  // Nocked arrow: shaft pointing forward (-z), sliding back with the draw.
   const shaft = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.008, 0.008, 0.55, 5),
+    new THREE.CylinderGeometry(0.006, 0.006, 0.5, 5),
     new THREE.MeshLambertMaterial({ color: 0xd8c9a3 }),
   );
   shaft.rotation.x = Math.PI / 2;
-  shaft.position.z = -0.15;
+  shaft.position.z = 0.05;
   g.add(shaft);
-  g.position.set(0.28, -0.28, -0.7);
-  g.rotation.y = -0.15;
+  g.position.set(0.26, -0.22, -0.6);
+  g.rotation.y = -0.3;
   return { group: g, string, shaft };
 }
 
@@ -80,9 +79,9 @@ export class Player {
     this.camera.fov += (targetFov - this.camera.fov) * Math.min(1, dt * 8);
     this.camera.updateProjectionMatrix();
     // Pull the string and nocked arrow back with draw power.
-    const pull = this.drawPower * 0.18;
-    this.bow.string.position.x = 0.1 + pull;
-    this.bow.string.scale.y = 1 - this.drawPower * 0.25;
-    this.bow.shaft.position.z = -0.15 + pull;
+    const pull = this.drawPower * 0.15;
+    this.bow.string.position.x = pull;
+    this.bow.string.scale.y = 1 - this.drawPower * 0.2;
+    this.bow.shaft.position.z = 0.05 + pull;
   }
 }
