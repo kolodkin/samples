@@ -72,11 +72,17 @@ uuid
 # pcl-viewer vendored ESM libs (fetched by pcl-viewer/vendor.sh)
 pcl-viewer/web/vendor/
 
-# pcl-viewer GitHub Pages staging dir (built in CI)
-pcl-viewer/_site/
+# GitHub Pages staging dir (built in CI by .github/workflows/pages.yml)
+/_site/
 
 # pcl-viewer Playwright test output (screenshots, traces)
 pcl-viewer/test-results/
 
 # pcl-viewer test fixtures staged into the served web/ dir (by conftest)
 pcl-viewer/web/fixtures/
+
+# archer vendored ESM libs (fetched by archer/vendor.sh)
+archer/web/vendor/
+
+# archer Playwright test output
+archer/test-results/
