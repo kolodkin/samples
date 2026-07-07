@@ -42,3 +42,15 @@ def test_each_stage_builds(server_url, page):
         state = page.evaluate("() => window.__ARCHER.state")
         assert state["stage"] == name
         assert len(state["obstacles"]) > 5
+
+
+def test_bow_draw_charges_and_releases(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.mouse.move(640, 360)
+    page.mouse.down()
+    page.wait_for_function("() => window.__ARCHER.state.drawPower > 0.4", timeout=5000)
+    power = page.evaluate("() => window.__ARCHER.state.drawPower")
+    assert 0.4 < power <= 1.0
+    page.mouse.up()
+    assert page.evaluate("() => window.__ARCHER.state.drawPower") == 0

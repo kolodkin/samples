@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { CONFIG } from './config.js';
 import { createRng, seedFromQuery } from './rng.js';
 import { buildStage, STAGE_ORDER } from './stages.js';
-// [task-3] player import
+import { Player } from './player.js';
 // [task-4] arrows import
 // [task-5] enemies import
 // [task-7] effects import
@@ -58,8 +58,9 @@ function loadStage(index) {
 }
 const initialStage = Math.max(0, STAGE_ORDER.indexOf(params.get('stage') || 'forest'));
 loadStage(initialStage);
-// [task-3] player setup
+game.player = new Player(camera);
 // [task-4] arrow system setup
+function fireArrow(power) {} // stub; Task 4 replaces the body
 // [task-5] enemy system setup + kill/hit callbacks
 // [task-7] effects setup
 // [task-8] wave manager setup
@@ -75,7 +76,33 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-// [task-3] input handlers
+let wasLocked = false;
+document.addEventListener('pointerlockchange', () => {
+  const locked = document.pointerLockElement === canvas;
+  if (wasLocked && !locked && game.screen === 'playing') {
+    game.player.cancelDraw();
+    // [task-10] pause on pointer-lock loss
+  }
+  wasLocked = locked;
+});
+canvas.addEventListener('click', () => {
+  if (game.screen === 'playing' && document.pointerLockElement !== canvas) {
+    canvas.requestPointerLock()?.catch(() => {}); // headless/e2e: lock may be denied
+  }
+});
+document.addEventListener('mousemove', (e) => {
+  if (document.pointerLockElement === canvas && game.screen === 'playing') {
+    game.player.look(e.movementX, e.movementY);
+  }
+});
+document.addEventListener('mousedown', (e) => {
+  if (e.button === 0 && game.screen === 'playing') game.player.startDraw();
+});
+document.addEventListener('mouseup', (e) => {
+  if (e.button !== 0 || game.screen !== 'playing') return;
+  const power = game.player.releaseDraw();
+  if (power !== null) fireArrow(power);
+});
 
 let last = performance.now();
 let framesRendered = 0;
@@ -83,13 +110,13 @@ function tick(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   if (game.screen === 'playing') {
-    // [task-3] player.update(dt)
+    game.player.update(dt);
     // [task-4] arrows.update(dt)
     // [task-5] enemies.update(dt)
     // [task-8] waves.update(dt)
   }
   // [task-7] effects.update(dt)
-  // [task-3] draw-ring css var
+  document.documentElement.style.setProperty('--draw', game.player.drawPower.toFixed(3));
   renderer.render(scene, camera);
   framesRendered++;
   if (framesRendered === 1) window.__ARCHER.ready = true;
@@ -107,7 +134,8 @@ window.__ARCHER = {
       selected: game.stats.selected,
       stage: game.stage,
       obstacles: game.obstacles,
-      // [task-3] hp/drawPower state
+      hp: game.player.hp,
+      drawPower: game.player.drawPower,
       // [task-4] arrowCount state
       // [task-5] enemies state
       // [task-8] wave/pickup state
