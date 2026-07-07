@@ -7,7 +7,7 @@ import { ArrowSystem, TrajectoryHint } from './arrows.js';
 import { EnemySystem } from './enemies.js';
 import { Effects } from './effects.js';
 import { WaveManager } from './waves.js';
-// [task-10] ui imports
+import { createStore, initUI } from './ui.js';
 
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('game');
@@ -153,7 +153,27 @@ game.onStageCleared = () => {
   document.exitPointerLock?.();
   game.syncUI();
 };
-// [task-10] ui wiring
+const store = createStore({});
+game.syncUI = () => store.set({
+  screen: game.screen,
+  hp: game.player.hp,
+  maxHp: CONFIG.player.hp,
+  score: game.stats.score,
+  ammo: { ...game.stats.ammo },
+  selected: game.stats.selected,
+  wave: game.waves.waveIndex,
+  totalWaves: CONFIG.waves.perStage,
+  stage: game.stage,
+  best: loadBest(),
+});
+initUI(store, {
+  start: () => startGame(initialStage),
+  resume: () => { game.screen = 'playing'; game.syncUI(); },
+  next: () => nextStage(),
+  retry: () => retryStage(),
+  restart: () => { game.stats.score = 0; startGame(0); }, // fresh run after victory
+});
+game.syncUI();
 
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
@@ -169,7 +189,8 @@ document.addEventListener('pointerlockchange', () => {
   const locked = document.pointerLockElement === canvas;
   if (wasLocked && !locked && game.screen === 'playing') {
     game.player.cancelDraw();
-    // [task-10] pause on pointer-lock loss
+    game.screen = 'paused';
+    game.syncUI();
   }
   wasLocked = locked;
 });

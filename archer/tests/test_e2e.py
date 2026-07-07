@@ -1,4 +1,6 @@
 """End-to-end tests for the archer game (Playwright, Chromium)."""
+import re
+
 from playwright.sync_api import expect
 
 # Deterministic, menu-skipping boot with wave spawning disabled — combat
@@ -328,3 +330,39 @@ def test_best_score_persists_across_reloads(server_url, page):
     page.goto(server_url + BOOT)  # fresh page, same origin -> same localStorage
     _wait_ready(page)
     assert page.evaluate("() => window.__ARCHER.state.best.score") >= 150
+
+
+def test_title_screen_and_start_button(server_url, page):
+    page.goto(server_url + "/?seed=1&waves=0")  # no autostart: land on the title
+    _wait_ready(page)
+    expect(page.get_by_test_id("title-screen")).to_be_visible()
+    page.get_by_test_id("start-btn").click()
+    page.wait_for_function("() => window.__ARCHER.state.screen === 'playing'", timeout=5000)
+    expect(page.get_by_test_id("hud")).to_be_visible()
+
+
+def test_hud_reflects_score_ammo_and_selection(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32)")
+    page.evaluate("() => window.__ARCHER.fireAt(0, 1.3, 32)")  # headshot kill: 150
+    page.wait_for_function("() => window.__ARCHER.state.score === 150", timeout=5000)
+    expect(page.get_by_test_id("score")).to_have_text("150")
+    page.evaluate("() => window.__ARCHER.giveAmmo('freezing', 4)")
+    expect(page.get_by_test_id("ammo-freezing")).to_have_text("4")
+    page.keyboard.press("Digit3")
+    expect(page.get_by_test_id("slot-freezing")).to_have_class(re.compile(r"\bactive\b"))
+    expect(page.get_by_test_id("wave")).to_contain_text("forest")
+
+
+def test_game_over_screen_retry_button(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setPlayerHp(1)")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32)")
+    page.wait_for_function("() => window.__ARCHER.state.screen === 'gameOver'", timeout=10000)
+    expect(page.get_by_test_id("gameover-screen")).to_be_visible()
+    page.get_by_test_id("retry-btn").click()
+    page.wait_for_function("() => window.__ARCHER.state.screen === 'playing'", timeout=5000)
+    assert page.evaluate("() => window.__ARCHER.state.hp") == 100
