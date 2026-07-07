@@ -4,7 +4,7 @@ import { createRng, seedFromQuery } from './rng.js';
 import { buildStage, STAGE_ORDER } from './stages.js';
 import { Player } from './player.js';
 import { ArrowSystem, TrajectoryHint } from './arrows.js';
-// [task-5] enemies import
+import { EnemySystem } from './enemies.js';
 // [task-7] effects import
 // [task-8] waves import
 // [task-10] ui imports
@@ -70,7 +70,29 @@ function fireArrow(power) {
   game.arrows.fire(game.player.aimOrigin(), game.player.aimDir(), power, type);
   game.syncUI();
 }
-// [task-5] enemy system setup + kill/hit callbacks
+game.enemies = new EnemySystem(game);
+game.onEnemyKilled = (e, isHead) => {
+  game.stats.score += e.c.score + (isHead ? CONFIG.headshotBonus : 0);
+  game.waves?.onEnemyKilled(e);
+  game.syncUI();
+};
+game.onPlayerHit = () => {
+  flashDamage();
+  game.syncUI();
+  if (game.player.hp <= 0) gameOver();
+};
+function flashDamage() {
+  const el = document.getElementById('flash');
+  el.classList.remove('on');
+  void el.offsetWidth; // restart the CSS animation
+  el.classList.add('on');
+}
+function gameOver() {
+  game.screen = 'gameOver';
+  // [task-9] persist best on game over
+  document.exitPointerLock?.();
+  game.syncUI();
+}
 // [task-7] effects setup
 // [task-8] wave manager setup
 // [task-9] progression (start/stage-clear/game-over/retry)
@@ -122,7 +144,7 @@ function tick(now) {
     game.player.update(dt);
     game.arrows.update(dt);
     trajectoryHint.update(game.player, true);
-    // [task-5] enemies.update(dt)
+    game.enemies.update(dt);
     // [task-8] waves.update(dt)
   }
   // [task-7] effects.update(dt)
@@ -147,7 +169,12 @@ window.__ARCHER = {
       hp: game.player.hp,
       drawPower: game.player.drawPower,
       arrowCount: game.arrows.count,
-      // [task-5] enemies state
+      enemyCount: game.enemies.list.length,
+      enemies: game.enemies.list.map((e) => ({
+        type: e.type, x: e.mesh.position.x, z: e.mesh.position.z,
+        hp: e.hp, state: e.state, frozen: e.frozen > 0, burning: e.burn > 0,
+        hasCover: !!e.cover,
+      })),
       // [task-8] wave/pickup state
     };
   },
@@ -164,7 +191,8 @@ window.__ARCHER = {
     dir.normalize();
     game.arrows.fire(origin.addScaledVector(dir, 0.7), dir, power, type);
   },
-  // [task-5] spawnEnemy, setPlayerHp
+  spawnEnemy: (type, x, z) => { game.enemies.spawn(type, x, z); },
+  setPlayerHp: (n) => { game.player.hp = n; game.syncUI(); },
   // [task-8] setDropChance, killAll, skipToWave
   // [task-9] start, nextStage, retryStage
   // e2e helper: count pixels that differ from the sky background.

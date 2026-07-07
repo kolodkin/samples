@@ -6,3 +6,8 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
 #fallback { position: fixed; inset: 0; display: grid; place-items: center;
   color: #eee; font-family: system-ui, sans-serif; }
 #fallback[hidden] { display: none; }
+#flash.on { animation: dmg 0.35s ease-out; }
+@keyframes dmg {
+  from { background: radial-gradient(ellipse at center, transparent 40%, rgba(255, 0, 0, 0.45)); }
+  to { background: transparent; }
+}

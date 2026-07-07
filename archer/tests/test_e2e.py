@@ -73,3 +73,47 @@ def test_mouse_release_fires_arrow(server_url, page):
     page.wait_for_function("() => window.__ARCHER.state.drawPower > 0.5", timeout=5000)
     page.mouse.up()
     page.wait_for_function("() => window.__ARCHER.state.arrowCount === 1", timeout=2000)
+
+
+def test_arrow_kills_goblin_and_scores(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32)")  # parked at melee reach
+    assert page.evaluate("() => window.__ARCHER.state.enemyCount") == 1
+    # Goblin: 40 hp; normal arrow: 34 dmg → two body shots.
+    page.evaluate("() => window.__ARCHER.fireAt(0, 0.65, 32)")
+    page.wait_for_function("() => window.__ARCHER.state.arrowCount === 0", timeout=5000)
+    page.evaluate("() => window.__ARCHER.fireAt(0, 0.65, 32)")
+    page.wait_for_function("() => window.__ARCHER.state.enemyCount === 0", timeout=5000)
+    assert page.evaluate("() => window.__ARCHER.state.score") == 100
+
+
+def test_headshot_double_damage_and_bonus(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32)")
+    # Head at y=1.3: 34*2=68 >= 40 hp -> one-shot kill, +50 headshot bonus.
+    page.evaluate("() => window.__ARCHER.fireAt(0, 1.3, 32)")
+    page.wait_for_function("() => window.__ARCHER.state.enemyCount === 0", timeout=5000)
+    assert page.evaluate("() => window.__ARCHER.state.score") == 150
+
+
+def test_goblin_advances_and_deals_contact_damage(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 10)")
+    z0 = page.evaluate("() => window.__ARCHER.state.enemies[0].z")
+    page.wait_for_timeout(1500)
+    z1 = page.evaluate("() => window.__ARCHER.state.enemies[0].z")
+    assert z1 > z0 + 3  # closing in on the player at z=34
+    page.wait_for_function("() => window.__ARCHER.state.hp < 100", timeout=15000)
+
+
+def test_player_death_shows_game_over(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setPlayerHp(5)")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32)")
+    page.wait_for_function("() => window.__ARCHER.state.screen === 'gameOver'", timeout=10000)
