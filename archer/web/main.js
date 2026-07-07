@@ -75,7 +75,13 @@ function fireArrow(power) {
 }
 game.enemies = new EnemySystem(game);
 game.onEnemyKilled = (e, isHead) => {
-  game.stats.score += e.c.score + (isHead ? CONFIG.headshotBonus : 0);
+  const now = performance.now();
+  const chained = now - (game.lastKillAt ?? -Infinity) < CONFIG.multiKillWindow * 1000;
+  game.combo = chained ? game.combo + 1 : 0;
+  game.lastKillAt = now;
+  game.stats.score += e.c.score
+    + (isHead ? CONFIG.headshotBonus : 0)
+    + game.combo * CONFIG.multiKillBonus;
   game.waves?.onEnemyKilled(e);
   game.syncUI();
 };
@@ -92,7 +98,7 @@ function flashDamage() {
 }
 function gameOver() {
   game.screen = 'gameOver';
-  // [task-9] persist best on game over
+  saveBest();
   document.exitPointerLock?.();
   game.syncUI();
 }
@@ -112,11 +118,41 @@ document.addEventListener('wheel', (e) => {
   game.syncUI();
 });
 game.waves = new WaveManager(game);
-game.onStageCleared = () => { // stub; Task 9 adds real progression
-  game.screen = 'stageClear';
+const BEST_KEY = 'archer.best';
+function loadBest() {
+  try { return JSON.parse(localStorage.getItem(BEST_KEY)) || { score: 0, stage: 0 }; }
+  catch { return { score: 0, stage: 0 }; }
+}
+function saveBest() {
+  const best = loadBest();
+  best.score = Math.max(best.score, game.stats.score);
+  best.stage = Math.max(best.stage, game.stageIndex + 1);
+  localStorage.setItem(BEST_KEY, JSON.stringify(best));
+}
+
+function startGame(stageIndex) {
+  game.enemies.clear();
+  game.arrows.clear();
+  game.waves.clearPickups();
+  game.waves.state = 'idle';
+  loadStage(stageIndex);
+  game.player.resetHp();
+  game.stageInventory = { ...game.stats.ammo }; // retry restores this snapshot
+  game.screen = 'playing';
+  if (params.get('waves') !== '0') game.waves.startWave(1);
+  game.syncUI();
+}
+function nextStage() { startGame(game.stageIndex + 1); }
+function retryStage() {
+  game.stats.ammo = { ...game.stageInventory };
+  startGame(game.stageIndex);
+}
+game.onStageCleared = () => {
+  saveBest();
+  game.screen = game.stageIndex >= STAGE_ORDER.length - 1 ? 'victory' : 'stageClear';
+  document.exitPointerLock?.();
   game.syncUI();
 };
-// [task-9] progression (start/stage-clear/game-over/retry)
 // [task-10] ui wiring
 
 function resize() {
@@ -183,6 +219,7 @@ window.__ARCHER = {
     return {
       screen: game.screen,
       score: game.stats.score,
+      best: loadBest(),
       ammo: { ...game.stats.ammo },
       selected: game.stats.selected,
       stage: game.stage,
@@ -225,7 +262,9 @@ window.__ARCHER = {
     for (const e of [...game.enemies.list]) game.enemies.damage(e, 1e9);
   },
   skipToWave: (n) => { game.waves.skipToWave(n); },
-  // [task-9] start, nextStage, retryStage
+  start: (i = 0) => startGame(i),
+  nextStage: () => nextStage(),
+  retryStage: () => retryStage(),
   // e2e helper: count pixels that differ from the sky background.
   visiblePixelCount() {
     const gl = renderer.getContext();
@@ -243,8 +282,4 @@ window.__ARCHER = {
 };
 
 // Boot: tests (and impatient humans) skip the title screen.
-if (params.get('autostart') === '1') {
-  game.screen = 'playing'; // [task-9] replaced by startGame()
-  if (params.get('waves') !== '0') game.waves.startWave(1);
-  game.syncUI();
-}
+if (params.get('autostart') === '1') startGame(initialStage);

@@ -264,3 +264,67 @@ def test_drops_spawn_and_are_shot_to_collect(server_url, page):
     page.wait_for_function("() => window.__ARCHER.state.pickupCount === 0", timeout=5000)
     ammo1 = page.evaluate("(t) => window.__ARCHER.state.ammo[t]", pickup["type"])
     assert 3 <= ammo1 - ammo0 <= 5
+
+
+def test_stage_clear_advances_to_desert(server_url, page):
+    page.goto(server_url + "/?autostart=1&seed=42")
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setDropChance(0)")
+    page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
+    page.evaluate("() => window.__ARCHER.skipToWave(5)")
+    # Kill every wave-5 enemy as it spawns until the wave is done.
+    page.wait_for_function(
+        """() => {
+          window.__ARCHER.killAll();
+          return window.__ARCHER.state.screen === 'stageClear';
+        }""",
+        timeout=30000,
+    )
+    page.evaluate("() => window.__ARCHER.nextStage()")
+    state = page.evaluate("() => window.__ARCHER.state")
+    assert state["stage"] == "desert"
+    assert state["screen"] == "playing"
+    assert state["hp"] == 100  # HP refills between stages
+
+
+def test_retry_restores_stage_start_inventory(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    # Ammo gained mid-stage is lost on retry (snapshot from stage start = 0).
+    page.evaluate("() => window.__ARCHER.giveAmmo('burning', 7)")
+    page.evaluate("() => window.__ARCHER.setPlayerHp(1)")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32)")
+    page.wait_for_function("() => window.__ARCHER.state.screen === 'gameOver'", timeout=10000)
+    page.evaluate("() => window.__ARCHER.retryStage()")
+    state = page.evaluate("() => window.__ARCHER.state")
+    assert state["screen"] == "playing"
+    assert state["hp"] == 100
+    assert state["ammo"]["burning"] == 0
+    assert state["enemyCount"] == 0  # battlefield cleared
+
+
+def test_multikill_combo_bonus(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
+    page.evaluate("() => window.__ARCHER.setDropChance(0)")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', -1, 32)")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 1, 32)")
+    page.evaluate("() => window.__ARCHER.killAll()")  # same-frame kills chain a combo
+    # 100 + (100 + 25 combo bonus on the second kill)
+    page.wait_for_function("() => window.__ARCHER.state.score === 225", timeout=5000)
+
+
+def test_best_score_persists_across_reloads(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32)")
+    page.evaluate("() => window.__ARCHER.fireAt(0, 1.3, 32)")  # headshot: 150 points
+    page.wait_for_function("() => window.__ARCHER.state.score === 150", timeout=5000)
+    page.evaluate("() => window.__ARCHER.setPlayerHp(1)")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32)")
+    page.wait_for_function("() => window.__ARCHER.state.screen === 'gameOver'", timeout=10000)
+    page.goto(server_url + BOOT)  # fresh page, same origin -> same localStorage
+    _wait_ready(page)
+    assert page.evaluate("() => window.__ARCHER.state.best.score") >= 150
