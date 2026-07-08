@@ -41,6 +41,7 @@ const game = {
   },
   screen: 'title',
   obstacles: [],
+  touchMode: matchMedia('(pointer: coarse)').matches,
   syncUI: () => {}, // replaced by the UI task
 };
 let stageHandle = null;
@@ -165,6 +166,7 @@ game.syncUI = () => store.set({
   totalWaves: CONFIG.waves.perStage,
   stage: game.stage,
   best: loadBest(),
+  touch: game.touchMode,
 });
 initUI(store, {
   start: () => startGame(initialStage),
@@ -172,6 +174,20 @@ initUI(store, {
   next: () => nextStage(),
   retry: () => retryStage(),
   restart: () => { game.stats.score = 0; startGame(0); }, // fresh run after victory
+  pause: () => {
+    if (game.screen !== 'playing') return;
+    game.player.cancelDraw();
+    game.screen = 'paused';
+    game.syncUI();
+  },
+  select: (type) => { game.stats.selected = type; game.syncUI(); },
+  drawStart: () => { if (game.screen === 'playing') game.player.startDraw(); },
+  drawEnd: () => {
+    if (game.screen !== 'playing') return;
+    const power = game.player.releaseDraw();
+    if (power !== null) fireArrow(power);
+  },
+  drawCancel: () => game.player.cancelDraw(),
 });
 game.syncUI();
 
@@ -195,6 +211,7 @@ document.addEventListener('pointerlockchange', () => {
   wasLocked = locked;
 });
 canvas.addEventListener('click', () => {
+  if (game.touchMode) return; // touch aims by dragging; no pointer lock
   if (game.screen === 'playing' && document.pointerLockElement !== canvas) {
     canvas.requestPointerLock()?.catch(() => {}); // headless/e2e: lock may be denied
   }
@@ -212,6 +229,38 @@ document.addEventListener('mouseup', (e) => {
   const power = game.player.releaseDraw();
   if (power !== null) fireArrow(power);
 });
+
+// Touch: drag on the canvas to aim; the HUD fire button handles draw/release
+// (see ui.js). No pointer lock on touch — deltas come from tracking one
+// finger by identifier, so a second finger on the fire button never steers.
+document.addEventListener('touchstart', () => {
+  if (!game.touchMode) { game.touchMode = true; game.syncUI(); }
+}, { capture: true, passive: true });
+let lookTouch = null; // { id, x, y } of the finger that owns the camera
+canvas.addEventListener('touchstart', (e) => {
+  if (game.screen !== 'playing' || lookTouch) return;
+  const t = e.changedTouches[0];
+  lookTouch = { id: t.identifier, x: t.clientX, y: t.clientY };
+  e.preventDefault(); // no scroll/zoom, and no synthetic mouse draw
+}, { passive: false });
+canvas.addEventListener('touchmove', (e) => {
+  if (!lookTouch || game.screen !== 'playing') return;
+  for (const t of e.changedTouches) {
+    if (t.identifier !== lookTouch.id) continue;
+    const k = CONFIG.touch.lookScale;
+    game.player.look((t.clientX - lookTouch.x) * k, (t.clientY - lookTouch.y) * k);
+    lookTouch.x = t.clientX;
+    lookTouch.y = t.clientY;
+  }
+  e.preventDefault();
+}, { passive: false });
+for (const type of ['touchend', 'touchcancel']) {
+  canvas.addEventListener(type, (e) => {
+    for (const t of e.changedTouches) {
+      if (lookTouch && t.identifier === lookTouch.id) lookTouch = null;
+    }
+  });
+}
 
 let last = performance.now();
 let framesRendered = 0;
@@ -246,6 +295,9 @@ window.__ARCHER = {
       stage: game.stage,
       obstacles: game.obstacles,
       hp: game.player.hp,
+      yaw: game.player.yaw,
+      pitch: game.player.pitch,
+      touch: game.touchMode,
       drawPower: game.player.drawPower,
       arrowCount: game.arrows.count,
       enemyCount: game.enemies.list.length,

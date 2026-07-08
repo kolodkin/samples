@@ -23,6 +23,7 @@ export const CONFIG = {
       burning:   { damage: 15, color: 0xff4422, dps: 9, burnTime: 4, spreadRadius: 2.5 },
     },
   },
+  touch: { lookScale: 2.2 }, // touch-drag aim, relative to mouse sensitivity
   drops: { chance: 0.2, min: 3, max: 5, lifetime: 20, radius: 0.6 },
   enemies: {
     goblin:   { hp: 40,  speed: 5.5, damage: 10, attackCooldown: 1.2, score: 100,

@@ -334,6 +334,79 @@ def test_best_score_persists_across_reloads(server_url, page):
     assert page.evaluate("() => window.__ARCHER.state.best.score") >= 150
 
 
+def _touch(page, type_, x, y, identifier=0):
+    """Dispatch a synthetic single-finger TouchEvent on the game canvas."""
+    page.evaluate(
+        """(a) => {
+          const canvas = document.getElementById('game');
+          const touch = new Touch({
+            identifier: a.id, target: canvas, clientX: a.x, clientY: a.y,
+          });
+          const live = a.type === 'touchend' || a.type === 'touchcancel' ? [] : [touch];
+          canvas.dispatchEvent(new TouchEvent(a.type, {
+            bubbles: true, cancelable: true,
+            touches: live, targetTouches: live, changedTouches: [touch],
+          }));
+        }""",
+        {"type": type_, "x": x, "y": y, "id": identifier},
+    )
+
+
+def test_touch_drag_aims_without_firing(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    yaw0 = page.evaluate("() => window.__ARCHER.state.yaw")
+    _touch(page, "touchstart", 400, 300)
+    _touch(page, "touchmove", 250, 340)
+    _touch(page, "touchend", 250, 340)
+    assert page.evaluate("() => window.__ARCHER.state.yaw") != yaw0
+    # Looking around never draws or looses an arrow.
+    assert page.evaluate("() => window.__ARCHER.state.drawPower") == 0
+    assert page.evaluate("() => window.__ARCHER.state.arrowCount") == 0
+
+
+def test_touch_enables_touch_hud(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    expect(page.get_by_test_id("fire-btn")).not_to_be_attached()
+    _touch(page, "touchstart", 400, 300)
+    _touch(page, "touchend", 400, 300)
+    expect(page.get_by_test_id("fire-btn")).to_be_visible()
+    expect(page.get_by_test_id("pause-btn")).to_be_visible()
+
+
+def test_fire_button_draws_and_fires(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    _touch(page, "touchstart", 400, 300)
+    _touch(page, "touchend", 400, 300)
+    fire = page.get_by_test_id("fire-btn")
+    fire.dispatch_event("pointerdown")
+    page.wait_for_function("() => window.__ARCHER.state.drawPower > 0.5", timeout=5000)
+    fire.dispatch_event("pointerup")
+    page.wait_for_function("() => window.__ARCHER.state.arrowCount === 1", timeout=2000)
+    assert page.evaluate("() => window.__ARCHER.state.drawPower") == 0
+
+
+def test_quiver_tap_switches_arrow(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.get_by_test_id("slot-exploding").click()
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "exploding"
+    expect(page.get_by_test_id("slot-exploding")).to_have_class(re.compile(r"\bactive\b"))
+
+
+def test_touch_pause_and_resume(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    _touch(page, "touchstart", 400, 300)
+    _touch(page, "touchend", 400, 300)
+    page.get_by_test_id("pause-btn").click()
+    assert page.evaluate("() => window.__ARCHER.state.screen") == "paused"
+    page.get_by_test_id("resume-btn").click()
+    page.wait_for_function("() => window.__ARCHER.state.screen === 'playing'", timeout=5000)
+
+
 def test_title_screen_and_start_button(server_url, page):
     page.goto(server_url + "/?seed=1&waves=0")  # no autostart: land on the title
     _wait_ready(page)
