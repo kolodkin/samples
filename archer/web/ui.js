@@ -36,7 +36,26 @@ const SLOTS = [
   ['burning', 'Burn', '4'],
 ];
 
-function Hud({ s }) {
+// Hold-to-draw button for touch play: press starts the draw, release looses.
+// Pointer capture keeps the release on the button even if the thumb slides
+// off; preventDefault stops the synthetic mouse events that would otherwise
+// double-drive the document-level mouse draw path.
+function TouchControls({ actions }) {
+  return html`
+    <button
+      class="fire-btn" data-testid="fire-btn" aria-label="Draw bow"
+      onPointerDown=${(e) => {
+        e.preventDefault();
+        try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* synthetic events */ }
+        actions.drawStart();
+      }}
+      onPointerUp=${(e) => { e.preventDefault(); actions.drawEnd(); }}
+      onPointerCancel=${() => actions.drawCancel()}
+      onContextMenu=${(e) => e.preventDefault()}
+    ><span class="fire-ring" />🏹</button>`;
+}
+
+function Hud({ s, actions }) {
   return html`
     <div class="hud" data-testid="hud">
       <div class="top-left">
@@ -47,11 +66,15 @@ function Hud({ s }) {
         <div class="score" data-testid="score">${s.score}</div>
         <div class="wave" data-testid="wave">${s.stage} — wave ${s.wave}/${s.totalWaves}</div>
       </div>
+      ${s.touch && html`
+        <button class="pause-btn" data-testid="pause-btn" aria-label="Pause"
+          onClick=${actions.pause}>❚❚</button>`}
       <div class="quiver">
         ${SLOTS.map(([type, label, key]) => html`
           <div
             class="slot ${s.selected === type ? 'active' : ''} ${type !== 'normal' && !s.ammo[type] ? 'empty' : ''}"
             data-testid="slot-${type}"
+            onClick=${() => actions.select(type)}
           >
             <span class="key">${key}</span>
             <span class="label">${label}</span>
@@ -59,6 +82,7 @@ function Hud({ s }) {
           </div>
         `)}
       </div>
+      ${s.touch && html`<${TouchControls} actions=${actions} />`}
       <div class="crosshair"><div class="draw-ring" /></div>
     </div>`;
 }
@@ -76,7 +100,8 @@ function Screens({ s, actions }) {
   if (s.screen === 'title') {
     return html`
       <${Screen} testid="title-screen" title="ARCHER">
-        <p>Hold to draw, release to loose. Keys 1–4 switch arrows.</p>
+        <p>Hold to draw, release to loose. Keys 1–4 or a tap on the quiver switch arrows.</p>
+        <p>On touch: drag to aim, hold the 🏹 button to draw.</p>
         <p data-testid="best">Best: ${s.best.score} pts, stage ${s.best.stage}/3</p>
         <button data-testid="start-btn" onClick=${actions.start}>Start</button>
       <//>`;
@@ -113,7 +138,7 @@ function App({ store, actions }) {
   if (!s.screen) return null; // before the first syncUI
   return html`
     <div class="ui-root">
-      ${s.screen !== 'title' && html`<${Hud} s=${s} />`}
+      ${s.screen !== 'title' && html`<${Hud} s=${s} actions=${actions} />`}
       <${Screens} s=${s} actions=${actions} />
     </div>`;
 }

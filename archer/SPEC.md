@@ -7,8 +7,15 @@ Archer — technical spec
 |-------|--------|
 | Mouse move (pointer lock) | Aim |
 | Hold / release left mouse | Draw (power charges ~1 s) / loose arrow |
-| Keys 1–4, mouse wheel | Select arrow type |
+| Keys 1–4, mouse wheel, tap/click a quiver slot | Select arrow type |
 | Esc (exits pointer lock) | Pause |
+| Touch: drag on the canvas | Aim (no pointer lock; one finger owns the camera, tracked by touch identifier) |
+| Touch: hold / release the 🏹 button | Draw / loose arrow |
+| Touch: ❚❚ button | Pause |
+
+Touch mode is detected via `(pointer: coarse)` or the first `touchstart` and
+adds the fire and pause buttons to the HUD; hybrid devices keep both input
+paths live. Touch aim sensitivity is mouse sensitivity × `CONFIG.touch.lookScale`.
 
 ## Arrow types
 
@@ -55,7 +62,9 @@ wave, enemies, pickups, obstacles, best) and test hooks: `fireAt(x, y, z,
 type?, power?)` (gravity-compensated), `spawnEnemy(type, x, z)`,
 `skipToWave(n)`, `killAll()`, `giveAmmo(type, n)`, `setDropChance(c)`,
 `setPlayerHp(n)`, `start(i)`, `nextStage()`, `retryStage()`,
-`visiblePixelCount()`. Tests park enemies at melee reach (z=32) to avoid
+`visiblePixelCount()`. The state snapshot also exposes `yaw`/`pitch`/`touch`
+so touch-aim tests can assert camera motion; touch e2e tests dispatch
+synthetic `TouchEvent`s on the canvas (Chromium's `new Touch()`). Tests park enemies at melee reach (z=32) to avoid
 leading moving targets, and boot with `?autostart=1&seed=42&waves=0` for a
 clean battlefield. Arrow collision is segment-vs-sphere per frame (no
 tunneling at 55 m/s). Enemy melee ignores the perch elevation (attacks
@@ -63,7 +72,7 @@ reach the player from the perch base by design).
 
 ## Known simplifications
 
-- No player movement; no sound; no mobile controls (out of scope, v1).
+- No player movement; no sound.
 - Stage geometry is regenerated (not disposed) on stage change — a small,
   bounded leak over a 3-stage run.
 - Enemy projectiles use point (not segment) collision: at 20 m/s vs a
