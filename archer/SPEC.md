@@ -10,12 +10,19 @@ This spec covers behavior the numbers don't show.
 | Input | Action |
 |-------|--------|
 | Mouse move (pointer lock) | Aim |
-| Hold / release left mouse | Draw (power charges ~1 s) / loose arrow |
+| Left click on the canvas | Shoot at the set power |
+| HUD +/− buttons (left middle), or +/− keys | Adjust shot power (`CONFIG.bow.power`: min/max/step) |
 | Keys 1–4, mouse wheel, tap/click a quiver slot | Select arrow type |
 | Esc (exits pointer lock) | Pause |
 | Touch: drag on the canvas | Aim (no pointer lock; one finger owns the camera) |
-| Touch: hold / release the 🏹 button | Draw / loose arrow |
+| Touch: tap the 🏹 button | Shoot at the set power |
 | Touch: ❚❚ button | Pause |
+
+Shot power is a persistent setting (it survives firing); the crosshair ring,
+the 🏹 button ring, and the bow-string pull all show the current level. The
+dotted trajectory hint is visible below 85% power and fades as power rises,
+so full-power shots stay skill-based. Only clicks that land on the canvas
+fire — HUD buttons keep their clicks to themselves.
 
 Touch mode is detected via `(pointer: coarse)` or the first `touchstart`;
 hybrid devices keep both input paths live. Touch aim sensitivity is mouse
@@ -57,7 +64,7 @@ All gameplay randomness flows through one seeded mulberry32 stream
 (`web/rng.js`, `?seed=N`); particles are visual-only and exempt.
 `window.__ARCHER` (defined in `web/main.js`) exposes `ready`, a `state`
 snapshot (screen, hp, score, wave, enemies, pickups, obstacles, best,
-yaw/pitch/touch), and test hooks: `fireAt()` (gravity-compensated),
+yaw/pitch/touch/power), and test hooks: `fireAt()` (gravity-compensated),
 `spawnEnemy()`, `skipToWave()`, `killAll()`, `giveAmmo()`,
 `setDropChance()`, `setPlayerHp()`, `start()`, `nextStage()`,
 `retryStage()`, `visiblePixelCount()`. Tests boot with

@@ -36,23 +36,31 @@ const SLOTS = [
   ['burning', 'Burn', '4'],
 ];
 
-// Hold-to-draw button for touch play: press starts the draw, release looses.
-// Pointer capture keeps the release on the button even if the thumb slides
-// off; preventDefault stops the synthetic mouse events that would otherwise
-// double-drive the document-level mouse draw path.
+// Tap-to-shoot button for touch play. preventDefault stops the synthetic
+// mouse events that would otherwise double-drive the document-level
+// click-fire path.
 function TouchControls({ actions }) {
   return html`
     <button
-      class="fire-btn" data-testid="fire-btn" aria-label="Draw bow"
-      onPointerDown=${(e) => {
-        e.preventDefault();
-        try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* synthetic events */ }
-        actions.drawStart();
-      }}
-      onPointerUp=${(e) => { e.preventDefault(); actions.drawEnd(); }}
-      onPointerCancel=${() => actions.drawCancel()}
+      class="fire-btn" data-testid="fire-btn" aria-label="Shoot"
+      onPointerDown=${(e) => { e.preventDefault(); actions.fire(); }}
       onContextMenu=${(e) => e.preventDefault()}
     ><span class="fire-ring" />🏹</button>`;
+}
+
+// Shot power stepper in the left thumb zone. HUD buttons cover touch and
+// unlocked-mouse play; +/- keys mirror them under pointer lock (main.js).
+function PowerControls({ s, actions }) {
+  return html`
+    <div class="power-controls">
+      <button class="power-btn" data-testid="power-up" aria-label="Increase power"
+        onPointerDown=${(e) => { e.preventDefault(); actions.power(1); }}
+        onContextMenu=${(e) => e.preventDefault()}>+</button>
+      <div class="power-value" data-testid="power-value">${Math.round(s.power * 100)}%</div>
+      <button class="power-btn" data-testid="power-down" aria-label="Decrease power"
+        onPointerDown=${(e) => { e.preventDefault(); actions.power(-1); }}
+        onContextMenu=${(e) => e.preventDefault()}>−</button>
+    </div>`;
 }
 
 function Hud({ s, actions }) {
@@ -69,6 +77,7 @@ function Hud({ s, actions }) {
       ${s.touch && html`
         <button class="pause-btn" data-testid="pause-btn" aria-label="Pause"
           onClick=${actions.pause}>❚❚</button>`}
+      <${PowerControls} s=${s} actions=${actions} />
       <div class="quiver">
         ${SLOTS.map(([type, label, key]) => html`
           <div
@@ -83,7 +92,7 @@ function Hud({ s, actions }) {
         `)}
       </div>
       ${s.touch && html`<${TouchControls} actions=${actions} />`}
-      <div class="crosshair"><div class="draw-ring" /></div>
+      <div class="crosshair"><div class="power-ring" /></div>
     </div>`;
 }
 
@@ -100,8 +109,8 @@ function Screens({ s, actions }) {
   if (s.screen === 'title') {
     return html`
       <${Screen} testid="title-screen" title="ARCHER">
-        <p>Hold to draw, release to loose. Keys 1–4 or a tap on the quiver switch arrows.</p>
-        <p>On touch: drag to aim, hold the 🏹 button to draw.</p>
+        <p>Click to shoot. Set power with the +/− buttons (or +/− keys). Keys 1–4 or a tap on the quiver switch arrows.</p>
+        <p>On touch: drag to aim, tap the 🏹 button to shoot.</p>
         <p data-testid="best">Best: ${s.best.score} pts, stage ${s.best.stage}/3</p>
         <button data-testid="start-btn" onClick=${actions.start}>Start</button>
       <//>`;

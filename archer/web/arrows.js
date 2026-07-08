@@ -131,7 +131,7 @@ export class ArrowSystem {
   }
 }
 
-// Dotted arc preview shown at partial draw; fades out at full draw so
+// Dotted arc preview shown at partial power; fades out toward max power so
 // full-power shots stay skill-based.
 export class TrajectoryHint {
   constructor(scene) {
@@ -146,12 +146,11 @@ export class TrajectoryHint {
   }
 
   update(player, active) {
-    const show = active && player.isDrawing
-      && player.drawPower > 0.05 && player.drawPower < 0.85;
+    const show = active && player.power < 0.85;
     this.points.visible = show;
     if (!show) return;
     const speed = CONFIG.bow.minSpeed
-      + (CONFIG.bow.maxSpeed - CONFIG.bow.minSpeed) * player.drawPower;
+      + (CONFIG.bow.maxSpeed - CONFIG.bow.minSpeed) * player.power;
     const p = player.aimOrigin();
     const v = player.aimDir().multiplyScalar(speed);
     const attr = this.points.geometry.attributes.position;
@@ -162,6 +161,6 @@ export class TrajectoryHint {
       attr.setXYZ(i, p.x, Math.max(p.y, 0.05), p.z);
     }
     attr.needsUpdate = true;
-    this.points.material.opacity = 0.5 * (1 - Math.max(0, (player.drawPower - 0.6) / 0.25));
+    this.points.material.opacity = 0.5 * (1 - Math.max(0, (player.power - 0.6) / 0.25));
   }
 }

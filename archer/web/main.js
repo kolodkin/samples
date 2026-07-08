@@ -65,13 +65,17 @@ loadStage(initialStage);
 game.player = new Player(camera);
 game.arrows = new ArrowSystem(game);
 const trajectoryHint = new TrajectoryHint(scene);
-function fireArrow(power) {
+function fireArrow() {
   const type = game.stats.selected;
   if (type !== 'normal') {
-    if (game.stats.ammo[type] <= 0) return; // no ammo: the release fizzles
+    if (game.stats.ammo[type] <= 0) return; // no ammo: the shot fizzles
     game.stats.ammo[type] -= 1;
   }
-  game.arrows.fire(game.player.aimOrigin(), game.player.aimDir(), power, type);
+  game.arrows.fire(game.player.aimOrigin(), game.player.aimDir(), game.player.power, type);
+  game.syncUI();
+}
+function adjustPower(dir) {
+  game.player.adjustPower(dir);
   game.syncUI();
 }
 game.enemies = new EnemySystem(game);
@@ -107,10 +111,15 @@ game.effects = new Effects(scene);
 game.effects.setSnow(game.stage === 'iceberg');
 const ARROW_ORDER = ['normal', 'exploding', 'freezing', 'burning'];
 const TYPE_KEYS = { Digit1: 'normal', Digit2: 'exploding', Digit3: 'freezing', Digit4: 'burning' };
+// +/- keys mirror the HUD power buttons: under pointer lock the cursor is
+// captive, so desktop players adjust power from the keyboard.
+const POWER_KEYS = { Equal: 1, NumpadAdd: 1, Minus: -1, NumpadSubtract: -1 };
 document.addEventListener('keydown', (e) => {
   if (game.screen !== 'playing') return;
   const type = TYPE_KEYS[e.code];
   if (type) { game.stats.selected = type; game.syncUI(); }
+  const dir = POWER_KEYS[e.code];
+  if (dir) adjustPower(dir);
 });
 document.addEventListener('wheel', (e) => {
   if (game.screen !== 'playing') return;
@@ -162,6 +171,7 @@ game.syncUI = () => store.set({
   score: game.stats.score,
   ammo: { ...game.stats.ammo },
   selected: game.stats.selected,
+  power: game.player.power,
   wave: game.waves.waveIndex,
   totalWaves: CONFIG.waves.perStage,
   stage: game.stage,
@@ -176,18 +186,12 @@ initUI(store, {
   restart: () => { game.stats.score = 0; startGame(0); }, // fresh run after victory
   pause: () => {
     if (game.screen !== 'playing') return;
-    game.player.cancelDraw();
     game.screen = 'paused';
     game.syncUI();
   },
   select: (type) => { game.stats.selected = type; game.syncUI(); },
-  drawStart: () => { if (game.screen === 'playing') game.player.startDraw(); },
-  drawEnd: () => {
-    if (game.screen !== 'playing') return;
-    const power = game.player.releaseDraw();
-    if (power !== null) fireArrow(power);
-  },
-  drawCancel: () => game.player.cancelDraw(),
+  fire: () => { if (game.screen === 'playing') fireArrow(); },
+  power: (dir) => { if (game.screen === 'playing') adjustPower(dir); },
 });
 game.syncUI();
 
@@ -204,7 +208,6 @@ let wasLocked = false;
 document.addEventListener('pointerlockchange', () => {
   const locked = document.pointerLockElement === canvas;
   if (wasLocked && !locked && game.screen === 'playing') {
-    game.player.cancelDraw();
     game.screen = 'paused';
     game.syncUI();
   }
@@ -221,18 +224,17 @@ document.addEventListener('mousemove', (e) => {
     game.player.look(e.movementX, e.movementY);
   }
 });
+// Shot on click. Only clicks that land on the canvas fire — HUD buttons
+// (quiver, power, pause) sit in #ui and keep their clicks to themselves.
+// Under pointer lock every mouse event targets the canvas, so this always
+// fires while locked.
 document.addEventListener('mousedown', (e) => {
-  if (e.button === 0 && game.screen === 'playing') game.player.startDraw();
-});
-document.addEventListener('mouseup', (e) => {
-  if (e.button !== 0 || game.screen !== 'playing') return;
-  const power = game.player.releaseDraw();
-  if (power !== null) fireArrow(power);
+  if (e.button === 0 && e.target === canvas && game.screen === 'playing') fireArrow();
 });
 
-// Touch: drag on the canvas to aim; the HUD fire button handles draw/release
-// (see ui.js). No pointer lock on touch — deltas come from tracking one
-// finger by identifier, so a second finger on the fire button never steers.
+// Touch: drag on the canvas to aim; the HUD fire button shoots (see ui.js).
+// No pointer lock on touch — deltas come from tracking one finger by
+// identifier, so a second finger on the fire button never steers.
 document.addEventListener('touchstart', () => {
   if (!game.touchMode) { game.touchMode = true; game.syncUI(); }
 }, { capture: true, passive: true });
@@ -241,7 +243,7 @@ canvas.addEventListener('touchstart', (e) => {
   if (game.screen !== 'playing' || lookTouch) return;
   const t = e.changedTouches[0];
   lookTouch = { id: t.identifier, x: t.clientX, y: t.clientY };
-  e.preventDefault(); // no scroll/zoom, and no synthetic mouse draw
+  e.preventDefault(); // no scroll/zoom, and no synthetic mouse click-fire
 }, { passive: false });
 canvas.addEventListener('touchmove', (e) => {
   if (!lookTouch || game.screen !== 'playing') return;
@@ -275,7 +277,7 @@ function tick(now) {
     game.waves.update(dt);
   }
   game.effects.update(dt);
-  document.documentElement.style.setProperty('--draw', game.player.drawPower.toFixed(3));
+  document.documentElement.style.setProperty('--power', game.player.power.toFixed(3));
   renderer.render(scene, camera);
   framesRendered++;
   if (framesRendered === 1) window.__ARCHER.ready = true;
@@ -298,7 +300,7 @@ window.__ARCHER = {
       yaw: game.player.yaw,
       pitch: game.player.pitch,
       touch: game.touchMode,
-      drawPower: game.player.drawPower,
+      power: game.player.power,
       arrowCount: game.arrows.count,
       enemyCount: game.enemies.list.length,
       enemies: game.enemies.list.map((e) => ({
