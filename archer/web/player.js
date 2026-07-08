@@ -59,8 +59,7 @@ export class Player {
     this.hp = CONFIG.player.hp;
     this.yaw = 0;       // facing -z, toward the spawn edge
     this.pitch = 0;
-    this.isDrawing = false;
-    this.drawPower = 0;
+    this.power = CONFIG.bow.power.initial;
     this.bow = buildBowViewmodel();
     camera.add(this.bow.group);
     camera.rotation.order = 'YXZ';
@@ -71,16 +70,11 @@ export class Player {
     this.pitch = Math.max(-1.4, Math.min(1.4, this.pitch - dy * 0.0022));
   }
 
-  startDraw() {
-    if (!this.isDrawing) { this.isDrawing = true; this.drawPower = 0; }
-  }
-
-  cancelDraw() { this.isDrawing = false; this.drawPower = 0; }
-
-  releaseDraw() {
-    const p = this.drawPower;
-    this.cancelDraw();
-    return p >= CONFIG.bow.minDrawToFire ? p : null;
+  adjustPower(dir) {
+    const { min, max, step } = CONFIG.bow.power;
+    // Snap to the step grid so repeated float adds never drift off the stops.
+    const stepped = Math.round((this.power + dir * step) / step) * step;
+    this.power = Math.min(max, Math.max(min, Math.round(stepped * 100) / 100));
   }
 
   takeDamage(n) { this.hp = Math.max(0, this.hp - n); }
@@ -97,16 +91,13 @@ export class Player {
 
   update(dt) {
     this.camera.rotation.set(this.pitch, this.yaw, 0);
-    if (this.isDrawing) {
-      this.drawPower = Math.min(1, this.drawPower + dt / CONFIG.bow.drawTime);
-    }
-    // Ease FOV toward zoom at full draw.
-    const targetFov = this.drawPower >= 1 ? CONFIG.bow.zoomFov : CONFIG.bow.baseFov;
+    // Ease FOV toward zoom at max power.
+    const targetFov = this.power >= 1 ? CONFIG.bow.zoomFov : CONFIG.bow.baseFov;
     this.camera.fov += (targetFov - this.camera.fov) * Math.min(1, dt * 8);
     this.camera.updateProjectionMatrix();
-    // Pull the string and nocked arrow back with draw power. Each string
+    // Pull the string and nocked arrow back with the set power. Each string
     // half runs from its limb tip to the nock at (pull, 0), forming a V.
-    const pull = this.drawPower * 0.15;
+    const pull = this.power * 0.15;
     for (const [seg, side] of [[this.bow.stringTop, 1], [this.bow.stringBottom, -1]]) {
       const v = new THREE.Vector3(pull, -side * STRING_TIP_Y, 0); // tip → nock
       seg.scale.y = v.length();

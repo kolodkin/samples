@@ -4,12 +4,11 @@ export const CONFIG = {
   arena: { size: 80, spawnZ: -34, spawnXSpread: 28 },
   player: { hp: 100, pos: { x: 0, y: 3.2, z: 34 } },
   bow: {
-    drawTime: 1.0,       // seconds to full draw
     minSpeed: 14,
     maxSpeed: 55,
-    minDrawToFire: 0.15, // releases below this power are cancelled
+    power: { min: 0.2, max: 1, step: 0.1, initial: 0.6 }, // +/- adjusted shot power
     baseFov: 70,
-    zoomFov: 62,         // FOV eased in at full draw
+    zoomFov: 62,         // FOV eased in at max power
   },
   arrow: {
     gravity: -20,

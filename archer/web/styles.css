@@ -1,4 +1,4 @@
-:root { --draw: 0; }
+:root { --power: 0; }
 html, body { margin: 0; height: 100%; overflow: hidden; background: #000;
   touch-action: none; overscroll-behavior: none;
   user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
@@ -52,7 +52,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000;
 .slot .key { font-weight: 700; color: #ffd257; }
 .slot .count { font-variant-numeric: tabular-nums; }
 
-/* Touch controls: draw/loose button in the right thumb zone, pause up top. */
+/* Touch controls: shoot button in the right thumb zone, pause up top. */
 .fire-btn { position: absolute; right: calc(20px + env(safe-area-inset-right));
   bottom: calc(90px + env(safe-area-inset-bottom)); width: 88px; height: 88px;
   border-radius: 50%; border: 2px solid rgba(255, 210, 87, 0.3); pointer-events: auto;
@@ -60,9 +60,20 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000;
   background: rgba(0, 0, 0, 0.45); display: grid; place-items: center; }
 .fire-btn:active { background: rgba(60, 45, 0, 0.6); }
 .fire-ring { position: absolute; inset: -2px; border-radius: 50%;
-  background: conic-gradient(#ffd257 calc(var(--draw) * 360deg), transparent 0);
+  background: conic-gradient(#ffd257 calc(var(--power) * 360deg), transparent 0);
   -webkit-mask: radial-gradient(circle closest-side, transparent 88%, #000 90%);
   mask: radial-gradient(circle closest-side, transparent 88%, #000 90%); }
+/* Shot power stepper: left middle of the screen (left thumb zone on touch). */
+.power-controls { position: absolute; left: calc(16px + env(safe-area-inset-left));
+  top: 50%; transform: translateY(-50%); display: flex; flex-direction: column;
+  gap: 8px; align-items: center; }
+.power-btn { width: 56px; height: 56px; border-radius: 50%; cursor: pointer;
+  border: 2px solid rgba(255, 210, 87, 0.3); background: rgba(0, 0, 0, 0.45);
+  color: #f2ede2; font-size: 28px; line-height: 1; pointer-events: auto;
+  touch-action: none; display: grid; place-items: center; }
+.power-btn:active { background: rgba(60, 45, 0, 0.6); }
+.power-value { font-size: 14px; font-variant-numeric: tabular-nums;
+  padding: 2px 8px; border-radius: 6px; background: rgba(0, 0, 0, 0.45); }
 .pause-btn { position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
   width: 44px; height: 36px; border: none; border-radius: 6px; cursor: pointer;
   background: rgba(0, 0, 0, 0.45); color: #f2ede2; font-size: 14px;
@@ -71,6 +82,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000;
 /* Narrow (portrait phone) screens: compact HUD, drop slot labels. */
 @media (max-width: 520px) {
   .hp-bar { width: 140px; }
+  .power-btn { width: 48px; height: 48px; font-size: 24px; }
   .slot .label { display: none; }
   .slot { padding: 8px 10px; }
   .screen h1 { font-size: 40px; }
@@ -81,7 +93,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000;
   transform: translate(-50%, -50%); }
 .crosshair::before { content: ''; position: absolute; inset: 0;
   border-radius: 50%; background: rgba(255, 255, 255, 0.9); }
-.draw-ring { position: absolute; inset: -14px; border-radius: 50%;
-  background: conic-gradient(#ffd257 calc(var(--draw) * 360deg), rgba(255, 255, 255, 0.15) 0);
+.power-ring { position: absolute; inset: -14px; border-radius: 50%;
+  background: conic-gradient(#ffd257 calc(var(--power) * 360deg), rgba(255, 255, 255, 0.15) 0);
   -webkit-mask: radial-gradient(circle, transparent 58%, #000 60%);
   mask: radial-gradient(circle, transparent 58%, #000 60%); }

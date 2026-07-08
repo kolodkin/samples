@@ -47,16 +47,29 @@ def test_each_stage_builds(server_url, page):
         assert len(state["obstacles"]) > 5
 
 
-def test_bow_draw_charges_and_releases(server_url, page):
+def test_power_buttons_adjust_and_clamp(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
-    page.mouse.move(640, 360)
-    page.mouse.down()
-    page.wait_for_function("() => window.__ARCHER.state.drawPower > 0.4", timeout=5000)
-    power = page.evaluate("() => window.__ARCHER.state.drawPower")
-    assert 0.4 < power <= 1.0
-    page.mouse.up()
-    assert page.evaluate("() => window.__ARCHER.state.drawPower") == 0
+    assert page.evaluate("() => window.__ARCHER.state.power") == 0.6
+    page.get_by_test_id("power-up").dispatch_event("pointerdown")
+    assert page.evaluate("() => window.__ARCHER.state.power") == 0.7
+    expect(page.get_by_test_id("power-value")).to_have_text("70%")
+    for _ in range(5):  # clamps at max
+        page.get_by_test_id("power-up").dispatch_event("pointerdown")
+    assert page.evaluate("() => window.__ARCHER.state.power") == 1.0
+    for _ in range(12):  # clamps at min
+        page.get_by_test_id("power-down").dispatch_event("pointerdown")
+    assert page.evaluate("() => window.__ARCHER.state.power") == 0.2
+
+
+def test_power_keys_adjust_power(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.keyboard.press("Equal")
+    assert page.evaluate("() => window.__ARCHER.state.power") == 0.7
+    page.keyboard.press("Minus")
+    page.keyboard.press("Minus")
+    assert page.evaluate("() => window.__ARCHER.state.power") == 0.5
 
 
 def test_arrow_flies_and_lands(server_url, page):
@@ -68,14 +81,15 @@ def test_arrow_flies_and_lands(server_url, page):
     page.wait_for_function("() => window.__ARCHER.state.arrowCount === 0", timeout=10000)
 
 
-def test_mouse_release_fires_arrow(server_url, page):
+def test_click_fires_arrow(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
     page.mouse.move(640, 360)
     page.mouse.down()
-    page.wait_for_function("() => window.__ARCHER.state.drawPower > 0.5", timeout=5000)
-    page.mouse.up()
     page.wait_for_function("() => window.__ARCHER.state.arrowCount === 1", timeout=2000)
+    page.mouse.up()
+    # Power is a persistent setting; firing does not reset it.
+    assert page.evaluate("() => window.__ARCHER.state.power") == 0.6
 
 
 def test_arrow_kills_goblin_and_scores(server_url, page):
@@ -217,17 +231,13 @@ def test_special_ammo_is_consumed_and_gated(server_url, page):
     _wait_ready(page)
     page.keyboard.press("Digit3")
     assert page.evaluate("() => window.__ARCHER.state.selected") == "freezing"
-    # No ammo: a full-draw release fizzles.
+    # No ammo: the click fizzles.
     page.mouse.move(640, 360)
-    page.mouse.down()
-    page.wait_for_function("() => window.__ARCHER.state.drawPower >= 1", timeout=5000)
-    page.mouse.up()
+    page.mouse.click(640, 360)
     assert page.evaluate("() => window.__ARCHER.state.arrowCount") == 0
     # With ammo: fires and decrements.
     page.evaluate("() => window.__ARCHER.giveAmmo('freezing', 2)")
-    page.mouse.down()
-    page.wait_for_function("() => window.__ARCHER.state.drawPower >= 1", timeout=5000)
-    page.mouse.up()
+    page.mouse.click(640, 360)
     page.wait_for_function("() => window.__ARCHER.state.arrowCount === 1", timeout=2000)
     assert page.evaluate("() => window.__ARCHER.state.ammo.freezing") == 1
 
@@ -360,8 +370,7 @@ def test_touch_drag_aims_without_firing(server_url, page):
     _touch(page, "touchmove", 250, 340)
     _touch(page, "touchend", 250, 340)
     assert page.evaluate("() => window.__ARCHER.state.yaw") != yaw0
-    # Looking around never draws or looses an arrow.
-    assert page.evaluate("() => window.__ARCHER.state.drawPower") == 0
+    # Looking around never looses an arrow.
     assert page.evaluate("() => window.__ARCHER.state.arrowCount") == 0
 
 
@@ -375,17 +384,13 @@ def test_touch_enables_touch_hud(server_url, page):
     expect(page.get_by_test_id("pause-btn")).to_be_visible()
 
 
-def test_fire_button_draws_and_fires(server_url, page):
+def test_fire_button_shoots_on_tap(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
     _touch(page, "touchstart", 400, 300)
     _touch(page, "touchend", 400, 300)
-    fire = page.get_by_test_id("fire-btn")
-    fire.dispatch_event("pointerdown")
-    page.wait_for_function("() => window.__ARCHER.state.drawPower > 0.5", timeout=5000)
-    fire.dispatch_event("pointerup")
+    page.get_by_test_id("fire-btn").dispatch_event("pointerdown")
     page.wait_for_function("() => window.__ARCHER.state.arrowCount === 1", timeout=2000)
-    assert page.evaluate("() => window.__ARCHER.state.drawPower") == 0
 
 
 def test_quiver_tap_switches_arrow(server_url, page):
