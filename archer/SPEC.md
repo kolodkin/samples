@@ -50,6 +50,9 @@ sensitivity × `CONFIG.touch.lookScale`.
   player radius they cannot tunnel.
 - Melee ignores the perch elevation: attacks reach the player from the
   perch base by design.
+- A melee attacker is spent on contact: it lands one hit and disappears
+  (no score, no drop), so every monster that leaks through costs HP
+  exactly once.
 
 ## Stages and waves
 
@@ -65,11 +68,12 @@ All gameplay randomness flows through one seeded mulberry32 stream
 `window.__ARCHER` (defined in `web/main.js`) exposes `ready`, a `state`
 snapshot (screen, hp, score, wave, enemies, pickups, obstacles, best,
 yaw/pitch/touch/power), and test hooks: `fireAt()` (gravity-compensated),
-`spawnEnemy()`, `skipToWave()`, `killAll()`, `giveAmmo()`,
-`setDropChance()`, `setPlayerHp()`, `start()`, `nextStage()`,
-`retryStage()`, `visiblePixelCount()`. Tests boot with
-`?autostart=1&seed=42&waves=0` for a clean battlefield and park enemies at
-melee reach to avoid leading moving targets; touch tests dispatch
+`spawnEnemy()` (optional `inert` flag disables the AI), `skipToWave()`,
+`killAll()`, `giveAmmo()`, `setDropChance()`, `setPlayerHp()`, `start()`,
+`nextStage()`, `retryStage()`, `visiblePixelCount()`. Tests boot with
+`?autostart=1&seed=42&waves=0` for a clean battlefield and park inert
+target dummies at melee reach to avoid leading moving targets (live melee
+enemies there would strike once and vanish); touch tests dispatch
 synthetic `TouchEvent`s on the canvas (Chromium's `new Touch()`).
 
 ## Known simplifications

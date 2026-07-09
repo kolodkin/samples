@@ -95,6 +95,13 @@ export class Player {
     const targetFov = this.power >= 1 ? CONFIG.bow.zoomFov : CONFIG.bow.baseFov;
     this.camera.fov += (targetFov - this.camera.fov) * Math.min(1, dt * 8);
     this.camera.updateProjectionMatrix();
+    // The FOV is vertical, so portrait screens get a narrow horizontal
+    // frustum — slide the bow inward (and shrink it a touch) so it stays
+    // fully in frame without dominating the view.
+    const halfW = Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2)
+      * 0.6 * this.camera.aspect;
+    this.bow.group.position.x = Math.min(0.26, Math.max(0.08, halfW - 0.16));
+    this.bow.group.scale.setScalar(Math.min(1, 0.7 + this.camera.aspect * 0.25));
     // Pull the string and nocked arrow back with the set power. Each string
     // half runs from its limb tip to the nock at (pull, 0), forming a V.
     const pull = this.power * 0.15;

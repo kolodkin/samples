@@ -96,7 +96,8 @@ def test_arrow_kills_goblin_and_scores(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
     page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
-    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32)")  # parked at melee reach
+    # Inert target dummy: real goblins strike once at melee reach and vanish.
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32, true)")
     assert page.evaluate("() => window.__ARCHER.state.enemyCount") == 1
     # Goblin: 40 hp; normal arrow: 34 dmg → two body shots. Aim below the
     # body center: shooting down from the perch, a y=0.65 aim line grazes
@@ -112,14 +113,14 @@ def test_headshot_double_damage_and_bonus(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
     page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
-    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32)")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32, true)")
     # Head at y=1.3: 34*2=68 >= 40 hp -> one-shot kill, +50 headshot bonus.
     page.evaluate("() => window.__ARCHER.fireAt(0, 1.3, 32)")
     page.wait_for_function("() => window.__ARCHER.state.enemyCount === 0", timeout=5000)
     assert page.evaluate("() => window.__ARCHER.state.score") == 150
 
 
-def test_goblin_advances_and_deals_contact_damage(server_url, page):
+def test_goblin_advances_hits_once_and_despawns(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
     page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 10)")
@@ -128,6 +129,9 @@ def test_goblin_advances_and_deals_contact_damage(server_url, page):
     z1 = page.evaluate("() => window.__ARCHER.state.enemies[0].z")
     assert z1 > z0 + 3  # closing in on the player at z=34
     page.wait_for_function("() => window.__ARCHER.state.hp < 100", timeout=15000)
+    # One strike and the monster is spent: it disappears after landing its hit.
+    page.wait_for_function("() => window.__ARCHER.state.enemyCount === 0", timeout=2000)
+    assert page.evaluate("() => window.__ARCHER.state.hp") == 90  # exactly one hit
 
 
 def test_player_death_shows_game_over(server_url, page):
@@ -177,7 +181,7 @@ def test_exploding_arrow_splashes_the_group(server_url, page):
     _wait_ready(page)
     page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
     for x in (-1.2, 0, 1.2):
-        page.evaluate(f"() => window.__ARCHER.spawnEnemy('goblin', {x}, 32)")
+        page.evaluate(f"() => window.__ARCHER.spawnEnemy('goblin', {x}, 32, true)")
     page.evaluate("() => window.__ARCHER.fireAt(0, 0.65, 32, 'exploding')")
     page.wait_for_function("() => window.__ARCHER.state.arrowCount === 0", timeout=5000)
     # Direct target dies; every survivor was splashed (hp below the 40 max).
@@ -186,19 +190,21 @@ def test_exploding_arrow_splashes_the_group(server_url, page):
     assert all(e["hp"] < 40 for e in state["enemies"])
 
 
-def test_freezing_arrow_stops_attacks_then_thaws(server_url, page):
+def test_freezing_arrow_halts_advance_then_thaws(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
-    page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
-    page.evaluate("() => window.__ARCHER.spawnEnemy('ogre', 0, 32)")
-    page.evaluate("() => window.__ARCHER.fireAt(0, 1.25, 32, 'freezing')")
+    # Spawn out of melee reach and freeze it mid-advance (the wide body
+    # sphere absorbs the ~0.3 m it walks during the arrow's flight).
+    page.evaluate("() => window.__ARCHER.spawnEnemy('ogre', 0, 26)")
+    page.evaluate("() => window.__ARCHER.fireAt(0, 1.25, 26, 'freezing')")
     page.wait_for_function(
         "() => window.__ARCHER.state.enemies[0] && window.__ARCHER.state.enemies[0].frozen",
         timeout=5000,
     )
-    hp0 = page.evaluate("() => window.__ARCHER.state.hp")
-    page.wait_for_timeout(1500)  # frozen: no attacks land
-    assert page.evaluate("() => window.__ARCHER.state.hp") == hp0
+    z0 = page.evaluate("() => window.__ARCHER.state.enemies[0].z")
+    page.wait_for_timeout(1500)  # frozen solid: no advance, no attacks
+    assert page.evaluate("() => window.__ARCHER.state.enemies[0].z") == z0
+    assert page.evaluate("() => window.__ARCHER.state.hp") == 100
     page.wait_for_function(
         "() => !window.__ARCHER.state.enemies[0].frozen", timeout=5000
     )  # thaws after freezeTime
@@ -208,8 +214,8 @@ def test_burning_arrow_ticks_and_spreads(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
     page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
-    page.evaluate("() => window.__ARCHER.spawnEnemy('ogre', 0, 32)")
-    page.evaluate("() => window.__ARCHER.spawnEnemy('ogre', 1.8, 32)")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('ogre', 0, 32, true)")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('ogre', 1.8, 32, true)")
     page.evaluate("() => window.__ARCHER.fireAt(0, 1.25, 32, 'burning')")
     page.wait_for_function(
         "() => window.__ARCHER.state.enemies[0] && window.__ARCHER.state.enemies[0].burning",
@@ -266,7 +272,7 @@ def test_drops_spawn_and_are_shot_to_collect(server_url, page):
     _wait_ready(page)
     page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
     page.evaluate("() => window.__ARCHER.setDropChance(1)")
-    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32)")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32, true)")
     page.evaluate("() => window.__ARCHER.killAll()")
     page.wait_for_function("() => window.__ARCHER.state.pickupCount === 1", timeout=2000)
     pickup = page.evaluate("() => window.__ARCHER.state.pickups[0]")
@@ -322,8 +328,8 @@ def test_multikill_combo_bonus(server_url, page):
     _wait_ready(page)
     page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
     page.evaluate("() => window.__ARCHER.setDropChance(0)")
-    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', -1, 32)")
-    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 1, 32)")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', -1, 32, true)")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 1, 32, true)")
     page.evaluate("() => window.__ARCHER.killAll()")  # same-frame kills chain a combo
     # 100 + (100 + 25 combo bonus on the second kill)
     page.wait_for_function("() => window.__ARCHER.state.score === 225", timeout=5000)
@@ -333,7 +339,7 @@ def test_best_score_persists_across_reloads(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
     page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
-    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32)")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32, true)")
     page.evaluate("() => window.__ARCHER.fireAt(0, 1.3, 32)")  # headshot: 150 points
     page.wait_for_function("() => window.__ARCHER.state.score === 150", timeout=5000)
     page.evaluate("() => window.__ARCHER.setPlayerHp(1)")
@@ -412,6 +418,24 @@ def test_touch_pause_and_resume(server_url, page):
     page.wait_for_function("() => window.__ARCHER.state.screen === 'playing'", timeout=5000)
 
 
+def test_bow_viewmodel_stays_on_screen_in_portrait(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    # Wide viewport: the bow rests at its designed off-center offset.
+    page.wait_for_function("() => window.__ARCHER.state.bowX === 0.26", timeout=5000)
+    page.set_viewport_size({"width": 450, "height": 900})
+    # The 70° FOV is vertical, so at the bow's 0.6 m depth the visible
+    # half-width is tan(35°)·0.6·aspect ≈ 0.21 — the bow (≈0.12 half-extent)
+    # must slide inward to stay fully in frame.
+    page.wait_for_function(
+        """() => {
+          const halfW = Math.tan(35 * Math.PI / 180) * 0.6 * (450 / 900);
+          return window.__ARCHER.state.bowX + 0.12 <= halfW;
+        }""",
+        timeout=5000,
+    )
+
+
 def test_title_screen_and_start_button(server_url, page):
     page.goto(server_url + "/?seed=1&waves=0")  # no autostart: land on the title
     _wait_ready(page)
@@ -425,7 +449,7 @@ def test_hud_reflects_score_ammo_and_selection(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
     page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
-    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32)")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32, true)")
     page.evaluate("() => window.__ARCHER.fireAt(0, 1.3, 32)")  # headshot kill: 150
     page.wait_for_function("() => window.__ARCHER.state.score === 150", timeout=5000)
     expect(page.get_by_test_id("score")).to_have_text("150")
