@@ -25,12 +25,12 @@ export const CONFIG = {
   touch: { lookScale: 2.2 }, // touch-drag aim, relative to mouse sensitivity
   drops: { chance: 0.2, min: 3, max: 5, lifetime: 20, radius: 0.6 },
   enemies: {
-    goblin:   { hp: 40,  speed: 5.5, damage: 10, attackCooldown: 1.2, score: 100,
+    goblin:   { hp: 40,  speed: 5.5, damage: 10, score: 100,
                 bodyRadius: 0.55, height: 1.3, headRadius: 0.28, color: 0x4a8f3c },
     skeleton: { hp: 60,  speed: 4.0, damage: 8, score: 150, range: 26,
                 peekTime: 1.4, hideTime: 2.0, projectileSpeed: 20, spread: 0.06,
                 bodyRadius: 0.5, height: 1.6, headRadius: 0.26, color: 0xd9d4c5 },
-    ogre:     { hp: 220, speed: 1.9, damage: 25, attackCooldown: 1.8, score: 400,
+    ogre:     { hp: 220, speed: 1.9, damage: 25, score: 400,
                 bodyRadius: 1.0, height: 2.5, headRadius: 0.45, color: 0x7a6652 },
   },
   attackRange: 2.2,      // melee reach measured from the player

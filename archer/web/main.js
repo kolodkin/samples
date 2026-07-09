@@ -301,6 +301,7 @@ window.__ARCHER = {
       pitch: game.player.pitch,
       touch: game.touchMode,
       power: game.player.power,
+      bowX: game.player.bow.group.position.x,
       arrowCount: game.arrows.count,
       enemyCount: game.enemies.list.length,
       enemies: game.enemies.list.map((e) => ({
@@ -329,7 +330,7 @@ window.__ARCHER = {
     dir.normalize();
     game.arrows.fire(origin.addScaledVector(dir, 0.7), dir, power, type);
   },
-  spawnEnemy: (type, x, z) => { game.enemies.spawn(type, x, z); },
+  spawnEnemy: (type, x, z, inert = false) => { game.enemies.spawn(type, x, z, inert); },
   setPlayerHp: (n) => { game.player.hp = n; game.syncUI(); },
   giveAmmo: (type, n) => { game.stats.ammo[type] += n; game.syncUI(); },
   setDropChance: (c) => { CONFIG.drops.chance = c; },

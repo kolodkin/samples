@@ -88,7 +88,12 @@ export function buildStage(name, rng) {
 
   // The player's elevated vantage point.
   const { x: px, y: py, z: pz } = CONFIG.player.pos;
-  const perch = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 3.0, py - 1, 8), lambert(theme.perch));
+  // Top cap matches the ground so the foreground under the archer reads as
+  // terrain, not a gray disc (materials: [side, top, bottom]).
+  const perch = new THREE.Mesh(
+    new THREE.CylinderGeometry(2.2, 3.0, py - 1, 8),
+    [lambert(theme.perch), lambert(theme.ground), lambert(theme.perch)],
+  );
   perch.position.set(px, (py - 1) / 2, pz);
   group.add(perch);
 

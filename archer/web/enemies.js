@@ -70,15 +70,15 @@ export class EnemySystem {
     this.projectiles = []; // skeleton arrows (Task 6)
   }
 
-  spawn(type, x, z) {
+  spawn(type, x, z, inert = false) {
     const c = CONFIG.enemies[type];
     const mesh = BUILDERS[type](c);
     mesh.position.set(x, 0, z);
     this.game.scene.add(mesh);
     const e = {
-      type, c, mesh, hp: c.hp, state: 'advance',
+      type, c, mesh, hp: c.hp, state: 'advance', inert,
       frozen: 0, burn: 0, burnSpreadTimer: 0,
-      attackTimer: 0, coverTimer: 0, cover: null, hasShot: false,
+      coverTimer: 0, cover: null, hasShot: false,
       peekSide: this.game.rng.random() < 0.5 ? -1 : 1,
       bobT: this.game.rng.range(0, Math.PI * 2),
     };
@@ -121,9 +121,14 @@ export class EnemySystem {
   }
 
   kill(e, isHead) {
+    this.despawn(e);
+    this.game.onEnemyKilled(e, isHead);
+  }
+
+  // Silent removal: no score, no drops (spent melee attackers, resets).
+  despawn(e) {
     this.game.scene.remove(e.mesh);
     this.list.splice(this.list.indexOf(e), 1);
-    this.game.onEnemyKilled(e, isHead);
   }
 
   freeze(e) {
@@ -165,8 +170,11 @@ export class EnemySystem {
         if (e.burn <= 0) this.setTint(e, 0x000000);
         else this.spreadBurn(e, dt);
       }
-      if (e.type === 'skeleton') this.updateArcher(e, dt, playerPos);
-      else this.updateMelee(e, dt, playerPos);
+      if (!e.inert) { // inert: e2e target dummies with the AI switched off
+        if (e.type === 'skeleton') this.updateArcher(e, dt, playerPos);
+        else this.updateMelee(e, dt, playerPos);
+        if (!this.list.includes(e)) continue; // spent itself on a melee hit
+      }
       e.mesh.position.y = Math.abs(Math.sin(e.bobT)) * 0.07; // visual bob only
     }
     this.updateProjectiles(dt, playerPos);
@@ -188,13 +196,11 @@ export class EnemySystem {
   updateMelee(e, dt, playerPos) {
     const pos = e.mesh.position;
     const flatDist = Math.hypot(playerPos.x - pos.x, playerPos.z - pos.z);
-    e.attackTimer -= dt;
     if (flatDist <= CONFIG.attackRange + e.c.bodyRadius) {
-      if (e.attackTimer <= 0) {
-        e.attackTimer = e.c.attackCooldown;
-        this.game.player.takeDamage(e.c.damage);
-        this.game.onPlayerHit();
-      }
+      // One strike and the monster is spent: it lands its hit and vanishes.
+      this.game.player.takeDamage(e.c.damage);
+      this.despawn(e);
+      this.game.onPlayerHit();
       return;
     }
     // Advance with a slight weave (goblins zigzag; ogres lumber straight).
