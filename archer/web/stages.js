@@ -6,10 +6,9 @@ export const STAGE_ORDER = ['forest', 'desert', 'iceberg'];
 function lambert(color) { return new THREE.MeshLambertMaterial({ color }); }
 
 // --- Terrain noise -----------------------------------------------------
-// Deterministic hash-based value noise keyed on vertex position. It must
-// NOT draw from the game's seeded rng stream: tests pin per-seed obstacle
-// layouts (e.g. skeleton cover on seed 42), so terrain generation cannot
-// shift that stream.
+// Deterministic hash noise keyed on vertex position — never the seeded
+// game rng: tests pin per-seed obstacle layouts, and terrain must not
+// shift that stream (see SPEC.md).
 function hash2(ix, iz, seed) {
   let h = (ix * 374761393 + iz * 668265263 + seed * 1442695041) | 0;
   h = Math.imul(h ^ (h >>> 13), 1274126177);
@@ -17,22 +16,19 @@ function hash2(ix, iz, seed) {
   return (h >>> 0) / 4294967296;
 }
 
-function smoothstep(a, b, x) {
-  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
-  return t * t * (3 - 2 * t);
-}
+const { clamp, lerp, smoothstep } = THREE.MathUtils;
 
 function valueNoise(x, z, seed) {
   const ix = Math.floor(x), iz = Math.floor(z);
-  const fx = smoothstep(0, 1, x - ix), fz = smoothstep(0, 1, z - iz);
+  const fx = smoothstep(x - ix, 0, 1), fz = smoothstep(z - iz, 0, 1);
   const a = hash2(ix, iz, seed), b = hash2(ix + 1, iz, seed);
   const c = hash2(ix, iz + 1, seed), d = hash2(ix + 1, iz + 1, seed);
-  return a + (b - a) * fx + (c - a) * fz + (a - b - c + d) * fx * fz;
+  return lerp(lerp(a, b, fx), lerp(c, d, fx), fz);
 }
 
-function fbm(x, z, seed, octaves = 3) {
+function fbm(x, z, seed) {
   let sum = 0, amp = 1, freq = 1, norm = 0;
-  for (let i = 0; i < octaves; i++) {
+  for (let i = 0; i < 3; i++) {
     sum += valueNoise(x * freq, z * freq, seed + i * 101) * amp;
     norm += amp;
     amp *= 0.5;
@@ -44,19 +40,17 @@ function fbm(x, z, seed, octaves = 3) {
 // Averaged-octave value noise clusters around 0.5; expand around the
 // midpoint so tints and relief actually use their full range.
 function spread(n, k) {
-  return Math.min(1, Math.max(0, (n - 0.5) * k + 0.5));
+  return clamp((n - 0.5) * k + 0.5, 0, 1);
 }
 
-// The battlefield must stay a flat y=0 plane — arrows die at y<=0.05,
-// enemies walk at y=0, and melee/cover logic assume it. Obstacles reach
-// |x|<=37.5, spawns z=-34, perch edge z~37, so relief inside |coord|<40 is
-// capped at grass-height jitter and real hills only rise beyond the play
-// area, framing the horizon inside the fog band.
-const FLAT_EXTENT = 40;
-const HILL_EXTENT = 58;
 const MICRO_RELIEF = 0.12;
 
 function makeGround(theme, size) {
+  // Gameplay assumes a flat y=0 battlefield (arrows, walkers, melee/cover —
+  // see SPEC.md), so relief inside the play area caps at MICRO_RELIEF and
+  // real hills rise only beyond it, framed by the fog band.
+  const flatExtent = CONFIG.arena.size / 2;
+  const hillExtent = size / 2 - 2;
   const seg = 128;
   const geo = new THREE.PlaneGeometry(size, size, seg, seg);
   geo.rotateX(-Math.PI / 2);
@@ -68,9 +62,9 @@ function makeGround(theme, size) {
   const t = theme.terrain;
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), z = pos.getZ(i);
-    const edge = smoothstep(FLAT_EXTENT, HILL_EXTENT, Math.max(Math.abs(x), Math.abs(z)));
-    const hill = spread(fbm(x * t.freq, z * t.freq, t.seed), 1.8) * t.hillHeight;
-    const micro = (spread(fbm(x * 0.3, z * 0.3, t.seed + 7), 2.5) - 0.5) * 2 * MICRO_RELIEF;
+    const edge = smoothstep(Math.max(Math.abs(x), Math.abs(z)), flatExtent, hillExtent);
+    const hill = edge > 0 ? spread(fbm(x * t.freq, z * t.freq, t.seed), 1.8) * t.hillHeight : 0;
+    const micro = edge < 1 ? (spread(fbm(x * 0.3, z * 0.3, t.seed + 7), 2.5) - 0.5) * 2 * MICRO_RELIEF : 0;
     pos.setY(i, micro * (1 - edge) + hill * edge);
     // Two-tone patches around the theme ground color; hill crests pull
     // toward the light tone so the perimeter relief reads through the fog.
@@ -78,17 +72,23 @@ function makeGround(theme, size) {
     // Per-vertex jitter mottles individual facets; the mottle visually
     // compresses with distance — a texture-gradient depth cue.
     const jitter = (hash2(Math.round(x * 4), Math.round(z * 4), t.seed + 53) - 0.5) * 0.5;
-    const shade = Math.min(1, Math.max(0, patch + jitter + edge * 0.3));
+    const shade = clamp(patch + jitter + edge * 0.3, 0, 1);
     col.lerpColors(dark, light, shade);
-    colors[i * 3] = col.r;
-    colors[i * 3 + 1] = col.g;
-    colors[i * 3 + 2] = col.b;
+    col.toArray(colors, i * 3);
   }
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  // flatShading lights each facet by its own normal — the faceted relief is
-  // the main depth cue on an otherwise texture-less ground.
+  // flatShading lights each facet by an in-shader derived normal — the main
+  // depth cue on a texture-less ground — so the stored normals (and the uvs
+  // of a map-less material) are dead weight.
+  geo.deleteAttribute('normal');
+  geo.deleteAttribute('uv');
   return new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }));
 }
+
+// Terrain is deterministic per theme, so build each ground once and reuse
+// it across stage loads — retries would otherwise leak ~1 MB of
+// undisposed geometry each (stage groups are regenerated, not disposed).
+const groundCache = new Map();
 
 // Each maker returns { mesh, radius, height } with the mesh's base at y=0.
 function makeTree(rng) {
@@ -146,21 +146,21 @@ function makeIcePillar(rng) {
 
 const THEMES = {
   forest: {
-    sky: 0x87b5d4, fog: [0x87b5d4, 40, 130], ground: 0x3e7a3a,
+    sky: 0x87b5d4, fog: [0x87b5d4, 40, 130],
     groundColors: [0x2e5c28, 0x579a48],
     terrain: { seed: 11, freq: 0.05, colorFreq: 0.08, hillHeight: 5 },
     sun: 0xfff4e0, sunIntensity: 1.0, ambient: 0x777788,
     obstacleCount: 26, obstacle: makeTree, perch: 0x6b6f66,
   },
   desert: {
-    sky: 0xf2d9a8, fog: [0xf2d9a8, 50, 150], ground: 0xd9b36c,
+    sky: 0xf2d9a8, fog: [0xf2d9a8, 50, 150],
     groundColors: [0xc2984e, 0xeed091],
     terrain: { seed: 22, freq: 0.035, colorFreq: 0.05, hillHeight: 5 },
     sun: 0xfff0c8, sunIntensity: 1.4, ambient: 0x998877,
     obstacleCount: 14, obstacle: makeDesertObstacle, perch: 0x96703f,
   },
   iceberg: {
-    sky: 0xbfe3f2, fog: [0xbfe3f2, 35, 120], ground: 0xdef2fb,
+    sky: 0xbfe3f2, fog: [0xbfe3f2, 35, 120],
     groundColors: [0xaed4ea, 0xf6fbff],
     terrain: { seed: 33, freq: 0.06, colorFreq: 0.07, hillHeight: 6 },
     sun: 0xe8f4ff, sunIntensity: 1.1, ambient: 0x8899aa,
@@ -173,7 +173,8 @@ export function buildStage(name, rng) {
   const group = new THREE.Group();
 
   const size = CONFIG.arena.size + 40;
-  group.add(makeGround(theme, size));
+  if (!groundCache.has(name)) groundCache.set(name, makeGround(theme, size));
+  group.add(groundCache.get(name));
 
   const { x: px, y: py, z: pz } = CONFIG.player.pos;
   // The player's elevated vantage point. The top cap is the only face the
@@ -187,7 +188,8 @@ export function buildStage(name, rng) {
   perch.position.set(px, (py - 1) / 2, pz);
   group.add(perch);
 
-  group.add(new THREE.HemisphereLight(theme.sky, theme.ground, 0.9));
+  const bounce = new THREE.Color(theme.groundColors[0]).lerp(new THREE.Color(theme.groundColors[1]), 0.5);
+  group.add(new THREE.HemisphereLight(theme.sky, bounce, 0.9));
   const sun = new THREE.DirectionalLight(theme.sun, theme.sunIntensity);
   sun.position.set(20, 40, 10);
   group.add(sun);

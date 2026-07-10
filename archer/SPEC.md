@@ -95,4 +95,5 @@ synthetic `TouchEvent`s on the canvas (Chromium's `new Touch()`).
 
 - No player movement; no sound.
 - Stage geometry is regenerated (not disposed) on stage change — a small,
-  bounded leak over a 3-stage run.
+  bounded leak over a 3-stage run. The ground mesh is the exception: it is
+  built once per theme and reused across loads.
