@@ -456,7 +456,6 @@ def test_touch_long_press_does_not_shoot(server_url, page):
     _touch(page, "touchstart", 400, 300)
     page.wait_for_timeout(400)  # past CONFIG.touch.tapMaxMs
     _touch(page, "touchend", 400, 300)
-    page.wait_for_timeout(200)
     assert page.evaluate("() => window.__ARCHER.state.arrowCount") == 0
 
 

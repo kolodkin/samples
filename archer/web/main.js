@@ -66,6 +66,7 @@ game.player = new Player(camera);
 game.arrows = new ArrowSystem(game);
 const trajectoryHint = new TrajectoryHint(scene);
 function fireArrow() {
+  if (game.screen !== 'playing') return; // one gate for every fire path
   if (!game.player.canShoot()) return; // still re-nocking from the last shot
   const type = game.stats.selected;
   if (type !== 'normal') {
@@ -192,7 +193,7 @@ initUI(store, {
     game.syncUI();
   },
   select: (type) => { game.stats.selected = type; game.syncUI(); },
-  fire: () => { if (game.screen === 'playing') fireArrow(); },
+  fire: fireArrow,
   power: (dir) => { if (game.screen === 'playing') adjustPower(dir); },
 });
 game.syncUI();
@@ -231,7 +232,7 @@ document.addEventListener('mousemove', (e) => {
 // Under pointer lock every mouse event targets the canvas, so this always
 // fires while locked.
 document.addEventListener('mousedown', (e) => {
-  if (e.button === 0 && e.target === canvas && game.screen === 'playing') fireArrow();
+  if (e.button === 0 && e.target === canvas) fireArrow();
 });
 
 // Touch: drag on the canvas to aim; a tap (short press, negligible travel)
@@ -253,27 +254,30 @@ canvas.addEventListener('touchmove', (e) => {
   for (const t of e.changedTouches) {
     if (t.identifier !== lookTouch.id) continue;
     const k = CONFIG.touch.lookScale;
-    game.player.look((t.clientX - lookTouch.x) * k, (t.clientY - lookTouch.y) * k);
-    lookTouch.drift += Math.hypot(t.clientX - lookTouch.x, t.clientY - lookTouch.y);
+    const dx = t.clientX - lookTouch.x, dy = t.clientY - lookTouch.y;
+    game.player.look(dx * k, dy * k);
+    lookTouch.drift += Math.hypot(dx, dy);
     lookTouch.x = t.clientX;
     lookTouch.y = t.clientY;
   }
   e.preventDefault();
 }, { passive: false });
-for (const type of ['touchend', 'touchcancel']) {
-  canvas.addEventListener(type, (e) => {
-    for (const t of e.changedTouches) {
-      if (!lookTouch || t.identifier !== lookTouch.id) continue;
-      // Tap-to-shoot: anywhere on the canvas counts — HUD controls sit above
-      // it and keep their taps to themselves. Real drags blow the drift
-      // budget and only aim; held presses time out.
-      if (type === 'touchend' && game.screen === 'playing'
-          && lookTouch.drift < CONFIG.touch.tapMaxDrift
-          && performance.now() - lookTouch.t0 < CONFIG.touch.tapMaxMs) fireArrow();
-      lookTouch = null;
-    }
-  });
-}
+canvas.addEventListener('touchend', (e) => {
+  for (const t of e.changedTouches) {
+    if (!lookTouch || t.identifier !== lookTouch.id) continue;
+    // Tap-to-shoot: anywhere on the canvas counts — HUD controls sit above
+    // it and keep their taps to themselves. Real drags blow the drift
+    // budget and only aim; held presses time out.
+    if (lookTouch.drift < CONFIG.touch.tapMaxDrift
+        && performance.now() - lookTouch.t0 < CONFIG.touch.tapMaxMs) fireArrow();
+    lookTouch = null;
+  }
+});
+canvas.addEventListener('touchcancel', (e) => {
+  for (const t of e.changedTouches) {
+    if (lookTouch && t.identifier === lookTouch.id) lookTouch = null; // never a tap
+  }
+});
 
 let last = performance.now();
 let framesRendered = 0;
