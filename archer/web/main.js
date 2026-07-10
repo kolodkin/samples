@@ -71,6 +71,7 @@ function fireArrow() {
   if (type !== 'normal') {
     if (game.stats.ammo[type] <= 0) return; // no ammo: the shot fizzles
     game.stats.ammo[type] -= 1;
+    if (game.stats.ammo[type] === 0) game.stats.selected = 'normal'; // quiver empty: fall back to the basic arrow
   }
   game.arrows.fire(game.player.aimOrigin(), game.player.aimDir(), game.player.power, type);
   game.player.shoot(); // string snap + reload animation, and the shot gate
