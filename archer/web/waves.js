@@ -2,7 +2,27 @@ import * as THREE from 'three';
 import { CONFIG } from './config.js';
 
 const DROP_TYPES = ['exploding', 'freezing', 'burning'];
-const DROP_COLORS = { exploding: 0xff7733, freezing: 0x66ddff, burning: 0xff4422 };
+const DROP_COLORS = { exploding: 0xff7733, freezing: 0x66ddff, burning: 0xff4422, heal: 0xff3366 };
+
+// Heal potion: a stubby corked flask, so it reads as a bottle at a glance
+// rather than another ammo octahedron.
+function buildPotionMesh() {
+  const g = new THREE.Group();
+  const glass = new THREE.MeshLambertMaterial({
+    color: DROP_COLORS.heal, emissive: DROP_COLORS.heal, emissiveIntensity: 0.5,
+  });
+  const r = CONFIG.drops.radius;
+  const body = new THREE.Mesh(new THREE.SphereGeometry(r * 0.5, 10, 8), glass);
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.15, r * 0.15, r * 0.35, 8), glass);
+  neck.position.y = r * 0.55;
+  const cork = new THREE.Mesh(
+    new THREE.CylinderGeometry(r * 0.18, r * 0.18, r * 0.12, 8),
+    new THREE.MeshLambertMaterial({ color: 0x9a7b4f }),
+  );
+  cork.position.y = r * 0.75;
+  g.add(body, neck, cork);
+  return g;
+}
 
 export class WaveManager {
   constructor(game) {
@@ -69,8 +89,9 @@ export class WaveManager {
   }
 
   dropPickup(e) {
-    const type = this.game.rng.pick(DROP_TYPES);
-    const mesh = new THREE.Mesh(
+    const heal = this.game.rng.random() < CONFIG.drops.heal.chance;
+    const type = heal ? 'heal' : this.game.rng.pick(DROP_TYPES);
+    const mesh = heal ? buildPotionMesh() : new THREE.Mesh(
       new THREE.OctahedronGeometry(CONFIG.drops.radius * 0.7, 0),
       new THREE.MeshLambertMaterial({
         color: DROP_COLORS[type], emissive: DROP_COLORS[type], emissiveIntensity: 0.5,
@@ -82,8 +103,14 @@ export class WaveManager {
   }
 
   collect(p) {
-    const n = this.game.rng.int(CONFIG.drops.min, CONFIG.drops.max);
-    this.game.stats.ammo[p.type] += n;
+    if (p.type === 'heal') {
+      this.game.player.hp = Math.min(
+        CONFIG.player.hp, this.game.player.hp + CONFIG.drops.heal.amount,
+      );
+    } else {
+      const n = this.game.rng.int(CONFIG.drops.min, CONFIG.drops.max);
+      this.game.stats.ammo[p.type] += n;
+    }
     this.game.effects?.burst(p.mesh.position, DROP_COLORS[p.type], 16, 5);
     this.removePickup(p);
     this.game.syncUI();

@@ -334,6 +334,7 @@ def test_drops_spawn_and_are_shot_to_collect(server_url, page):
     _wait_ready(page)
     page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
     page.evaluate("() => window.__ARCHER.setDropChance(1)")
+    page.evaluate("() => window.__ARCHER.setHealChance(0)")  # force an ammo drop
     page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32, true)")
     page.evaluate("() => window.__ARCHER.killAll()")
     page.wait_for_function("() => window.__ARCHER.state.pickupCount === 1", timeout=2000)
@@ -346,6 +347,31 @@ def test_drops_spawn_and_are_shot_to_collect(server_url, page):
     page.wait_for_function("() => window.__ARCHER.state.pickupCount === 0", timeout=5000)
     ammo1 = page.evaluate("(t) => window.__ARCHER.state.ammo[t]", pickup["type"])
     assert 3 <= ammo1 - ammo0 <= 5
+
+
+def test_heal_potion_drop_restores_hp_capped_at_max(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setDropChance(1)")
+    page.evaluate("() => window.__ARCHER.setHealChance(1)")  # force a potion drop
+
+    def collect_potion():
+        page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32, true)")
+        page.evaluate("() => window.__ARCHER.killAll()")
+        page.wait_for_function("() => window.__ARCHER.state.pickupCount === 1", timeout=2000)
+        pickup = page.evaluate("() => window.__ARCHER.state.pickups[0]")
+        assert pickup["type"] == "heal"
+        page.evaluate("(p) => window.__ARCHER.fireAt(p.x, p.y, p.z)", pickup)
+        page.wait_for_function("() => window.__ARCHER.state.pickupCount === 0", timeout=5000)
+
+    # Wounded player: the potion restores CONFIG.drops.heal.amount HP.
+    page.evaluate("() => window.__ARCHER.setPlayerHp(50)")
+    collect_potion()
+    assert page.evaluate("() => window.__ARCHER.state.hp") == 75
+    # Near full: healing clamps at max HP instead of overhealing.
+    page.evaluate("() => window.__ARCHER.setPlayerHp(90)")
+    collect_potion()
+    assert page.evaluate("() => window.__ARCHER.state.hp") == 100
 
 
 def test_stage_clear_advances_to_desert(server_url, page):
