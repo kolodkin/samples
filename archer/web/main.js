@@ -234,17 +234,18 @@ document.addEventListener('mousedown', (e) => {
   if (e.button === 0 && e.target === canvas && game.screen === 'playing') fireArrow();
 });
 
-// Touch: drag on the canvas to aim; the HUD fire button shoots (see ui.js).
-// No pointer lock on touch — deltas come from tracking one finger by
-// identifier, so a second finger on the fire button never steers.
+// Touch: drag on the canvas to aim; a tap (short press, negligible travel)
+// shoots, as does the HUD fire button (see ui.js). No pointer lock on
+// touch — deltas come from tracking one finger by identifier, so a second
+// finger on the fire button never steers.
 document.addEventListener('touchstart', () => {
   if (!game.touchMode) { game.touchMode = true; game.syncUI(); }
 }, { capture: true, passive: true });
-let lookTouch = null; // { id, x, y } of the finger that owns the camera
+let lookTouch = null; // { id, x, y, drift, t0 } of the finger that owns the camera
 canvas.addEventListener('touchstart', (e) => {
   if (game.screen !== 'playing' || lookTouch) return;
   const t = e.changedTouches[0];
-  lookTouch = { id: t.identifier, x: t.clientX, y: t.clientY };
+  lookTouch = { id: t.identifier, x: t.clientX, y: t.clientY, drift: 0, t0: performance.now() };
   e.preventDefault(); // no scroll/zoom, and no synthetic mouse click-fire
 }, { passive: false });
 canvas.addEventListener('touchmove', (e) => {
@@ -253,6 +254,7 @@ canvas.addEventListener('touchmove', (e) => {
     if (t.identifier !== lookTouch.id) continue;
     const k = CONFIG.touch.lookScale;
     game.player.look((t.clientX - lookTouch.x) * k, (t.clientY - lookTouch.y) * k);
+    lookTouch.drift += Math.hypot(t.clientX - lookTouch.x, t.clientY - lookTouch.y);
     lookTouch.x = t.clientX;
     lookTouch.y = t.clientY;
   }
@@ -261,7 +263,14 @@ canvas.addEventListener('touchmove', (e) => {
 for (const type of ['touchend', 'touchcancel']) {
   canvas.addEventListener(type, (e) => {
     for (const t of e.changedTouches) {
-      if (lookTouch && t.identifier === lookTouch.id) lookTouch = null;
+      if (!lookTouch || t.identifier !== lookTouch.id) continue;
+      // Tap-to-shoot: anywhere on the canvas counts — HUD controls sit above
+      // it and keep their taps to themselves. Real drags blow the drift
+      // budget and only aim; held presses time out.
+      if (type === 'touchend' && game.screen === 'playing'
+          && lookTouch.drift < CONFIG.touch.tapMaxDrift
+          && performance.now() - lookTouch.t0 < CONFIG.touch.tapMaxMs) fireArrow();
+      lookTouch = null;
     }
   });
 }

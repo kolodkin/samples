@@ -110,7 +110,7 @@ function Screens({ s, actions }) {
     return html`
       <${Screen} testid="title-screen" title="ARCHER">
         <p>Click to shoot. Set power with the +/− buttons (or +/− keys). Keys 1–4 or a tap on the quiver switch arrows.</p>
-        <p>On touch: drag to aim, tap the 🏹 button to shoot.</p>
+        <p>On touch: drag to aim, tap anywhere (or the 🏹 button) to shoot.</p>
         <p data-testid="best">Best: ${s.best.score} pts, stage ${s.best.stage}/3</p>
         <button data-testid="start-btn" onClick=${actions.start}>Start</button>
       <//>`;
