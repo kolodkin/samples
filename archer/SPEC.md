@@ -58,8 +58,8 @@ px of accumulated travel — real drags blow that budget and only aim.
   obstacle on the player line, peeks to shoot, hides again (cover/peek
   point selection: `pickCover()`/`coverPoint()` in `web/enemies.js`).
   Projectiles drop at 4 m/s² with compensated aim, so long shots arc
-  visibly; they use point (not segment) collision — at 20 m/s vs a 0.9 m
-  player radius they cannot tunnel.
+  visibly; like player arrows they use segment-vs-sphere collision, so
+  they cannot tunnel through the player even at low frame rates.
 - Melee ignores the perch elevation: attacks reach the player from the
   perch base by design.
 - A melee attacker is spent on contact: it lands one hit and disappears

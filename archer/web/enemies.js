@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
+import { segClosest } from './geom.js';
 
 function lambert(color) { return new THREE.MeshLambertMaterial({ color }); }
 
@@ -293,10 +294,13 @@ export class EnemySystem {
   updateProjectiles(dt, playerPos) {
     for (const p of [...this.projectiles]) {
       p.vel.y -= PROJ_GRAVITY * dt; // gentle drop so long shots arc
+      const prev = p.mesh.position.clone();
       p.mesh.position.addScaledVector(p.vel, dt);
       p.age += dt;
       let dead = false;
-      if (p.mesh.position.distanceTo(playerPos) < 0.9) {
+      // Segment-vs-sphere like player arrows: on slow machines a frame's
+      // travel exceeds the 0.9 m hit sphere, and a point test tunnels.
+      if (segClosest(prev, p.mesh.position, playerPos).distanceTo(playerPos) < 0.9) {
         this.game.player.takeDamage(CONFIG.enemies.skeleton.damage);
         this.game.onPlayerHit();
         dead = true;

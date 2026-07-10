@@ -51,7 +51,10 @@ function makeGround(theme, size) {
   // real hills rise only beyond it, framed by the fog band.
   const flatExtent = CONFIG.arena.size / 2;
   const hillExtent = size / 2 - 2;
-  const seg = 128;
+  // 96 segments keeps facets ~1.25 u — chunky enough for the low-poly look
+  // and cheap enough for software renderers (the mesh is the biggest single
+  // draw in the scene).
+  const seg = 96;
   const geo = new THREE.PlaneGeometry(size, size, seg, seg);
   geo.rotateX(-Math.PI / 2);
   const pos = geo.attributes.position;
