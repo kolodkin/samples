@@ -47,6 +47,18 @@ def test_each_stage_builds(server_url, page):
         assert len(state["obstacles"]) > 5
 
 
+def test_perch_visible_underfoot(server_url, page):
+    # The platform under the archer must read as a platform: the pixel at the
+    # player's feet (the perch top cap) differs from the open terrain nearby.
+    for name in ("forest", "desert", "iceberg"):
+        page.goto(server_url + f"/?autostart=1&seed=3&stage={name}&waves=0")
+        _wait_ready(page)
+        perch = page.evaluate("() => window.__ARCHER.pixelAt(0.5, 0.97)")
+        ground = page.evaluate("() => window.__ARCHER.pixelAt(0.55, 0.65)")
+        diff = sum(abs(a - b) for a, b in zip(perch, ground))
+        assert diff > 24, f"{name}: perch top blends into terrain ({perch} vs {ground})"
+
+
 def test_power_buttons_adjust_and_clamp(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)

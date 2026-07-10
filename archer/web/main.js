@@ -345,6 +345,19 @@ window.__ARCHER = {
   start: (i = 0) => startGame(i),
   nextStage: () => nextStage(),
   retryStage: () => retryStage(),
+  // e2e helper: RGB of the canvas pixel at fractional coords (origin top-left).
+  // Renders first: the drawing buffer is cleared between frames, so reading
+  // outside the animation loop would see black.
+  pixelAt(fx, fy) {
+    renderer.render(scene, camera);
+    const gl = renderer.getContext();
+    const w = renderer.domElement.width, h = renderer.domElement.height;
+    const buf = new Uint8Array(4);
+    const x = Math.round(fx * (w - 1));
+    const y = Math.round((1 - fy) * (h - 1)); // readPixels origin is bottom-left
+    gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+    return [buf[0], buf[1], buf[2]];
+  },
   // e2e helper: count pixels that differ from the sky background.
   visiblePixelCount() {
     const gl = renderer.getContext();

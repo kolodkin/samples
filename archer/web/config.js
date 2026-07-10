@@ -10,7 +10,7 @@ export const CONFIG = {
     // Shot animation timing (s): string snap on release, empty-bow reload,
     // then the new arrow rides the string back out to the power draw.
     // Firing is gated until the fresh arrow is fully nocked.
-    shot: { snap: 0.06, reload: 0.3, nock: 0.15 },
+    shot: { snap: 0.024, reload: 0.12, nock: 0.06 },
     baseFov: 70,
     zoomFov: 62,         // FOV eased in at max power
   },
