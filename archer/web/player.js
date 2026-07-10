@@ -99,6 +99,13 @@ export class Player {
       .addScaledVector(this.aimDir(), 0.7);
   }
 
+  // World-space tip of the nocked arrow — where a released shot visually
+  // leaves the bow before converging onto the aim line (see ArrowSystem.fire).
+  arrowSpawnPoint() {
+    this.bow.nocked.updateWorldMatrix(true, false);
+    return this.bow.nocked.localToWorld(new THREE.Vector3(0, 0, -0.39));
+  }
+
   update(dt) {
     this.camera.rotation.set(this.pitch, this.yaw, 0);
     // Ease FOV toward zoom at max power.
