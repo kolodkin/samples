@@ -4,13 +4,15 @@ import { CONFIG } from './config.js';
 const DROP_TYPES = ['exploding', 'freezing', 'burning'];
 const DROP_COLORS = { exploding: 0xff7733, freezing: 0x66ddff, burning: 0xff4422, heal: 0xff3366 };
 
+const glowMaterial = (color) => new THREE.MeshLambertMaterial({
+  color, emissive: color, emissiveIntensity: 0.5,
+});
+
 // Heal potion: a stubby corked flask, so it reads as a bottle at a glance
 // rather than another ammo octahedron.
 function buildPotionMesh() {
   const g = new THREE.Group();
-  const glass = new THREE.MeshLambertMaterial({
-    color: DROP_COLORS.heal, emissive: DROP_COLORS.heal, emissiveIntensity: 0.5,
-  });
+  const glass = glowMaterial(DROP_COLORS.heal);
   const r = CONFIG.drops.radius;
   const body = new THREE.Mesh(new THREE.SphereGeometry(r * 0.5, 10, 8), glass);
   const neck = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.15, r * 0.15, r * 0.35, 8), glass);
@@ -89,13 +91,11 @@ export class WaveManager {
   }
 
   dropPickup(e) {
-    const heal = this.game.rng.random() < CONFIG.drops.heal.chance;
-    const type = heal ? 'heal' : this.game.rng.pick(DROP_TYPES);
-    const mesh = heal ? buildPotionMesh() : new THREE.Mesh(
+    const type = this.game.rng.random() < CONFIG.drops.heal.chance
+      ? 'heal' : this.game.rng.pick(DROP_TYPES);
+    const mesh = type === 'heal' ? buildPotionMesh() : new THREE.Mesh(
       new THREE.OctahedronGeometry(CONFIG.drops.radius * 0.7, 0),
-      new THREE.MeshLambertMaterial({
-        color: DROP_COLORS[type], emissive: DROP_COLORS[type], emissiveIntensity: 0.5,
-      }),
+      glowMaterial(DROP_COLORS[type]),
     );
     mesh.position.set(e.mesh.position.x, 1.1, e.mesh.position.z);
     this.game.scene.add(mesh);
@@ -104,9 +104,7 @@ export class WaveManager {
 
   collect(p) {
     if (p.type === 'heal') {
-      this.game.player.hp = Math.min(
-        CONFIG.player.hp, this.game.player.hp + CONFIG.drops.heal.amount,
-      );
+      this.game.player.heal(CONFIG.drops.heal.amount);
     } else {
       const n = this.game.rng.int(CONFIG.drops.min, CONFIG.drops.max);
       this.game.stats.ammo[p.type] += n;

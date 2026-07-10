@@ -14,6 +14,17 @@ def _wait_ready(page):
     )
 
 
+def _drop_and_shoot_pickup(page):
+    """Kill an inert goblin, shoot the pickup it drops, return the pickup."""
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32, true)")
+    page.evaluate("() => window.__ARCHER.killAll()")
+    page.wait_for_function("() => window.__ARCHER.state.pickupCount === 1", timeout=2000)
+    pickup = page.evaluate("() => window.__ARCHER.state.pickups[0]")
+    page.evaluate("(p) => window.__ARCHER.fireAt(p.x, p.y, p.z)", pickup)
+    page.wait_for_function("() => window.__ARCHER.state.pickupCount === 0", timeout=5000)
+    return pickup
+
+
 def test_boot_renders(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
@@ -335,18 +346,10 @@ def test_drops_spawn_and_are_shot_to_collect(server_url, page):
     page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
     page.evaluate("() => window.__ARCHER.setDropChance(1)")
     page.evaluate("() => window.__ARCHER.setHealChance(0)")  # force an ammo drop
-    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32, true)")
-    page.evaluate("() => window.__ARCHER.killAll()")
-    page.wait_for_function("() => window.__ARCHER.state.pickupCount === 1", timeout=2000)
-    pickup = page.evaluate("() => window.__ARCHER.state.pickups[0]")
-    ammo0 = page.evaluate("(t) => window.__ARCHER.state.ammo[t]", pickup["type"])
-    page.evaluate(
-        "(p) => window.__ARCHER.fireAt(p.x, p.y, p.z)",
-        {"x": pickup["x"], "y": pickup["y"], "z": pickup["z"]},
-    )
-    page.wait_for_function("() => window.__ARCHER.state.pickupCount === 0", timeout=5000)
-    ammo1 = page.evaluate("(t) => window.__ARCHER.state.ammo[t]", pickup["type"])
-    assert 3 <= ammo1 - ammo0 <= 5
+    ammo0 = page.evaluate("() => window.__ARCHER.state.ammo")
+    pickup = _drop_and_shoot_pickup(page)
+    ammo1 = page.evaluate("() => window.__ARCHER.state.ammo")
+    assert 3 <= ammo1[pickup["type"]] - ammo0[pickup["type"]] <= 5
 
 
 def test_heal_potion_drop_restores_hp_capped_at_max(server_url, page):
@@ -354,23 +357,13 @@ def test_heal_potion_drop_restores_hp_capped_at_max(server_url, page):
     _wait_ready(page)
     page.evaluate("() => window.__ARCHER.setDropChance(1)")
     page.evaluate("() => window.__ARCHER.setHealChance(1)")  # force a potion drop
-
-    def collect_potion():
-        page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32, true)")
-        page.evaluate("() => window.__ARCHER.killAll()")
-        page.wait_for_function("() => window.__ARCHER.state.pickupCount === 1", timeout=2000)
-        pickup = page.evaluate("() => window.__ARCHER.state.pickups[0]")
-        assert pickup["type"] == "heal"
-        page.evaluate("(p) => window.__ARCHER.fireAt(p.x, p.y, p.z)", pickup)
-        page.wait_for_function("() => window.__ARCHER.state.pickupCount === 0", timeout=5000)
-
     # Wounded player: the potion restores CONFIG.drops.heal.amount HP.
     page.evaluate("() => window.__ARCHER.setPlayerHp(50)")
-    collect_potion()
+    assert _drop_and_shoot_pickup(page)["type"] == "heal"
     assert page.evaluate("() => window.__ARCHER.state.hp") == 75
     # Near full: healing clamps at max HP instead of overhealing.
     page.evaluate("() => window.__ARCHER.setPlayerHp(90)")
-    collect_potion()
+    _drop_and_shoot_pickup(page)
     assert page.evaluate("() => window.__ARCHER.state.hp") == 100
 
 

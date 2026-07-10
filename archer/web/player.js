@@ -87,6 +87,7 @@ export class Player {
   }
 
   takeDamage(n) { this.hp = Math.max(0, this.hp - n); }
+  heal(n) { this.hp = Math.min(CONFIG.player.hp, this.hp + n); }
   resetHp() { this.hp = CONFIG.player.hp; }
 
   aimDir() {
