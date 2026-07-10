@@ -58,8 +58,8 @@ px of accumulated travel — real drags blow that budget and only aim.
   obstacle on the player line, peeks to shoot, hides again (cover/peek
   point selection: `pickCover()`/`coverPoint()` in `web/enemies.js`).
   Projectiles drop at 4 m/s² with compensated aim, so long shots arc
-  visibly; they use point (not segment) collision — at 20 m/s vs a 0.9 m
-  player radius they cannot tunnel.
+  visibly; like player arrows they use segment-vs-sphere collision, so
+  they cannot tunnel through the player even at low frame rates.
 - Melee ignores the perch elevation: attacks reach the player from the
   perch base by design.
 - A melee attacker is spent on contact: it lands one hit and disappears
@@ -72,6 +72,16 @@ Forest (dense cover) → desert (long sightlines) → iceberg (snow, fastest
 enemies), five waves each per `CONFIG.stages`. HP refills between stages;
 special ammo carries over. Death → retry the same stage with the ammo held
 at its start. Best score/stage persist in `localStorage['archer.best']`.
+
+The ground is a vertex-displaced, vertex-colored, flat-shaded plane
+(`makeGround()` in `web/stages.js`): two-tone noise patches plus per-facet
+tint jitter give a texture-gradient depth cue, and per-theme hills (dunes /
+ridges) rise beyond the play area to frame the horizon inside the fog band.
+The battlefield itself stays a flat y=0 plane (micro-relief ≤ ±0.12) —
+arrows die at y<=0.05, enemies walk at y=0, and melee/cover logic assume
+it. Terrain noise is hash-based on vertex position and deliberately does
+NOT draw from the seeded rng stream, so per-seed obstacle layouts (which
+tests pin) are unaffected.
 
 ## Determinism and e2e
 
@@ -93,4 +103,5 @@ synthetic `TouchEvent`s on the canvas (Chromium's `new Touch()`).
 
 - No player movement; no sound.
 - Stage geometry is regenerated (not disposed) on stage change — a small,
-  bounded leak over a 3-stage run.
+  bounded leak over a 3-stage run. The ground mesh is the exception: it is
+  built once per theme and reused across loads.
