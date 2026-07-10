@@ -41,7 +41,7 @@ sensitivity × `CONFIG.touch.lookScale`.
   type — shoot it to collect.
 - Exploding splash ignores cover (no LOS check); freezing doubles the
   next hit (shatter); burning spreads to nearby enemies.
-- Arrow collision is segment-vs-sphere per frame (no tunneling at 55 m/s).
+- Arrow collision is segment-vs-sphere per frame (no tunneling at 70 m/s).
 
 ## Enemies
 

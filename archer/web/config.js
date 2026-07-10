@@ -4,9 +4,9 @@ export const CONFIG = {
   arena: { size: 80, spawnZ: -34, spawnXSpread: 28 },
   player: { hp: 100, pos: { x: 0, y: 3.2, z: 34 } },
   bow: {
-    minSpeed: 14,
-    maxSpeed: 55,
-    power: { min: 0.2, max: 1, step: 0.1, initial: 0.8 }, // +/- adjusted shot power
+    minSpeed: 20,
+    maxSpeed: 70,
+    power: { min: 0.2, max: 1, step: 0.1, initial: 0.6 }, // +/- adjusted shot power
     // Shot animation timing (s): string snap on release, empty-bow reload,
     // then the new arrow rides the string back out to the power draw.
     // Firing is gated until the fresh arrow is fully nocked.
@@ -15,7 +15,7 @@ export const CONFIG = {
     zoomFov: 62,         // FOV eased in at max power
   },
   arrow: {
-    gravity: -20,
+    gravity: -15,
     lifetime: 6,
     radius: 0.12,
     headshotMult: 2,

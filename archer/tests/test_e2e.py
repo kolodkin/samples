@@ -50,10 +50,10 @@ def test_each_stage_builds(server_url, page):
 def test_power_buttons_adjust_and_clamp(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
-    assert page.evaluate("() => window.__ARCHER.state.power") == 0.8
+    assert page.evaluate("() => window.__ARCHER.state.power") == 0.6
     page.get_by_test_id("power-up").dispatch_event("pointerdown")
-    assert page.evaluate("() => window.__ARCHER.state.power") == 0.9
-    expect(page.get_by_test_id("power-value")).to_have_text("90%")
+    assert page.evaluate("() => window.__ARCHER.state.power") == 0.7
+    expect(page.get_by_test_id("power-value")).to_have_text("70%")
     for _ in range(5):  # clamps at max
         page.get_by_test_id("power-up").dispatch_event("pointerdown")
     assert page.evaluate("() => window.__ARCHER.state.power") == 1.0
@@ -66,10 +66,10 @@ def test_power_keys_adjust_power(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
     page.keyboard.press("Equal")
-    assert page.evaluate("() => window.__ARCHER.state.power") == 0.9
-    page.keyboard.press("Minus")
-    page.keyboard.press("Minus")
     assert page.evaluate("() => window.__ARCHER.state.power") == 0.7
+    page.keyboard.press("Minus")
+    page.keyboard.press("Minus")
+    assert page.evaluate("() => window.__ARCHER.state.power") == 0.5
 
 
 def test_arrow_flies_and_lands(server_url, page):
@@ -89,7 +89,7 @@ def test_click_fires_arrow(server_url, page):
     page.wait_for_function("() => window.__ARCHER.state.arrowCount === 1", timeout=2000)
     page.mouse.up()
     # Power is a persistent setting; firing does not reset it.
-    assert page.evaluate("() => window.__ARCHER.state.power") == 0.8
+    assert page.evaluate("() => window.__ARCHER.state.power") == 0.6
 
 
 def test_shot_releases_arrow_then_renocks(server_url, page):
