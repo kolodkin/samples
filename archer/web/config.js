@@ -28,8 +28,6 @@ export const CONFIG = {
   },
   touch: {
     lookScale: 2.2,   // touch-drag aim, relative to mouse sensitivity
-    tapMaxDrift: 12,  // px of finger travel a tap-to-shoot may accumulate
-    tapMaxMs: 300,    // longest press (ms) that still counts as a tap
   },
   drops: {
     chance: 0.2, min: 3, max: 5, lifetime: 20, radius: 0.6,

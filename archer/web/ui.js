@@ -30,15 +30,14 @@ function useStore(store) {
 }
 
 const SLOTS = [
-  ['normal', 'Normal', '1'],
-  ['exploding', 'Explode', '2'],
-  ['freezing', 'Freeze', '3'],
-  ['burning', 'Burn', '4'],
+  ['normal', 'Normal'],
+  ['exploding', 'Explode'],
+  ['freezing', 'Freeze'],
+  ['burning', 'Burn'],
 ];
 
-// Tap-to-shoot button for touch play. preventDefault stops the synthetic
-// mouse events that would otherwise double-drive the document-level
-// click-fire path.
+// The one fire control on touch. preventDefault stops the synthetic mouse
+// events a tap would otherwise generate.
 function TouchControls({ actions }) {
   return html`
     <button
@@ -79,13 +78,11 @@ function Hud({ s, actions }) {
           onClick=${actions.pause}>❚❚</button>`}
       <${PowerControls} s=${s} actions=${actions} />
       <div class="quiver">
-        ${SLOTS.map(([type, label, key]) => html`
+        ${SLOTS.map(([type, label]) => html`
           <div
             class="slot ${s.selected === type ? 'active' : ''} ${type !== 'normal' && !s.ammo[type] ? 'empty' : ''}"
             data-testid="slot-${type}"
-            onClick=${() => actions.select(type)}
           >
-            <span class="key">${key}</span>
             <span class="label">${label}</span>
             <span class="count" data-testid="ammo-${type}">${type === 'normal' ? '∞' : s.ammo[type]}</span>
           </div>
@@ -109,8 +106,8 @@ function Screens({ s, actions }) {
   if (s.screen === 'title') {
     return html`
       <${Screen} testid="title-screen" title="ARCHER">
-        <p>Click to shoot. Set power with the +/− buttons (or +/− keys). Keys 1–4 or a tap on the quiver switch arrows.</p>
-        <p>On touch: drag to aim, tap anywhere (or the 🏹 button) to shoot.</p>
+        <p>Click to take aim, then click to shoot. Set power with the +/− buttons (or +/− keys). The strongest arrow in your quiver fires first, automatically.</p>
+        <p>On touch: drag to aim, the 🏹 button shoots.</p>
         <p data-testid="best">Best: ${s.best.score} pts, stage ${s.best.stage}/3</p>
         <button data-testid="start-btn" onClick=${actions.start}>Start</button>
       <//>`;

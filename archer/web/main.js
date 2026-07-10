@@ -37,7 +37,6 @@ const game = {
   stats: {
     score: 0,
     ammo: { exploding: 0, freezing: 0, burning: 0 },
-    selected: 'normal',
   },
   screen: 'title',
   obstacles: [],
@@ -65,15 +64,17 @@ loadStage(initialStage);
 game.player = new Player(camera);
 game.arrows = new ArrowSystem(game);
 const trajectoryHint = new TrajectoryHint(scene);
+// No manual arrow selection: every shot spends the strongest special in
+// stock (explode > freeze > burn), then normal arrows once the quiver is dry.
+const AMMO_PRIORITY = ['exploding', 'freezing', 'burning'];
+function selectedType() {
+  return AMMO_PRIORITY.find((t) => game.stats.ammo[t] > 0) ?? 'normal';
+}
 function fireArrow() {
   if (game.screen !== 'playing') return; // one gate for every fire path
   if (!game.player.canShoot()) return; // still re-nocking from the last shot
-  const type = game.stats.selected;
-  if (type !== 'normal') {
-    if (game.stats.ammo[type] <= 0) return; // no ammo: the shot fizzles
-    game.stats.ammo[type] -= 1;
-    if (game.stats.ammo[type] === 0) game.stats.selected = 'normal'; // quiver empty: fall back to the basic arrow
-  }
+  const type = selectedType();
+  if (type !== 'normal') game.stats.ammo[type] -= 1;
   game.arrows.fire(game.player.aimOrigin(), game.player.aimDir(), game.player.power, type);
   game.player.shoot(); // string snap + reload animation, and the shot gate
   game.syncUI();
@@ -113,23 +114,13 @@ function gameOver() {
 }
 game.effects = new Effects(scene);
 game.effects.setSnow(game.stage === 'iceberg');
-const ARROW_ORDER = ['normal', 'exploding', 'freezing', 'burning'];
-const TYPE_KEYS = { Digit1: 'normal', Digit2: 'exploding', Digit3: 'freezing', Digit4: 'burning' };
 // +/- keys mirror the HUD power buttons: under pointer lock the cursor is
 // captive, so desktop players adjust power from the keyboard.
 const POWER_KEYS = { Equal: 1, NumpadAdd: 1, Minus: -1, NumpadSubtract: -1 };
 document.addEventListener('keydown', (e) => {
   if (game.screen !== 'playing') return;
-  const type = TYPE_KEYS[e.code];
-  if (type) { game.stats.selected = type; game.syncUI(); }
   const dir = POWER_KEYS[e.code];
   if (dir) adjustPower(dir);
-});
-document.addEventListener('wheel', (e) => {
-  if (game.screen !== 'playing') return;
-  const i = ARROW_ORDER.indexOf(game.stats.selected);
-  game.stats.selected = ARROW_ORDER[(i + (e.deltaY > 0 ? 1 : -1) + 4) % 4];
-  game.syncUI();
 });
 game.waves = new WaveManager(game);
 const BEST_KEY = 'archer.best';
@@ -174,7 +165,7 @@ game.syncUI = () => store.set({
   maxHp: CONFIG.player.hp,
   score: game.stats.score,
   ammo: { ...game.stats.ammo },
-  selected: game.stats.selected,
+  selected: selectedType(),
   power: game.player.power,
   wave: game.waves.waveIndex,
   totalWaves: CONFIG.waves.perStage,
@@ -193,7 +184,6 @@ initUI(store, {
     game.screen = 'paused';
     game.syncUI();
   },
-  select: (type) => { game.stats.selected = type; game.syncUI(); },
   fire: fireArrow,
   power: (dir) => { if (game.screen === 'playing') adjustPower(dir); },
 });
@@ -228,57 +218,44 @@ document.addEventListener('mousemove', (e) => {
     game.player.look(e.movementX, e.movementY);
   }
 });
-// Shot on click. Only clicks that land on the canvas fire — HUD buttons
-// (quiver, power, pause) sit in #ui and keep their clicks to themselves.
-// Under pointer lock every mouse event targets the canvas, so this always
-// fires while locked.
+// Shot on click, but only while the pointer is locked — i.e. the player is
+// actually aiming. An unlocked click just acquires the lock (see above), so
+// stray clicks on the page never loose an arrow.
 document.addEventListener('mousedown', (e) => {
-  if (e.button === 0 && e.target === canvas) fireArrow();
+  if (e.button === 0 && document.pointerLockElement === canvas) fireArrow();
 });
 
-// Touch: drag on the canvas to aim; a tap (short press, negligible travel)
-// shoots, as does the HUD fire button (see ui.js). No pointer lock on
-// touch — deltas come from tracking one finger by identifier, so a second
-// finger on the fire button never steers.
+// Touch: drag on the canvas to aim; the HUD fire button shoots (see ui.js).
+// No pointer lock on touch — deltas come from tracking one finger by
+// identifier, so a second finger on the fire button never steers.
 document.addEventListener('touchstart', () => {
   if (!game.touchMode) { game.touchMode = true; game.syncUI(); }
 }, { capture: true, passive: true });
-let lookTouch = null; // { id, x, y, drift, t0 } of the finger that owns the camera
+let lookTouch = null; // { id, x, y } of the finger that owns the camera
 canvas.addEventListener('touchstart', (e) => {
   if (game.screen !== 'playing' || lookTouch) return;
   const t = e.changedTouches[0];
-  lookTouch = { id: t.identifier, x: t.clientX, y: t.clientY, drift: 0, t0: performance.now() };
-  e.preventDefault(); // no scroll/zoom, and no synthetic mouse click-fire
+  lookTouch = { id: t.identifier, x: t.clientX, y: t.clientY };
+  e.preventDefault(); // no scroll/zoom, and no synthetic mouse events
 }, { passive: false });
 canvas.addEventListener('touchmove', (e) => {
   if (!lookTouch || game.screen !== 'playing') return;
   for (const t of e.changedTouches) {
     if (t.identifier !== lookTouch.id) continue;
     const k = CONFIG.touch.lookScale;
-    const dx = t.clientX - lookTouch.x, dy = t.clientY - lookTouch.y;
-    game.player.look(dx * k, dy * k);
-    lookTouch.drift += Math.hypot(dx, dy);
+    game.player.look((t.clientX - lookTouch.x) * k, (t.clientY - lookTouch.y) * k);
     lookTouch.x = t.clientX;
     lookTouch.y = t.clientY;
   }
   e.preventDefault();
 }, { passive: false });
-canvas.addEventListener('touchend', (e) => {
-  for (const t of e.changedTouches) {
-    if (!lookTouch || t.identifier !== lookTouch.id) continue;
-    // Tap-to-shoot: anywhere on the canvas counts — HUD controls sit above
-    // it and keep their taps to themselves. Real drags blow the drift
-    // budget and only aim; held presses time out.
-    if (lookTouch.drift < CONFIG.touch.tapMaxDrift
-        && performance.now() - lookTouch.t0 < CONFIG.touch.tapMaxMs) fireArrow();
-    lookTouch = null;
-  }
-});
-canvas.addEventListener('touchcancel', (e) => {
-  for (const t of e.changedTouches) {
-    if (lookTouch && t.identifier === lookTouch.id) lookTouch = null; // never a tap
-  }
-});
+for (const type of ['touchend', 'touchcancel']) {
+  canvas.addEventListener(type, (e) => {
+    for (const t of e.changedTouches) {
+      if (lookTouch && t.identifier === lookTouch.id) lookTouch = null;
+    }
+  });
+}
 
 let last = performance.now();
 let framesRendered = 0;
@@ -309,7 +286,7 @@ window.__ARCHER = {
       score: game.stats.score,
       best: loadBest(),
       ammo: { ...game.stats.ammo },
-      selected: game.stats.selected,
+      selected: selectedType(),
       stage: game.stage,
       obstacles: game.obstacles,
       hp: game.player.hp,
