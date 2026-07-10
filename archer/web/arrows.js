@@ -13,20 +13,23 @@ function segClosest(a, b, p) {
 function buildArrowMesh(type) {
   const g = new THREE.Group();
   const color = CONFIG.arrow.types[type].color;
+  // Slim proportions matching the arrow nocked on the bow viewmodel — the
+  // projectile reads as a thin arrow in flight, not a fat bolt. Collision
+  // stays at CONFIG.arrow.radius (gameplay tuning, not the visual).
   const shaft = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.02, 0.02, 0.7, 5),
+    new THREE.CylinderGeometry(0.008, 0.008, 0.7, 5),
     new THREE.MeshLambertMaterial({ color: 0xd8c9a3 }),
   );
   const tip = new THREE.Mesh(
-    new THREE.ConeGeometry(0.045, 0.12, 5),
+    new THREE.ConeGeometry(0.02, 0.08, 6),
     new THREE.MeshLambertMaterial({ color: 0x555555 }),
   );
-  tip.position.y = 0.41;
+  tip.position.y = 0.39;
   const fletch = new THREE.Mesh(
-    new THREE.ConeGeometry(0.06, 0.15, 4),
+    new THREE.ConeGeometry(0.028, 0.12, 4),
     new THREE.MeshBasicMaterial({ color }),
   );
-  fletch.position.y = -0.32;
+  fletch.position.y = -0.3;
   g.add(shaft, tip, fletch);
   return g;
 }

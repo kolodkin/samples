@@ -6,7 +6,11 @@ export const CONFIG = {
   bow: {
     minSpeed: 14,
     maxSpeed: 55,
-    power: { min: 0.2, max: 1, step: 0.1, initial: 0.6 }, // +/- adjusted shot power
+    power: { min: 0.2, max: 1, step: 0.1, initial: 0.8 }, // +/- adjusted shot power
+    // Shot animation timing (s): string snap on release, empty-bow reload,
+    // then the new arrow rides the string back out to the power draw.
+    // Firing is gated until the fresh arrow is fully nocked.
+    shot: { snap: 0.06, reload: 0.3, nock: 0.15 },
     baseFov: 70,
     zoomFov: 62,         // FOV eased in at max power
   },
