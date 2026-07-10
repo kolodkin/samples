@@ -92,6 +92,56 @@ def test_click_fires_arrow(server_url, page):
     assert page.evaluate("() => window.__ARCHER.state.power") == 0.6
 
 
+def test_shot_releases_arrow_then_renocks(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    # At rest an arrow sits nocked on the bow, ready to shoot.
+    assert page.evaluate("() => window.__ARCHER.state.nocked") is True
+    assert page.evaluate("() => window.__ARCHER.state.canShoot") is True
+    page.mouse.move(640, 360)
+    page.mouse.down()
+    # The nocked arrow leaves the bow the moment the shot fires — the bow
+    # is briefly empty while the projectile flies.
+    page.wait_for_function(
+        "() => window.__ARCHER.state.arrowCount === 1"
+        " && window.__ARCHER.state.nocked === false",
+        timeout=2000,
+    )
+    page.mouse.up()
+    # A fresh arrow appears and is drawn back, re-arming the shot.
+    page.wait_for_function("() => window.__ARCHER.state.nocked === true", timeout=2000)
+    page.wait_for_function("() => window.__ARCHER.state.canShoot === true", timeout=2000)
+
+
+def test_rapid_clicks_gated_by_renock(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.mouse.move(640, 360)
+    # A synchronous burst of clicks (no frames in between): only the first
+    # fires; the rest land mid-reload and are swallowed.
+    shots = page.evaluate(
+        """() => {
+          const canvas = document.getElementById('game');
+          const n0 = window.__ARCHER.state.arrowCount;
+          for (let i = 0; i < 5; i++) {
+            canvas.dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true }));
+          }
+          return window.__ARCHER.state.arrowCount - n0;
+        }"""
+    )
+    assert shots == 1
+    # Once the new arrow is nocked (and the first shot has landed), the
+    # bow shoots again.
+    page.wait_for_function(
+        "() => window.__ARCHER.state.canShoot === true"
+        " && window.__ARCHER.state.arrowCount === 0",
+        timeout=10000,
+    )
+    page.mouse.down()
+    page.mouse.up()
+    page.wait_for_function("() => window.__ARCHER.state.arrowCount === 1", timeout=2000)
+
+
 def test_arrow_kills_goblin_and_scores(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)

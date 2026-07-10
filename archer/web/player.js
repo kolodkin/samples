@@ -60,10 +60,19 @@ export class Player {
     this.yaw = 0;       // facing -z, toward the spawn edge
     this.pitch = 0;
     this.power = CONFIG.bow.power.initial;
+    this.shootT = Infinity; // seconds since the last shot; Infinity = at rest
     this.bow = buildBowViewmodel();
     camera.add(this.bow.group);
     camera.rotation.order = 'YXZ';
   }
+
+  // A shot is allowed only once the fresh arrow is nocked and drawn.
+  canShoot() {
+    const { snap, reload, nock } = CONFIG.bow.shot;
+    return this.shootT >= snap + reload + nock;
+  }
+
+  shoot() { this.shootT = 0; }
 
   look(dx, dy) {
     this.yaw -= dx * 0.0022;
@@ -102,9 +111,21 @@ export class Player {
       * 0.6 * this.camera.aspect;
     this.bow.group.position.x = Math.min(0.26, Math.max(0.08, halfW - 0.16));
     this.bow.group.scale.setScalar(Math.min(1, 0.7 + this.camera.aspect * 0.25));
-    // Pull the string and nocked arrow back with the set power. Each string
+    // Release animation: as the shot leaves, the string snaps forward and
+    // the nocked arrow vanishes (it became the projectile); the bow sits
+    // empty for a beat, then a new arrow appears and rides the string back
+    // out to the persistent power draw, ready for the next shot.
+    this.shootT += dt;
+    const { snap, reload, nock } = CONFIG.bow.shot;
+    const t = this.shootT;
+    let draw = this.power;
+    if (t < snap) draw = this.power * (1 - t / snap);
+    else if (t < snap + reload) draw = 0;
+    else if (t < snap + reload + nock) draw = this.power * ((t - snap - reload) / nock);
+    this.bow.nocked.visible = t >= snap + reload;
+    // Pull the string and nocked arrow back with the draw. Each string
     // half runs from its limb tip to the nock at (pull, 0), forming a V.
-    const pull = this.power * 0.15;
+    const pull = draw * 0.15;
     for (const [seg, side] of [[this.bow.stringTop, 1], [this.bow.stringBottom, -1]]) {
       const v = new THREE.Vector3(pull, -side * STRING_TIP_Y, 0); // tip → nock
       seg.scale.y = v.length();

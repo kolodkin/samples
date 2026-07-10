@@ -19,7 +19,12 @@ This spec covers behavior the numbers don't show.
 | Touch: ❚❚ button | Pause |
 
 Shot power is a persistent setting (it survives firing); the crosshair ring,
-the 🏹 button ring, and the bow-string pull all show the current level. The
+the 🏹 button ring, and the bow-string pull all show the current level.
+Firing plays a release cycle on the bow viewmodel (`CONFIG.bow.shot`): the
+string snaps forward and the nocked arrow vanishes (it became the
+projectile), the bow sits empty for a beat, then a fresh arrow appears and
+rides the string back out to the power draw. Shots are gated on that fresh
+arrow (`Player.canShoot()`), so clicks mid-reload are swallowed. The
 dotted trajectory hint is visible below 85% power and fades as power rises,
 so full-power shots stay skill-based. Only clicks that land on the canvas
 fire — HUD buttons keep their clicks to themselves.
@@ -36,7 +41,7 @@ sensitivity × `CONFIG.touch.lookScale`.
   type — shoot it to collect.
 - Exploding splash ignores cover (no LOS check); freezing doubles the
   next hit (shatter); burning spreads to nearby enemies.
-- Arrow collision is segment-vs-sphere per frame (no tunneling at 55 m/s).
+- Arrow collision is segment-vs-sphere per frame (no tunneling at 70 m/s).
 
 ## Enemies
 
@@ -67,7 +72,7 @@ All gameplay randomness flows through one seeded mulberry32 stream
 (`web/rng.js`, `?seed=N`); particles are visual-only and exempt.
 `window.__ARCHER` (defined in `web/main.js`) exposes `ready`, a `state`
 snapshot (screen, hp, score, wave, enemies, pickups, obstacles, best,
-yaw/pitch/touch/power), and test hooks: `fireAt()` (gravity-compensated),
+yaw/pitch/touch/power, nocked/canShoot), and test hooks: `fireAt()` (gravity-compensated),
 `spawnEnemy()` (optional `inert` flag disables the AI), `skipToWave()`,
 `killAll()`, `giveAmmo()`, `setDropChance()`, `setPlayerHp()`, `start()`,
 `nextStage()`, `retryStage()`, `visiblePixelCount()`. Tests boot with

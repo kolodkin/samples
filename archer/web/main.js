@@ -66,12 +66,14 @@ game.player = new Player(camera);
 game.arrows = new ArrowSystem(game);
 const trajectoryHint = new TrajectoryHint(scene);
 function fireArrow() {
+  if (!game.player.canShoot()) return; // still re-nocking from the last shot
   const type = game.stats.selected;
   if (type !== 'normal') {
     if (game.stats.ammo[type] <= 0) return; // no ammo: the shot fizzles
     game.stats.ammo[type] -= 1;
   }
   game.arrows.fire(game.player.aimOrigin(), game.player.aimDir(), game.player.power, type);
+  game.player.shoot(); // string snap + reload animation, and the shot gate
   game.syncUI();
 }
 function adjustPower(dir) {
@@ -301,6 +303,8 @@ window.__ARCHER = {
       pitch: game.player.pitch,
       touch: game.touchMode,
       power: game.player.power,
+      nocked: game.player.bow.nocked.visible,
+      canShoot: game.player.canShoot(),
       bowX: game.player.bow.group.position.x,
       arrowCount: game.arrows.count,
       enemyCount: game.enemies.list.length,
