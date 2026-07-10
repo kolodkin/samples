@@ -310,6 +310,20 @@ def test_special_ammo_is_consumed_and_gated(server_url, page):
     assert page.evaluate("() => window.__ARCHER.state.ammo.freezing") == 1
 
 
+def test_spending_last_special_arrow_falls_back_to_normal(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.giveAmmo('freezing', 1)")
+    page.keyboard.press("Digit3")
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "freezing"
+    # Firing the last special arrow auto-selects the basic (normal) arrow.
+    page.mouse.move(640, 360)
+    page.mouse.click(640, 360)
+    page.wait_for_function("() => window.__ARCHER.state.arrowCount === 1", timeout=2000)
+    assert page.evaluate("() => window.__ARCHER.state.ammo.freezing") == 0
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "normal"
+
+
 def test_wave_one_spawns_forest_mix(server_url, page):
     page.goto(server_url + "/?autostart=1&seed=42")  # waves ON
     _wait_ready(page)
