@@ -352,6 +352,7 @@ window.__ARCHER = {
   setPlayerHp: (n) => { game.player.hp = n; game.syncUI(); },
   giveAmmo: (type, n) => { game.stats.ammo[type] += n; game.syncUI(); },
   setDropChance: (c) => { CONFIG.drops.chance = c; },
+  setHealChance: (c) => { CONFIG.drops.heal.chance = c; },
   killAll: () => {
     for (const e of [...game.enemies.list]) game.enemies.damage(e, 1e9);
   },
