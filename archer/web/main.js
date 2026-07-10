@@ -66,11 +66,13 @@ game.player = new Player(camera);
 game.arrows = new ArrowSystem(game);
 const trajectoryHint = new TrajectoryHint(scene);
 function fireArrow() {
+  if (game.screen !== 'playing') return; // one gate for every fire path
   if (!game.player.canShoot()) return; // still re-nocking from the last shot
   const type = game.stats.selected;
   if (type !== 'normal') {
     if (game.stats.ammo[type] <= 0) return; // no ammo: the shot fizzles
     game.stats.ammo[type] -= 1;
+    if (game.stats.ammo[type] === 0) game.stats.selected = 'normal'; // quiver empty: fall back to the basic arrow
   }
   game.arrows.fire(game.player.aimOrigin(), game.player.aimDir(), game.player.power, type);
   game.player.shoot(); // string snap + reload animation, and the shot gate
@@ -192,7 +194,7 @@ initUI(store, {
     game.syncUI();
   },
   select: (type) => { game.stats.selected = type; game.syncUI(); },
-  fire: () => { if (game.screen === 'playing') fireArrow(); },
+  fire: fireArrow,
   power: (dir) => { if (game.screen === 'playing') adjustPower(dir); },
 });
 game.syncUI();
@@ -231,20 +233,21 @@ document.addEventListener('mousemove', (e) => {
 // Under pointer lock every mouse event targets the canvas, so this always
 // fires while locked.
 document.addEventListener('mousedown', (e) => {
-  if (e.button === 0 && e.target === canvas && game.screen === 'playing') fireArrow();
+  if (e.button === 0 && e.target === canvas) fireArrow();
 });
 
-// Touch: drag on the canvas to aim; the HUD fire button shoots (see ui.js).
-// No pointer lock on touch — deltas come from tracking one finger by
-// identifier, so a second finger on the fire button never steers.
+// Touch: drag on the canvas to aim; a tap (short press, negligible travel)
+// shoots, as does the HUD fire button (see ui.js). No pointer lock on
+// touch — deltas come from tracking one finger by identifier, so a second
+// finger on the fire button never steers.
 document.addEventListener('touchstart', () => {
   if (!game.touchMode) { game.touchMode = true; game.syncUI(); }
 }, { capture: true, passive: true });
-let lookTouch = null; // { id, x, y } of the finger that owns the camera
+let lookTouch = null; // { id, x, y, drift, t0 } of the finger that owns the camera
 canvas.addEventListener('touchstart', (e) => {
   if (game.screen !== 'playing' || lookTouch) return;
   const t = e.changedTouches[0];
-  lookTouch = { id: t.identifier, x: t.clientX, y: t.clientY };
+  lookTouch = { id: t.identifier, x: t.clientX, y: t.clientY, drift: 0, t0: performance.now() };
   e.preventDefault(); // no scroll/zoom, and no synthetic mouse click-fire
 }, { passive: false });
 canvas.addEventListener('touchmove', (e) => {
@@ -252,19 +255,30 @@ canvas.addEventListener('touchmove', (e) => {
   for (const t of e.changedTouches) {
     if (t.identifier !== lookTouch.id) continue;
     const k = CONFIG.touch.lookScale;
-    game.player.look((t.clientX - lookTouch.x) * k, (t.clientY - lookTouch.y) * k);
+    const dx = t.clientX - lookTouch.x, dy = t.clientY - lookTouch.y;
+    game.player.look(dx * k, dy * k);
+    lookTouch.drift += Math.hypot(dx, dy);
     lookTouch.x = t.clientX;
     lookTouch.y = t.clientY;
   }
   e.preventDefault();
 }, { passive: false });
-for (const type of ['touchend', 'touchcancel']) {
-  canvas.addEventListener(type, (e) => {
-    for (const t of e.changedTouches) {
-      if (lookTouch && t.identifier === lookTouch.id) lookTouch = null;
-    }
-  });
-}
+canvas.addEventListener('touchend', (e) => {
+  for (const t of e.changedTouches) {
+    if (!lookTouch || t.identifier !== lookTouch.id) continue;
+    // Tap-to-shoot: anywhere on the canvas counts — HUD controls sit above
+    // it and keep their taps to themselves. Real drags blow the drift
+    // budget and only aim; held presses time out.
+    if (lookTouch.drift < CONFIG.touch.tapMaxDrift
+        && performance.now() - lookTouch.t0 < CONFIG.touch.tapMaxMs) fireArrow();
+    lookTouch = null;
+  }
+});
+canvas.addEventListener('touchcancel', (e) => {
+  for (const t of e.changedTouches) {
+    if (lookTouch && t.identifier === lookTouch.id) lookTouch = null; // never a tap
+  }
+});
 
 let last = performance.now();
 let framesRendered = 0;
@@ -338,6 +352,7 @@ window.__ARCHER = {
   setPlayerHp: (n) => { game.player.hp = n; game.syncUI(); },
   giveAmmo: (type, n) => { game.stats.ammo[type] += n; game.syncUI(); },
   setDropChance: (c) => { CONFIG.drops.chance = c; },
+  setHealChance: (c) => { CONFIG.drops.heal.chance = c; },
   killAll: () => {
     for (const e of [...game.enemies.list]) game.enemies.damage(e, 1e9);
   },

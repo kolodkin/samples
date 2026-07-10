@@ -15,7 +15,7 @@ This spec covers behavior the numbers don't show.
 | Keys 1–4, mouse wheel, tap/click a quiver slot | Select arrow type |
 | Esc (exits pointer lock) | Pause |
 | Touch: drag on the canvas | Aim (no pointer lock; one finger owns the camera) |
-| Touch: tap the 🏹 button | Shoot at the set power |
+| Touch: tap the canvas or the 🏹 button | Shoot at the set power |
 | Touch: ❚❚ button | Pause |
 
 Shot power is a persistent setting (it survives firing); the crosshair ring,
@@ -27,18 +27,25 @@ rides the string back out to the power draw. Shots are gated on that fresh
 arrow (`Player.canShoot()`), so clicks mid-reload are swallowed. The
 dotted trajectory hint is visible below 85% power and fades as power rises,
 so full-power shots stay skill-based. Only clicks that land on the canvas
-fire — HUD buttons keep their clicks to themselves.
+fire — HUD buttons keep their clicks to themselves. Spending the last
+arrow of a special type auto-selects the basic (normal) arrow; manually
+selecting an empty type is allowed, but its shots fizzle.
 
 Touch mode is detected via `(pointer: coarse)` or the first `touchstart`;
 hybrid devices keep both input paths live. Touch aim sensitivity is mouse
-sensitivity × `CONFIG.touch.lookScale`.
+sensitivity × `CONFIG.touch.lookScale`. The aim finger doubles as the
+trigger: a tap anywhere on the canvas shoots, where a tap is a press
+shorter than `CONFIG.touch.tapMaxMs` with under `CONFIG.touch.tapMaxDrift`
+px of accumulated travel — real drags blow that budget and only aim.
 
 ## Combat
 
 - Headshots deal double damage plus a score bonus; kills in quick
   succession chain a multi-kill combo bonus.
-- A fraction of kills drop a floating pickup of a random special arrow
-  type — shoot it to collect.
+- A fraction of kills drop a floating pickup — shoot it to collect.
+  Usually it's a random special arrow type (glowing octahedron); a
+  config-tunable fraction (`CONFIG.drops.heal`) is a heal potion (corked
+  flask) that restores HP, clamped at max.
 - Exploding splash ignores cover (no LOS check); freezing doubles the
   next hit (shatter); burning spreads to nearby enemies.
 - Arrow collision is segment-vs-sphere per frame (no tunneling at 70 m/s).
@@ -84,7 +91,8 @@ All gameplay randomness flows through one seeded mulberry32 stream
 snapshot (screen, hp, score, wave, enemies, pickups, obstacles, best,
 yaw/pitch/touch/power, nocked/canShoot), and test hooks: `fireAt()` (gravity-compensated),
 `spawnEnemy()` (optional `inert` flag disables the AI), `skipToWave()`,
-`killAll()`, `giveAmmo()`, `setDropChance()`, `setPlayerHp()`, `start()`,
+`killAll()`, `giveAmmo()`, `setDropChance()`, `setHealChance()`,
+`setPlayerHp()`, `start()`,
 `nextStage()`, `retryStage()`, `visiblePixelCount()`. Tests boot with
 `?autostart=1&seed=42&waves=0` for a clean battlefield and park inert
 target dummies at melee reach to avoid leading moving targets (live melee

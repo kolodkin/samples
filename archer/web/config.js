@@ -26,8 +26,15 @@ export const CONFIG = {
       burning:   { damage: 15, color: 0xff4422, dps: 9, burnTime: 4, spreadRadius: 2.5 },
     },
   },
-  touch: { lookScale: 2.2 }, // touch-drag aim, relative to mouse sensitivity
-  drops: { chance: 0.2, min: 3, max: 5, lifetime: 20, radius: 0.6 },
+  touch: {
+    lookScale: 2.2,   // touch-drag aim, relative to mouse sensitivity
+    tapMaxDrift: 12,  // px of finger travel a tap-to-shoot may accumulate
+    tapMaxMs: 300,    // longest press (ms) that still counts as a tap
+  },
+  drops: {
+    chance: 0.2, min: 3, max: 5, lifetime: 20, radius: 0.6,
+    heal: { chance: 0.25, amount: 25 }, // fraction of drops that are a potion instead of ammo
+  },
   enemies: {
     goblin:   { hp: 40,  speed: 5.5, damage: 10, score: 100,
                 bodyRadius: 0.55, height: 1.3, headRadius: 0.28, color: 0x4a8f3c },
