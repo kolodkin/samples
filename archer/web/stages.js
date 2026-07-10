@@ -89,10 +89,11 @@ export function buildStage(name, rng) {
   const { x: px, y: py, z: pz } = CONFIG.player.pos;
   // The player's elevated vantage point. The top cap is the only face the
   // player ever sees from up there, so it keeps the perch color — matching
-  // the ground would make the platform invisible underfoot.
+  // the ground would make the platform invisible underfoot. Slightly
+  // translucent so the battlefield stays visible through the platform edge.
   const perch = new THREE.Mesh(
     new THREE.CylinderGeometry(2.2, 3.0, py - 1, 8),
-    lambert(theme.perch),
+    new THREE.MeshLambertMaterial({ color: theme.perch, transparent: true, opacity: 0.65 }),
   );
   perch.position.set(px, (py - 1) / 2, pz);
   group.add(perch);

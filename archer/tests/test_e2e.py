@@ -321,6 +321,20 @@ def test_special_ammo_is_consumed_and_gated(server_url, page):
     assert page.evaluate("() => window.__ARCHER.state.ammo.freezing") == 1
 
 
+def test_spending_last_special_arrow_falls_back_to_normal(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.giveAmmo('freezing', 1)")
+    page.keyboard.press("Digit3")
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "freezing"
+    # Firing the last special arrow auto-selects the basic (normal) arrow.
+    page.mouse.move(640, 360)
+    page.mouse.click(640, 360)
+    page.wait_for_function("() => window.__ARCHER.state.arrowCount === 1", timeout=2000)
+    assert page.evaluate("() => window.__ARCHER.state.ammo.freezing") == 0
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "normal"
+
+
 def test_wave_one_spawns_forest_mix(server_url, page):
     page.goto(server_url + "/?autostart=1&seed=42")  # waves ON
     _wait_ready(page)
@@ -457,7 +471,24 @@ def test_touch_drag_aims_without_firing(server_url, page):
     _touch(page, "touchmove", 250, 340)
     _touch(page, "touchend", 250, 340)
     assert page.evaluate("() => window.__ARCHER.state.yaw") != yaw0
-    # Looking around never looses an arrow.
+    # Looking around never looses an arrow: the drag blows the tap budget.
+    assert page.evaluate("() => window.__ARCHER.state.arrowCount") == 0
+
+
+def test_touch_tap_on_canvas_shoots(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    _touch(page, "touchstart", 400, 300)
+    _touch(page, "touchend", 400, 300)
+    page.wait_for_function("() => window.__ARCHER.state.arrowCount === 1", timeout=2000)
+
+
+def test_touch_long_press_does_not_shoot(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    _touch(page, "touchstart", 400, 300)
+    page.wait_for_timeout(400)  # past CONFIG.touch.tapMaxMs
+    _touch(page, "touchend", 400, 300)
     assert page.evaluate("() => window.__ARCHER.state.arrowCount") == 0
 
 
@@ -474,8 +505,11 @@ def test_touch_enables_touch_hud(server_url, page):
 def test_fire_button_shoots_on_tap(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
+    # Enter touch mode with a drag (a tap would itself fire and mask the
+    # button's shot behind the reload gate).
     _touch(page, "touchstart", 400, 300)
-    _touch(page, "touchend", 400, 300)
+    _touch(page, "touchmove", 300, 300)
+    _touch(page, "touchend", 300, 300)
     page.get_by_test_id("fire-btn").dispatch_event("pointerdown")
     page.wait_for_function("() => window.__ARCHER.state.arrowCount === 1", timeout=2000)
 

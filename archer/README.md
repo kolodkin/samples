@@ -3,8 +3,8 @@ Archer — three.js Wave Defense
 
 A no-build, ES-module 3D archery game: a stationary first-person archer
 holds the line against five escalating waves per stage across three
-low-poly arenas — forest, desert, and iceberg. Click (or tap the on-screen
-🏹 button on touch) to loose a gravity-obeying arrow, with shot power set
+low-poly arenas — forest, desert, and iceberg. Click (or tap on touch)
+anywhere to loose a gravity-obeying arrow, with shot power set
 by the +/− buttons on the left edge of the screen; goblins rush, ogres
 tank, skeleton archers shoot back from cover, and kills drop exploding,
 freezing, and burning arrow pickups. Runs

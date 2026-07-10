@@ -26,7 +26,11 @@ export const CONFIG = {
       burning:   { damage: 15, color: 0xff4422, dps: 9, burnTime: 4, spreadRadius: 2.5 },
     },
   },
-  touch: { lookScale: 2.2 }, // touch-drag aim, relative to mouse sensitivity
+  touch: {
+    lookScale: 2.2,   // touch-drag aim, relative to mouse sensitivity
+    tapMaxDrift: 12,  // px of finger travel a tap-to-shoot may accumulate
+    tapMaxMs: 300,    // longest press (ms) that still counts as a tap
+  },
   drops: {
     chance: 0.2, min: 3, max: 5, lifetime: 20, radius: 0.6,
     heal: { chance: 0.25, amount: 25 }, // fraction of drops that are a potion instead of ammo

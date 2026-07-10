@@ -15,7 +15,7 @@ This spec covers behavior the numbers don't show.
 | Keys 1–4, mouse wheel, tap/click a quiver slot | Select arrow type |
 | Esc (exits pointer lock) | Pause |
 | Touch: drag on the canvas | Aim (no pointer lock; one finger owns the camera) |
-| Touch: tap the 🏹 button | Shoot at the set power |
+| Touch: tap the canvas or the 🏹 button | Shoot at the set power |
 | Touch: ❚❚ button | Pause |
 
 Shot power is a persistent setting (it survives firing); the crosshair ring,
@@ -27,11 +27,16 @@ rides the string back out to the power draw. Shots are gated on that fresh
 arrow (`Player.canShoot()`), so clicks mid-reload are swallowed. The
 dotted trajectory hint is visible below 85% power and fades as power rises,
 so full-power shots stay skill-based. Only clicks that land on the canvas
-fire — HUD buttons keep their clicks to themselves.
+fire — HUD buttons keep their clicks to themselves. Spending the last
+arrow of a special type auto-selects the basic (normal) arrow; manually
+selecting an empty type is allowed, but its shots fizzle.
 
 Touch mode is detected via `(pointer: coarse)` or the first `touchstart`;
 hybrid devices keep both input paths live. Touch aim sensitivity is mouse
-sensitivity × `CONFIG.touch.lookScale`.
+sensitivity × `CONFIG.touch.lookScale`. The aim finger doubles as the
+trigger: a tap anywhere on the canvas shoots, where a tap is a press
+shorter than `CONFIG.touch.tapMaxMs` with under `CONFIG.touch.tapMaxDrift`
+px of accumulated travel — real drags blow that budget and only aim.
 
 ## Combat
 
