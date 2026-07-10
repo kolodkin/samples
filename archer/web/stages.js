@@ -73,7 +73,7 @@ const THEMES = {
   iceberg: {
     sky: 0xbfe3f2, fog: [0xbfe3f2, 35, 120], ground: 0xdef2fb,
     sun: 0xe8f4ff, sunIntensity: 1.1, ambient: 0x8899aa,
-    obstacleCount: 18, obstacle: makeIcePillar, perch: 0xcfe8f5,
+    obstacleCount: 18, obstacle: makeIcePillar, perch: 0x9dbfd1,
   },
 };
 
@@ -86,13 +86,13 @@ export function buildStage(name, rng) {
   ground.rotation.x = -Math.PI / 2;
   group.add(ground);
 
-  // The player's elevated vantage point.
   const { x: px, y: py, z: pz } = CONFIG.player.pos;
-  // Top cap matches the ground so the foreground under the archer reads as
-  // terrain, not a gray disc (materials: [side, top, bottom]).
+  // The player's elevated vantage point. The top cap is the only face the
+  // player ever sees from up there, so it keeps the perch color — matching
+  // the ground would make the platform invisible underfoot.
   const perch = new THREE.Mesh(
     new THREE.CylinderGeometry(2.2, 3.0, py - 1, 8),
-    [lambert(theme.perch), lambert(theme.ground), lambert(theme.perch)],
+    lambert(theme.perch),
   );
   perch.position.set(px, (py - 1) / 2, pz);
   group.add(perch);
