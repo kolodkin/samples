@@ -66,6 +66,16 @@ enemies), five waves each per `CONFIG.stages`. HP refills between stages;
 special ammo carries over. Death → retry the same stage with the ammo held
 at its start. Best score/stage persist in `localStorage['archer.best']`.
 
+The ground is a vertex-displaced, vertex-colored, flat-shaded plane
+(`makeGround()` in `web/stages.js`): two-tone noise patches plus per-facet
+tint jitter give a texture-gradient depth cue, and per-theme hills (dunes /
+ridges) rise beyond the play area to frame the horizon inside the fog band.
+The battlefield itself stays a flat y=0 plane (micro-relief ≤ ±0.12) —
+arrows die at y<=0.05, enemies walk at y=0, and melee/cover logic assume
+it. Terrain noise is hash-based on vertex position and deliberately does
+NOT draw from the seeded rng stream, so per-seed obstacle layouts (which
+tests pin) are unaffected.
+
 ## Determinism and e2e
 
 All gameplay randomness flows through one seeded mulberry32 stream
