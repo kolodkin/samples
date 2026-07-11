@@ -32,21 +32,33 @@ function buildArrowMesh(type) {
 // shrinking dot — the arrow flies straight away from the eye, so only its
 // rear cross-section is ever visible; the trail is what makes the arc read.
 const TRAIL_POINTS = 24;
+// One material for all trails (per-arrow color lives in the vertex colors),
+// and one fade gradient per arrow type, shared by every trail of that type.
+const TRAIL_MATERIAL = new THREE.LineBasicMaterial({
+  vertexColors: true, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false,
+});
+const TRAIL_FADES = new Map();
+
+function trailFade(color) {
+  let colors = TRAIL_FADES.get(color);
+  if (!colors) {
+    colors = new Float32Array(TRAIL_POINTS * 3);
+    const c = new THREE.Color(color);
+    for (let i = 0; i < TRAIL_POINTS; i++) {
+      const k = 1 - i / (TRAIL_POINTS - 1);
+      colors.set([c.r * k, c.g * k, c.b * k], i * 3);
+    }
+    TRAIL_FADES.set(color, colors);
+  }
+  return colors;
+}
 
 function buildTrail(color) {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL_POINTS * 3), 3));
-  const colors = new Float32Array(TRAIL_POINTS * 3);
-  const c = new THREE.Color(color);
-  for (let i = 0; i < TRAIL_POINTS; i++) {
-    const k = 1 - i / (TRAIL_POINTS - 1);
-    colors.set([c.r * k, c.g * k, c.b * k], i * 3);
-  }
-  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(trailFade(color), 3));
   geo.setDrawRange(0, 0);
-  const line = new THREE.Line(geo, new THREE.LineBasicMaterial({
-    vertexColors: true, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false,
-  }));
+  const line = new THREE.Line(geo, TRAIL_MATERIAL);
   line.frustumCulled = false; // positions mutate per frame; culling would lag
   return line;
 }
@@ -71,14 +83,13 @@ export class ArrowSystem {
   fire(origin, dir, power, type, visualOrigin = null) {
     const speed = CONFIG.bow.minSpeed + (CONFIG.bow.maxSpeed - CONFIG.bow.minSpeed) * power;
     const mesh = buildArrowMesh(type);
-    mesh.position.copy(visualOrigin ?? origin);
-    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+    mesh.position.copy(visualOrigin ?? origin); // oriented by the first update()
     const trail = buildTrail(CONFIG.arrow.types[type].color);
     this.game.scene.add(mesh, trail);
     this.list.push({
-      mesh, trail, trailCount: 0, pos: origin.clone(),
+      mesh, trail, pos: origin.clone(),
       vel: dir.clone().multiplyScalar(speed), type, age: 0,
-      visualOffset: visualOrigin ? visualOrigin.clone().sub(origin) : null,
+      visualOffset: (visualOrigin ?? origin).clone().sub(origin), // zero without a bow
     });
   }
 
@@ -88,18 +99,19 @@ export class ArrowSystem {
 
   remove(a) {
     this.game.scene.remove(a.mesh, a.trail);
-    a.trail.geometry.dispose();
-    a.trail.material.dispose();
+    a.trail.geometry.dispose(); // material is shared, never disposed
     this.list.splice(this.list.indexOf(a), 1);
   }
 
   // Append the arrow's current visual position to the head of its trail.
   pushTrail(a) {
-    const attr = a.trail.geometry.attributes.position;
+    const geo = a.trail.geometry;
+    const attr = geo.attributes.position;
     attr.array.copyWithin(3, 0, (TRAIL_POINTS - 1) * 3);
-    attr.array.set([a.mesh.position.x, a.mesh.position.y, a.mesh.position.z], 0);
-    a.trailCount = Math.min(a.trailCount + 1, TRAIL_POINTS);
-    a.trail.geometry.setDrawRange(0, a.trailCount);
+    attr.array[0] = a.mesh.position.x;
+    attr.array[1] = a.mesh.position.y;
+    attr.array[2] = a.mesh.position.z;
+    geo.setDrawRange(0, Math.min(geo.drawRange.count + 1, TRAIL_POINTS));
     attr.needsUpdate = true;
   }
 
@@ -110,9 +122,8 @@ export class ArrowSystem {
       a.vel.y += CONFIG.arrow.gravity * dt;
       a.pos.addScaledVector(a.vel, dt);
       a.age += dt;
-      const blend = a.visualOffset ? Math.max(0, 1 - a.age / SPAWN_BLEND) : 0;
-      a.mesh.position.copy(a.pos);
-      if (blend > 0) a.mesh.position.addScaledVector(a.visualOffset, blend);
+      a.mesh.position.copy(a.pos)
+        .addScaledVector(a.visualOffset, Math.max(0, 1 - a.age / SPAWN_BLEND));
       a.mesh.quaternion.setFromUnitVectors(
         new THREE.Vector3(0, 1, 0), a.vel.clone().normalize(),
       );

@@ -305,7 +305,7 @@ window.__ARCHER = {
       arrows: game.arrows.list.map((a) => ({
         x: a.pos.x, y: a.pos.y, z: a.pos.z, // physics (aim-line) position
         visX: a.mesh.position.x, visY: a.mesh.position.y, visZ: a.mesh.position.z,
-        trailPoints: a.trailCount,
+        trailPoints: a.trail.geometry.drawRange.count,
       })),
       trajectory: trajectoryHint.snapshot(),
       enemyCount: game.enemies.list.length,
@@ -336,8 +336,6 @@ window.__ARCHER = {
     game.arrows.fire(origin.addScaledVector(dir, 0.7), dir, power, type);
   },
   spawnEnemy: (type, x, z, inert = false) => { game.enemies.spawn(type, x, z, inert); },
-  // e2e helper: aim without pointer lock (headless can't grab the mouse).
-  setAim: (yaw, pitch) => { game.player.yaw = yaw; game.player.pitch = pitch; },
   setPlayerHp: (n) => { game.player.hp = n; game.syncUI(); },
   giveAmmo: (type, n) => { game.stats.ammo[type] += n; game.syncUI(); },
   setDropChance: (c) => { CONFIG.drops.chance = c; },

@@ -101,8 +101,7 @@ All gameplay randomness flows through one seeded mulberry32 stream
 snapshot (screen, hp, score, wave, enemies, pickups, obstacles, best,
 yaw/pitch/touch/power, nocked/canShoot, arrows with physics vs visual
 positions and trail length), and test hooks: `fireAt()` (gravity-compensated),
-`spawnEnemy()` (optional `inert` flag disables the AI), `setAim(yaw, pitch)`
-(headless pages can't grab pointer lock), `skipToWave()`,
+`spawnEnemy()` (optional `inert` flag disables the AI), `skipToWave()`,
 `killAll()`, `giveAmmo()`, `setDropChance()`, `setHealChance()`,
 `setPlayerHp()`, `start()`,
 `nextStage()`, `retryStage()`, `visiblePixelCount()`. Tests boot with
