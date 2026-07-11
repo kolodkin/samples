@@ -14,6 +14,15 @@ def _wait_ready(page):
     )
 
 
+def _lock_pointer(page):
+    """Click the canvas to acquire pointer lock — the desktop fire gate."""
+    page.mouse.click(640, 360)
+    page.wait_for_function(
+        "() => document.pointerLockElement === document.getElementById('game')",
+        timeout=2000,
+    )
+
+
 def _drop_and_shoot_pickup(page):
     """Kill an inert goblin, shoot the pickup it drops, return the pickup."""
     page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32, true)")
@@ -122,10 +131,13 @@ def test_trajectory_hint_ends_at_ground_impact(server_url, page):
     assert abs(dots[-1]["x"]) < 0.1
 
 
-def test_click_fires_arrow(server_url, page):
+def test_click_locks_pointer_then_fires(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
-    page.mouse.move(640, 360)
+    # The first click only acquires pointer lock — no stray arrow.
+    _lock_pointer(page)
+    assert page.evaluate("() => window.__ARCHER.state.arrowCount") == 0
+    # Once locked, a click shoots.
     page.mouse.down()
     page.wait_for_function("() => window.__ARCHER.state.arrowCount === 1", timeout=2000)
     page.mouse.up()
@@ -139,7 +151,7 @@ def test_shot_releases_arrow_then_renocks(server_url, page):
     # At rest an arrow sits nocked on the bow, ready to shoot.
     assert page.evaluate("() => window.__ARCHER.state.nocked") is True
     assert page.evaluate("() => window.__ARCHER.state.canShoot") is True
-    page.mouse.move(640, 360)
+    _lock_pointer(page)
     page.mouse.down()
     # The nocked arrow leaves the bow the moment the shot fires — the bow
     # is briefly empty while the projectile flies.
@@ -157,7 +169,7 @@ def test_shot_releases_arrow_then_renocks(server_url, page):
 def test_rapid_clicks_gated_by_renock(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
-    page.mouse.move(640, 360)
+    _lock_pointer(page)
     # A synchronous burst of clicks (no frames in between): only the first
     # fires; the rest land mid-reload and are swallowed.
     shots = page.evaluate(
@@ -323,33 +335,36 @@ def test_burning_arrow_ticks_and_spreads(server_url, page):
     )
 
 
-def test_special_ammo_is_consumed_and_gated(server_url, page):
+def test_strongest_special_is_selected_automatically(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
-    page.keyboard.press("Digit3")
-    assert page.evaluate("() => window.__ARCHER.state.selected") == "freezing"
-    # No ammo: the click fizzles.
-    page.mouse.move(640, 360)
-    page.mouse.click(640, 360)
-    assert page.evaluate("() => window.__ARCHER.state.arrowCount") == 0
-    # With ammo: fires and decrements.
-    page.evaluate("() => window.__ARCHER.giveAmmo('freezing', 2)")
-    page.mouse.click(640, 360)
-    page.wait_for_function("() => window.__ARCHER.state.arrowCount === 1", timeout=2000)
-    assert page.evaluate("() => window.__ARCHER.state.ammo.freezing") == 1
-
-
-def test_spending_last_special_arrow_falls_back_to_normal(server_url, page):
-    page.goto(server_url + BOOT)
-    _wait_ready(page)
+    # Empty quiver: the basic arrow is up.
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "normal"
+    # Stocking specials auto-selects the strongest one, whatever the pickup order.
+    page.evaluate("() => window.__ARCHER.giveAmmo('burning', 1)")
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "burning"
     page.evaluate("() => window.__ARCHER.giveAmmo('freezing', 1)")
-    page.keyboard.press("Digit3")
     assert page.evaluate("() => window.__ARCHER.state.selected") == "freezing"
-    # Firing the last special arrow auto-selects the basic (normal) arrow.
-    page.mouse.move(640, 360)
+    page.evaluate("() => window.__ARCHER.giveAmmo('exploding', 1)")
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "exploding"
+
+
+def test_specials_are_spent_strongest_first_then_normal(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    _lock_pointer(page)
+    page.evaluate("() => window.__ARCHER.giveAmmo('burning', 1)")
+    page.evaluate("() => window.__ARCHER.giveAmmo('exploding', 1)")
+    # First shot spends the exploding arrow (strongest in stock).
     page.mouse.click(640, 360)
-    page.wait_for_function("() => window.__ARCHER.state.arrowCount === 1", timeout=2000)
-    assert page.evaluate("() => window.__ARCHER.state.ammo.freezing") == 0
+    page.wait_for_function("() => window.__ARCHER.state.ammo.exploding === 0", timeout=2000)
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "burning"
+    # Next shot spends the burning arrow; the quiver is dry, back to normal.
+    page.wait_for_function("() => window.__ARCHER.state.canShoot === true", timeout=2000)
+    page.mouse.click(640, 360)
+    page.wait_for_function("() => window.__ARCHER.state.ammo.burning === 0", timeout=2000)
+    # Quiver dry: back to the infinite normal arrow (its firing is covered
+    # by test_click_locks_pointer_then_fires).
     assert page.evaluate("() => window.__ARCHER.state.selected") == "normal"
 
 
@@ -489,23 +504,15 @@ def test_touch_drag_aims_without_firing(server_url, page):
     _touch(page, "touchmove", 250, 340)
     _touch(page, "touchend", 250, 340)
     assert page.evaluate("() => window.__ARCHER.state.yaw") != yaw0
-    # Looking around never looses an arrow: the drag blows the tap budget.
+    # Looking around never looses an arrow.
     assert page.evaluate("() => window.__ARCHER.state.arrowCount") == 0
 
 
-def test_touch_tap_on_canvas_shoots(server_url, page):
+def test_touch_tap_on_canvas_does_not_shoot(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
+    # Only the 🏹 button fires on touch; a bare tap on the canvas never does.
     _touch(page, "touchstart", 400, 300)
-    _touch(page, "touchend", 400, 300)
-    page.wait_for_function("() => window.__ARCHER.state.arrowCount === 1", timeout=2000)
-
-
-def test_touch_long_press_does_not_shoot(server_url, page):
-    page.goto(server_url + BOOT)
-    _wait_ready(page)
-    _touch(page, "touchstart", 400, 300)
-    page.wait_for_timeout(400)  # past CONFIG.touch.tapMaxMs
     _touch(page, "touchend", 400, 300)
     assert page.evaluate("() => window.__ARCHER.state.arrowCount") == 0
 
@@ -523,20 +530,18 @@ def test_touch_enables_touch_hud(server_url, page):
 def test_fire_button_shoots_on_tap(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
-    # Enter touch mode with a drag (a tap would itself fire and mask the
-    # button's shot behind the reload gate).
+    # Enter touch mode so the HUD fire button appears.
     _touch(page, "touchstart", 400, 300)
-    _touch(page, "touchmove", 300, 300)
-    _touch(page, "touchend", 300, 300)
+    _touch(page, "touchend", 400, 300)
     page.get_by_test_id("fire-btn").dispatch_event("pointerdown")
     page.wait_for_function("() => window.__ARCHER.state.arrowCount === 1", timeout=2000)
 
 
-def test_quiver_tap_switches_arrow(server_url, page):
+def test_quiver_highlights_the_auto_selected_arrow(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
-    page.get_by_test_id("slot-exploding").click()
-    assert page.evaluate("() => window.__ARCHER.state.selected") == "exploding"
+    expect(page.get_by_test_id("slot-normal")).to_have_class(re.compile(r"\bactive\b"))
+    page.evaluate("() => window.__ARCHER.giveAmmo('exploding', 1)")
     expect(page.get_by_test_id("slot-exploding")).to_have_class(re.compile(r"\bactive\b"))
 
 
@@ -588,7 +593,7 @@ def test_hud_reflects_score_ammo_and_selection(server_url, page):
     expect(page.get_by_test_id("score")).to_have_text("150")
     page.evaluate("() => window.__ARCHER.giveAmmo('freezing', 4)")
     expect(page.get_by_test_id("ammo-freezing")).to_have_text("4")
-    page.keyboard.press("Digit3")
+    # The freshly stocked special becomes the auto-selected arrow.
     expect(page.get_by_test_id("slot-freezing")).to_have_class(re.compile(r"\bactive\b"))
     expect(page.get_by_test_id("wave")).to_contain_text("forest")
 
