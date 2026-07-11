@@ -26,7 +26,8 @@ projectile), the bow sits empty for a beat, then a fresh arrow appears and
 rides the string back out to the power draw. Shots are gated on that fresh
 arrow (`Player.canShoot()`), so clicks mid-reload are swallowed. The
 dotted trajectory hint is visible below 85% power and fades as power rises,
-so full-power shots stay skill-based. Only clicks that land on the canvas
+so full-power shots stay skill-based; it integrates at the arrow's own
+frame step and ends at the ground-impact point. Only clicks that land on the canvas
 fire — HUD buttons keep their clicks to themselves. Spending the last
 arrow of a special type auto-selects the basic (normal) arrow; manually
 selecting an empty type is allowed, but its shots fizzle.
