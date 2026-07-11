@@ -26,9 +26,10 @@ projectile), the bow sits empty for a beat, then a fresh arrow appears and
 rides the string back out to the power draw. Shots are gated on that fresh
 arrow (`Player.canShoot()`), so clicks mid-reload are swallowed. The
 dotted trajectory hint is visible below 85% power and fades as power rises,
-so full-power shots stay skill-based. Only deliberate fire inputs shoot: a
-click while pointer-locked on desktop, the 🏹 button on touch. Stray clicks
-or taps elsewhere on the screen never loose an arrow.
+so full-power shots stay skill-based; it integrates at the arrow's own
+frame step and ends at the ground-impact point. Only deliberate fire
+inputs shoot: a click while pointer-locked on desktop, the 🏹 button on
+touch. Stray clicks or taps elsewhere on the screen never loose an arrow.
 
 There is no manual arrow selection: every shot automatically spends the
 strongest special in stock — exploding, then freezing, then burning

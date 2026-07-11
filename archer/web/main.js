@@ -298,6 +298,7 @@ window.__ARCHER = {
       canShoot: game.player.canShoot(),
       bowX: game.player.bow.group.position.x,
       arrowCount: game.arrows.count,
+      trajectory: trajectoryHint.snapshot(),
       enemyCount: game.enemies.list.length,
       enemies: game.enemies.list.map((e) => ({
         type: e.type, x: e.mesh.position.x, z: e.mesh.position.z,

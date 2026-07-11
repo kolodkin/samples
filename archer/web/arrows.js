@@ -140,6 +140,18 @@ export class TrajectoryHint {
     scene.add(this.points);
   }
 
+  // e2e handle: world positions of the visible dots.
+  snapshot() {
+    if (!this.points.visible) return [];
+    const attr = this.points.geometry.attributes.position;
+    const n = Math.min(this.n, this.points.geometry.drawRange.count);
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      out.push({ x: attr.getX(i), y: attr.getY(i), z: attr.getZ(i) });
+    }
+    return out;
+  }
+
   update(player, active) {
     const show = active && player.power < 0.85;
     this.points.visible = show;
@@ -149,12 +161,22 @@ export class TrajectoryHint {
     const p = player.aimOrigin();
     const v = player.aimDir().multiplyScalar(speed);
     const attr = this.points.geometry.attributes.position;
-    const step = 0.07;
-    for (let i = 0; i < this.n; i++) {
-      v.y += CONFIG.arrow.gravity * step;
-      p.addScaledVector(v, step);
-      attr.setXYZ(i, p.x, Math.max(p.y, 0.05), p.z);
+    // Integrate at the arrow's own frame step (semi-implicit Euler, ~1/60 s)
+    // and emit a dot every few substeps — one coarse 0.07 s step over-applies
+    // gravity and the arc lands visibly short of the real arrow.
+    const step = 1 / 60;
+    const perDot = 4;
+    let n = 0;
+    let landed = false;
+    for (let i = 0; i < this.n && !landed; i++) {
+      for (let k = 0; k < perDot; k++) {
+        v.y += CONFIG.arrow.gravity * step;
+        p.addScaledVector(v, step);
+        if (p.y <= 0.05) { landed = true; break; } // same plane arrows die on
+      }
+      attr.setXYZ(n++, p.x, Math.max(p.y, 0.05), p.z);
     }
+    this.points.geometry.setDrawRange(0, n);
     attr.needsUpdate = true;
     this.points.material.opacity = 0.5 * (1 - Math.max(0, (player.power - 0.6) / 0.25));
   }
