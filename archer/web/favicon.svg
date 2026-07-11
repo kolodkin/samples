@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Miniature of the shoot button: dark disc, gold power ring, bow and arrow. -->
+  <circle cx="50" cy="50" r="47" fill="#1e3a20"/>
+  <circle cx="50" cy="50" r="43" fill="none" stroke="#ffd257" stroke-width="7"
+          stroke-linecap="round" pathLength="100"
+          stroke-dasharray="85 15" stroke-dashoffset="25"/>
+  <g transform="rotate(-45 50 50)">
+    <!-- string, drawn back to the nock -->
+    <path d="M 41 21 L 29 50 L 41 79" fill="none" stroke="#cfe3ea" stroke-width="2.5"
+          stroke-linejoin="round"/>
+    <!-- bow limbs -->
+    <path d="M 41 21 Q 70 50 41 79" fill="none" stroke="#a06a2c" stroke-width="7"
+          stroke-linecap="round"/>
+    <!-- arrow -->
+    <polygon points="21,44 31,50 21,56" fill="#d64545"/>
+    <line x1="29" y1="50" x2="72" y2="50" stroke="#e8b64c" stroke-width="4"/>
+    <polygon points="70,43 85,50 70,57" fill="#8a8f94"/>
+  </g>
+</svg>
