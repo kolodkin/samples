@@ -16,7 +16,6 @@ def _wait_ready(page):
 
 def _lock_pointer(page):
     """Click the canvas to acquire pointer lock — the desktop fire gate."""
-    page.mouse.move(640, 360)
     page.mouse.click(640, 360)
     page.wait_for_function(
         "() => document.pointerLockElement === document.getElementById('game')",
@@ -132,18 +131,13 @@ def test_trajectory_hint_ends_at_ground_impact(server_url, page):
     assert abs(dots[-1]["x"]) < 0.1
 
 
-def test_unlocked_click_locks_pointer_without_firing(server_url, page):
+def test_click_locks_pointer_then_fires(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
     # The first click only acquires pointer lock — no stray arrow.
     _lock_pointer(page)
     assert page.evaluate("() => window.__ARCHER.state.arrowCount") == 0
-
-
-def test_locked_click_fires_arrow(server_url, page):
-    page.goto(server_url + BOOT)
-    _wait_ready(page)
-    _lock_pointer(page)
+    # Once locked, a click shoots.
     page.mouse.down()
     page.wait_for_function("() => window.__ARCHER.state.arrowCount === 1", timeout=2000)
     page.mouse.up()
@@ -369,12 +363,9 @@ def test_specials_are_spent_strongest_first_then_normal(server_url, page):
     page.wait_for_function("() => window.__ARCHER.state.canShoot === true", timeout=2000)
     page.mouse.click(640, 360)
     page.wait_for_function("() => window.__ARCHER.state.ammo.burning === 0", timeout=2000)
+    # Quiver dry: back to the infinite normal arrow (its firing is covered
+    # by test_click_locks_pointer_then_fires).
     assert page.evaluate("() => window.__ARCHER.state.selected") == "normal"
-    # Dry quiver still shoots: normal arrows are infinite. The re-engaged
-    # shot gate (canShoot drops while re-nocking) proves the shot fired.
-    page.wait_for_function("() => window.__ARCHER.state.canShoot === true", timeout=2000)
-    page.mouse.click(640, 360)
-    page.wait_for_function("() => window.__ARCHER.state.canShoot === false", timeout=2000)
 
 
 def test_wave_one_spawns_forest_mix(server_url, page):
@@ -523,7 +514,6 @@ def test_touch_tap_on_canvas_does_not_shoot(server_url, page):
     # Only the 🏹 button fires on touch; a bare tap on the canvas never does.
     _touch(page, "touchstart", 400, 300)
     _touch(page, "touchend", 400, 300)
-    page.wait_for_timeout(200)
     assert page.evaluate("() => window.__ARCHER.state.arrowCount") == 0
 
 

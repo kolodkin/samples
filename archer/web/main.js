@@ -65,8 +65,9 @@ game.player = new Player(camera);
 game.arrows = new ArrowSystem(game);
 const trajectoryHint = new TrajectoryHint(scene);
 // No manual arrow selection: every shot spends the strongest special in
-// stock (explode > freeze > burn), then normal arrows once the quiver is dry.
-const AMMO_PRIORITY = ['exploding', 'freezing', 'burning'];
+// stock, then normal arrows once the quiver is dry. Priority is the
+// declaration order of CONFIG.arrow.types — strongest special first.
+const AMMO_PRIORITY = Object.keys(CONFIG.arrow.types).filter((t) => t !== 'normal');
 function selectedType() {
   return AMMO_PRIORITY.find((t) => game.stats.ammo[t] > 0) ?? 'normal';
 }

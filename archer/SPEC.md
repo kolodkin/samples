@@ -32,10 +32,10 @@ inputs shoot: a click while pointer-locked on desktop, the 🏹 button on
 touch. Stray clicks or taps elsewhere on the screen never loose an arrow.
 
 There is no manual arrow selection: every shot automatically spends the
-strongest special in stock — exploding, then freezing, then burning
-(`AMMO_PRIORITY` in `web/main.js`) — and falls back to the infinite basic
-arrow once the quiver is dry. The HUD quiver is a read-only stock display;
-the highlighted slot is what the next shot will fire.
+strongest special in stock — exploding, then freezing, then burning, the
+declaration order of `CONFIG.arrow.types` — and falls back to the infinite
+basic arrow once the quiver is dry. The HUD quiver is a read-only stock
+display; the highlighted slot is what the next shot will fire.
 
 Touch mode is detected via `(pointer: coarse)` or the first `touchstart`;
 hybrid devices keep both input paths live. Touch aim sensitivity is mouse
