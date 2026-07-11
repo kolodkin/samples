@@ -1,47 +1,10 @@
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
+import { hash2, fbm, spread, texturedMesh } from './relief.js';
 
 export const STAGE_ORDER = ['forest', 'desert', 'iceberg'];
 
-function lambert(color) { return new THREE.MeshLambertMaterial({ color }); }
-
-// --- Terrain noise -----------------------------------------------------
-// Deterministic hash noise keyed on vertex position — never the seeded
-// game rng: tests pin per-seed obstacle layouts, and terrain must not
-// shift that stream (see SPEC.md).
-function hash2(ix, iz, seed) {
-  let h = (ix * 374761393 + iz * 668265263 + seed * 1442695041) | 0;
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  h ^= h >>> 16;
-  return (h >>> 0) / 4294967296;
-}
-
-const { clamp, lerp, smoothstep } = THREE.MathUtils;
-
-function valueNoise(x, z, seed) {
-  const ix = Math.floor(x), iz = Math.floor(z);
-  const fx = smoothstep(x - ix, 0, 1), fz = smoothstep(z - iz, 0, 1);
-  const a = hash2(ix, iz, seed), b = hash2(ix + 1, iz, seed);
-  const c = hash2(ix, iz + 1, seed), d = hash2(ix + 1, iz + 1, seed);
-  return lerp(lerp(a, b, fx), lerp(c, d, fx), fz);
-}
-
-function fbm(x, z, seed) {
-  let sum = 0, amp = 1, freq = 1, norm = 0;
-  for (let i = 0; i < 3; i++) {
-    sum += valueNoise(x * freq, z * freq, seed + i * 101) * amp;
-    norm += amp;
-    amp *= 0.5;
-    freq *= 2;
-  }
-  return sum / norm; // 0..1
-}
-
-// Averaged-octave value noise clusters around 0.5; expand around the
-// midpoint so tints and relief actually use their full range.
-function spread(n, k) {
-  return clamp((n - 0.5) * k + 0.5, 0, 1);
-}
+const { clamp, smoothstep } = THREE.MathUtils;
 
 const MICRO_RELIEF = 0.12;
 
@@ -94,15 +57,24 @@ function makeGround(theme, size) {
 const groundCache = new Map();
 
 // Each maker returns { mesh, radius, height } with the mesh's base at y=0.
+// Texture seeds derive from values already drawn from the rng (never fresh
+// draws — see the layout-stream note in relief.js), so every instance gets
+// its own bark/crag pattern without shifting the pinned layouts.
 function makeTree(rng) {
   const g = new THREE.Group();
   const trunkH = rng.range(1.2, 2.0);
-  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.35, trunkH, 6), lambert(0x6b4a2f));
+  const seed = Math.floor(trunkH * 8191);
+  const trunk = texturedMesh(new THREE.CylinderGeometry(0.22, 0.4, trunkH, 7, 4), {
+    dark: 0x4a3220, light: 0x7d5a38, seed, amp: 0.05, freq: 6, grainY: 0.25,
+  });
   trunk.position.y = trunkH / 2;
   g.add(trunk);
   let y = trunkH;
   for (const r of [1.5, 1.1]) {
-    const cone = new THREE.Mesh(new THREE.ConeGeometry(r, 2.2, 7), lambert(0x2f6b2a));
+    // Roughened cones read as clumped boughs instead of party hats.
+    const cone = texturedMesh(new THREE.ConeGeometry(r, 2.2, 7, 3), {
+      dark: 0x24501f, light: 0x549540, seed: seed + Math.round(r * 100), amp: 0.18, freq: 2.5,
+    });
     cone.position.y = y + 1.1;
     g.add(cone);
     y += 1.4;
@@ -112,14 +84,16 @@ function makeTree(rng) {
 
 function makeDesertObstacle(rng) {
   if (rng.random() < 0.5) {
-    // saguaro cactus: trunk + two arms
+    // saguaro cactus: trunk + two arms, ribbed skin via lengthwise grain
     const g = new THREE.Group();
     const h = rng.range(2.5, 3.5);
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.4, h, 8), lambert(0x3f7d46));
+    const seed = Math.floor(h * 8191);
+    const skin = { dark: 0x2e5f36, light: 0x5c9455, amp: 0.04, freq: 7, grainY: 0.2 };
+    const trunk = texturedMesh(new THREE.CylinderGeometry(0.35, 0.4, h, 8, 4), { ...skin, seed });
     trunk.position.y = h / 2;
     g.add(trunk);
     for (const side of [-1, 1]) {
-      const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 1.4, 6), lambert(0x3f7d46));
+      const arm = texturedMesh(new THREE.CylinderGeometry(0.22, 0.22, 1.4, 6, 3), { ...skin, seed: seed + side });
       arm.position.set(side * 0.6, h * 0.6, 0);
       arm.rotation.z = side * 0.5;
       g.add(arm);
@@ -127,7 +101,9 @@ function makeDesertObstacle(rng) {
     return { mesh: g, radius: 1.0, height: h };
   }
   const r = rng.range(1.2, 2.2);
-  const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), lambert(0xa8825d));
+  const rock = texturedMesh(new THREE.DodecahedronGeometry(r, 1), {
+    dark: 0x7d5e40, light: 0xc5a072, seed: Math.floor(r * 8191), amp: r * 0.16, freq: 1.6,
+  });
   rock.position.y = r * 0.6;
   rock.scale.y = 0.7;
   const g = new THREE.Group();
@@ -137,9 +113,12 @@ function makeDesertObstacle(rng) {
 
 function makeIcePillar(rng) {
   const h = rng.range(2.5, 4.5);
-  const pillar = new THREE.Mesh(
-    new THREE.CylinderGeometry(rng.range(0.6, 1.0), rng.range(1.0, 1.6), h, 6),
-    new THREE.MeshLambertMaterial({ color: 0xbfe8f7, emissive: 0x224455 }),
+  const pillar = texturedMesh(
+    new THREE.CylinderGeometry(rng.range(0.6, 1.0), rng.range(1.0, 1.6), h, 6, 4),
+    {
+      dark: 0x9cc8e4, light: 0xf4fbff, seed: Math.floor(h * 8191), amp: 0.14, freq: 2,
+      emissive: 0x224455,
+    },
   );
   pillar.position.y = h / 2;
   const g = new THREE.Group();

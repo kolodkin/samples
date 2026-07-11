@@ -86,6 +86,18 @@ it. Terrain noise is hash-based on vertex position and deliberately does
 NOT draw from the seeded rng stream, so per-seed obstacle layouts (which
 tests pin) are unaffected.
 
+Everything else in the scene shares the same low-poly texturing recipe via
+`web/relief.js` (`texturedMesh()`: hash-noise vertex relief + two-tone
+mottling + flat shading): tree bark and boughs, cactus ribs, sandstone
+rocks, ice crags, monster hide/bone, the bow's grained wood and leather
+grip, and arrow shafts (a `grainY` stretch elongates the noise for
+lengthwise wood grain). The same no-rng rule applies — obstacle makers
+derive their texture seeds from values already drawn (e.g. trunk height),
+never from fresh draws, so the pinned layouts don't shift. Enemy materials
+stay per-mesh so `setTint()` freeze/burn emissive flashes keep working per
+enemy. Arrow fletching is three flat swept vanes (`fletching()` in
+`web/arrows.js`), unlit so the ammo-type color stays readable.
+
 ## Determinism and e2e
 
 All gameplay randomness flows through one seeded mulberry32 stream

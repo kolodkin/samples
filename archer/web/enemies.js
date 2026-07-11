@@ -1,23 +1,33 @@
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
 import { segClosest } from './geom.js';
+import { texturedMesh } from './relief.js';
 
-function lambert(color) { return new THREE.MeshLambertMaterial({ color }); }
+// Mottle tones bracketing a base color — hide/skin/bone shading instead of
+// one flat tint. Materials stay per-mesh so setTint() can flash one enemy.
+function hide(hex, seed, amp, freq = 4) {
+  const base = new THREE.Color(hex);
+  return {
+    dark: base.clone().multiplyScalar(0.68),
+    light: base.clone().lerp(new THREE.Color(0xffffff), 0.22),
+    seed, amp, freq,
+  };
+}
 
 // Builders return a Group whose base sits at y=0; collision spheres are
 // derived from config (bodyRadius/height/headRadius), not from the meshes.
 function buildGoblin(c) {
   const g = new THREE.Group();
-  const body = new THREE.Mesh(
-    new THREE.CylinderGeometry(c.bodyRadius * 0.7, c.bodyRadius, c.height * 0.75, 8),
-    lambert(c.color),
+  const body = texturedMesh(
+    new THREE.CylinderGeometry(c.bodyRadius * 0.7, c.bodyRadius, c.height * 0.75, 8, 3),
+    hide(c.color, 3, 0.03, 6),
   );
   body.position.y = c.height * 0.375;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(c.headRadius, 8, 6), lambert(0x5ea34c));
+  const head = texturedMesh(new THREE.SphereGeometry(c.headRadius, 8, 6), hide(0x5ea34c, 5, 0.015, 8));
   head.position.y = c.height;
   g.add(body, head);
   for (const s of [-1, 1]) {
-    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.25, 4), lambert(0x5ea34c));
+    const ear = texturedMesh(new THREE.ConeGeometry(0.07, 0.25, 4), hide(0x5ea34c, 7 + s, 0.01, 10));
     ear.position.set(s * c.headRadius, c.height + 0.1, 0);
     ear.rotation.z = -s * 1.2;
     g.add(ear);
@@ -27,16 +37,17 @@ function buildGoblin(c) {
 
 function buildOgre(c) {
   const g = new THREE.Group();
-  const body = new THREE.Mesh(
-    new THREE.CylinderGeometry(c.bodyRadius * 0.8, c.bodyRadius, c.height * 0.8, 8),
-    lambert(c.color),
+  // Lumpier relief than the goblin: ogre hide reads warty at its scale.
+  const body = texturedMesh(
+    new THREE.CylinderGeometry(c.bodyRadius * 0.8, c.bodyRadius, c.height * 0.8, 8, 4),
+    hide(c.color, 11, 0.07, 3),
   );
   body.position.y = c.height * 0.4;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(c.headRadius, 8, 6), lambert(0x8a765f));
+  const head = texturedMesh(new THREE.SphereGeometry(c.headRadius, 8, 6), hide(0x8a765f, 13, 0.03, 5));
   head.position.y = c.height;
   g.add(body, head);
   for (const s of [-1, 1]) {
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.3, c.height * 0.6, 0.3), lambert(c.color));
+    const arm = texturedMesh(new THREE.BoxGeometry(0.3, c.height * 0.6, 0.3, 2, 4, 2), hide(c.color, 17 + s, 0.04, 4));
     arm.position.set(s * (c.bodyRadius + 0.18), c.height * 0.5, 0);
     g.add(arm);
   }
@@ -45,14 +56,17 @@ function buildOgre(c) {
 
 function buildSkeleton(c) {
   const g = new THREE.Group();
-  const body = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.22, 0.3, c.height * 0.8, 6), lambert(c.color),
+  // Lengthwise grain bands the ribcage like bone and tattered wrap.
+  const body = texturedMesh(
+    new THREE.CylinderGeometry(0.22, 0.3, c.height * 0.8, 6, 4),
+    { ...hide(c.color, 19, 0.025, 9), grainY: 0.3 },
   );
   body.position.y = c.height * 0.4;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(c.headRadius, 8, 6), lambert(0xe8e4d8));
+  const head = texturedMesh(new THREE.SphereGeometry(c.headRadius, 8, 6), hide(0xe8e4d8, 23, 0.02, 7));
   head.position.y = c.height;
-  const bow = new THREE.Mesh(
-    new THREE.TorusGeometry(0.3, 0.03, 5, 16, Math.PI), lambert(0x6b4a2f),
+  const bow = texturedMesh(
+    new THREE.TorusGeometry(0.3, 0.03, 5, 16, Math.PI),
+    { dark: 0x4a3220, light: 0x7d5a38, seed: 29, freq: 12 },
   );
   bow.position.set(0.35, c.height * 0.65, 0.1);
   bow.rotation.y = Math.PI / 2;
