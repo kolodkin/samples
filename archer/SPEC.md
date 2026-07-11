@@ -9,13 +9,13 @@ This spec covers behavior the numbers don't show.
 
 | Input | Action |
 |-------|--------|
+| Click on the canvas (unlocked) | Acquire pointer lock — never fires |
 | Mouse move (pointer lock) | Aim |
-| Left click on the canvas | Shoot at the set power |
+| Left click (pointer lock) | Shoot at the set power |
 | HUD +/− buttons (left middle), or +/− keys | Adjust shot power (`CONFIG.bow.power`: min/max/step) |
-| Keys 1–4, mouse wheel, tap/click a quiver slot | Select arrow type |
 | Esc (exits pointer lock) | Pause |
 | Touch: drag on the canvas | Aim (no pointer lock; one finger owns the camera) |
-| Touch: tap the canvas or the 🏹 button | Shoot at the set power |
+| Touch: 🏹 button | Shoot at the set power |
 | Touch: ❚❚ button | Pause |
 
 Shot power is a persistent setting (it survives firing); the crosshair ring,
@@ -33,17 +33,20 @@ unaffected. Every arrow also drags a fading tracer trail colored by its
 type — first-person shots fly straight away from the eye, so without the
 trail the arrow reads as a shrinking dot instead of an arc. The
 dotted trajectory hint is visible below 85% power and fades as power rises,
-so full-power shots stay skill-based. Only clicks that land on the canvas
-fire — HUD buttons keep their clicks to themselves. Spending the last
-arrow of a special type auto-selects the basic (normal) arrow; manually
-selecting an empty type is allowed, but its shots fizzle.
+so full-power shots stay skill-based; it integrates at the arrow's own
+frame step and ends at the ground-impact point. Only deliberate fire
+inputs shoot: a click while pointer-locked on desktop, the 🏹 button on
+touch. Stray clicks or taps elsewhere on the screen never loose an arrow.
+
+There is no manual arrow selection: every shot automatically spends the
+strongest special in stock — exploding, then freezing, then burning, the
+declaration order of `CONFIG.arrow.types` — and falls back to the infinite
+basic arrow once the quiver is dry. The HUD quiver is a read-only stock
+display; the highlighted slot is what the next shot will fire.
 
 Touch mode is detected via `(pointer: coarse)` or the first `touchstart`;
 hybrid devices keep both input paths live. Touch aim sensitivity is mouse
-sensitivity × `CONFIG.touch.lookScale`. The aim finger doubles as the
-trigger: a tap anywhere on the canvas shoots, where a tap is a press
-shorter than `CONFIG.touch.tapMaxMs` with under `CONFIG.touch.tapMaxDrift`
-px of accumulated travel — real drags blow that budget and only aim.
+sensitivity × `CONFIG.touch.lookScale`.
 
 ## Combat
 
