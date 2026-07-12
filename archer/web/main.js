@@ -76,7 +76,10 @@ function fireArrow() {
   if (!game.player.canShoot()) return; // still re-nocking from the last shot
   const type = selectedType();
   if (type !== 'normal') game.stats.ammo[type] -= 1;
-  game.arrows.fire(game.player.aimOrigin(), game.player.aimDir(), game.player.power, type);
+  game.arrows.fire(
+    game.player.aimOrigin(), game.player.aimDir(), game.player.power, type,
+    game.player.arrowSpawnPoint(),
+  );
   game.player.shoot(); // string snap + reload animation, and the shot gate
   game.syncUI();
 }
@@ -299,6 +302,11 @@ window.__ARCHER = {
       canShoot: game.player.canShoot(),
       bowX: game.player.bow.group.position.x,
       arrowCount: game.arrows.count,
+      arrows: game.arrows.list.map((a) => ({
+        x: a.pos.x, y: a.pos.y, z: a.pos.z, // physics (aim-line) position
+        visX: a.mesh.position.x, visY: a.mesh.position.y, visZ: a.mesh.position.z,
+        trailPoints: a.trail.geometry.drawRange.count,
+      })),
       trajectory: trajectoryHint.snapshot(),
       enemyCount: game.enemies.list.length,
       enemies: game.enemies.list.map((e) => ({

@@ -145,6 +145,36 @@ def test_click_locks_pointer_then_fires(server_url, page):
     assert page.evaluate("() => window.__ARCHER.state.power") == 0.6
 
 
+def test_shot_arrow_launches_from_bow_with_trail(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    _lock_pointer(page)  # the mousedown fire path is gated on pointer lock
+    # Fire via the input path and read state in the same synchronous task —
+    # no frame has run yet, so the arrow still sits at its visual spawn.
+    offset = page.evaluate(
+        """() => {
+          const canvas = document.getElementById('game');
+          canvas.dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true }));
+          const a = window.__ARCHER.state.arrows[0];
+          return Math.hypot(a.visX - a.x, a.visY - a.y, a.visZ - a.z);
+        }"""
+    )
+    # The projectile appears at the bow, not centered on the aim line, so
+    # the shot reads as an arrow leaving the bow instead of a dot.
+    assert offset > 0.2
+    # It converges onto the true flight line while a tracer trail builds up.
+    page.wait_for_function(
+        """() => {
+          const a = window.__ARCHER.state.arrows[0];
+          return !a || (a.trailPoints >= 4
+            && Math.hypot(a.visX - a.x, a.visY - a.y, a.visZ - a.z) < 0.05);
+        }""",
+        timeout=5000,
+    )
+    # Physics is untouched: the arrow still lands and expires.
+    page.wait_for_function("() => window.__ARCHER.state.arrowCount === 0", timeout=10000)
+
+
 def test_shot_releases_arrow_then_renocks(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)

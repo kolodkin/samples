@@ -24,7 +24,14 @@ Firing plays a release cycle on the bow viewmodel (`CONFIG.bow.shot`): the
 string snaps forward and the nocked arrow vanishes (it became the
 projectile), the bow sits empty for a beat, then a fresh arrow appears and
 rides the string back out to the power draw. Shots are gated on that fresh
-arrow (`Player.canShoot()`), so clicks mid-reload are swallowed. The
+arrow (`Player.canShoot()`), so clicks mid-reload are swallowed.
+
+The released projectile spawns visually at the nocked-arrow tip on the bow
+and converges onto the aim line over ~0.12 s (`SPAWN_BLEND` in
+`web/arrows.js`); physics always runs on the aim line, so accuracy is
+unaffected. Every arrow also drags a fading tracer trail colored by its
+type — first-person shots fly straight away from the eye, so without the
+trail the arrow reads as a shrinking dot instead of an arc. The
 dotted trajectory hint is visible below 85% power and fades as power rises,
 so full-power shots stay skill-based; it integrates at the arrow's own
 frame step and ends at the ground-impact point. Only deliberate fire
@@ -92,7 +99,8 @@ All gameplay randomness flows through one seeded mulberry32 stream
 (`web/rng.js`, `?seed=N`); particles are visual-only and exempt.
 `window.__ARCHER` (defined in `web/main.js`) exposes `ready`, a `state`
 snapshot (screen, hp, score, wave, enemies, pickups, obstacles, best,
-yaw/pitch/touch/power, nocked/canShoot), and test hooks: `fireAt()` (gravity-compensated),
+yaw/pitch/touch/power, nocked/canShoot, arrows with physics vs visual
+positions and trail length), and test hooks: `fireAt()` (gravity-compensated),
 `spawnEnemy()` (optional `inert` flag disables the AI), `skipToWave()`,
 `killAll()`, `giveAmmo()`, `setDropChance()`, `setHealChance()`,
 `setPlayerHp()`, `start()`,
