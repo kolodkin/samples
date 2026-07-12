@@ -269,7 +269,7 @@ function tick(now) {
   if (game.screen === 'playing') {
     game.player.update(dt);
     game.arrows.update(dt);
-    trajectoryHint.update(game.player, true);
+    trajectoryHint.update(game.player, true, game.obstacles);
     game.enemies.update(dt);
     game.waves.update(dt);
   }

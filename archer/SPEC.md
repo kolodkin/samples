@@ -34,7 +34,8 @@ type — first-person shots fly straight away from the eye, so without the
 trail the arrow reads as a shrinking dot instead of an arc. The
 dotted trajectory hint is visible below 85% power and fades as power rises,
 so full-power shots stay skill-based; it integrates at the arrow's own
-frame step and ends at the ground-impact point. Only deliberate fire
+frame step and ends at the impact point — the ground, or the first
+blocking obstacle. Only deliberate fire
 inputs shoot: a click while pointer-locked on desktop, the 🏹 button on
 touch. Stray clicks or taps elsewhere on the screen never loose an arrow.
 
@@ -59,6 +60,14 @@ sensitivity × `CONFIG.touch.lookScale`.
 - Exploding splash ignores cover (no LOS check); freezing doubles the
   next hit (shatter); burning spreads to nearby enemies.
 - Arrow collision is segment-vs-sphere per frame (no tunneling at 70 m/s).
+- Obstacles (trees, cacti, rocks, ice pillars) block arrows in flight —
+  the player's and skeleton projectiles alike. Each obstacle is a
+  collision cylinder (`{radius, height}` from its maker in
+  `web/stages.js`); `obstacleHit()` in `web/geom.js` clips the frame's
+  travel segment at the first impact, so an enemy peeking in front of
+  cover is still hittable while anything behind it is shielded, and
+  arcing shots clear low cover. Exploding arrows detonate on the
+  obstacle, so splash remains the counter to hidden enemies.
 
 ## Enemies
 

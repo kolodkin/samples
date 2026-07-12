@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
-import { segClosest } from './geom.js';
+import { segClosest, obstacleHit } from './geom.js';
 
 function buildArrowMesh(type) {
   const g = new THREE.Group();
@@ -128,7 +128,11 @@ export class ArrowSystem {
         new THREE.Vector3(0, 1, 0), a.vel.clone().normalize(),
       );
       this.pushTrail(a);
-      const pos = a.pos;
+      // Trees and similar obstacles block arrows: clip this frame's travel
+      // at the first impact, so a target peeking in front of cover can
+      // still be hit but anything behind it is shielded.
+      const blocked = obstacleHit(prev, a.pos, this.game.obstacles, R);
+      const pos = blocked ?? a.pos;
 
       // Pickups are collected by shooting them (segment check: arrows are fast).
       let consumed = false;
@@ -163,6 +167,14 @@ export class ArrowSystem {
       }
 
       if (consumed) { this.remove(a); continue; }
+      if (blocked) {
+        // Exploding arrows detonate on the cover itself — splash is the
+        // designed counter to enemies hiding behind it (see explode()).
+        if (a.type === 'exploding') this.explode(pos);
+        else this.game.effects?.burst(pos, 0x8a7a66, 8, 3);
+        this.remove(a);
+        continue;
+      }
       if (pos.y <= 0.05 || a.age > CONFIG.arrow.lifetime) {
         if (a.type === 'exploding') this.explode(pos);
         this.remove(a);
@@ -218,7 +230,7 @@ export class TrajectoryHint {
     return out;
   }
 
-  update(player, active) {
+  update(player, active, obstacles = []) {
     const show = active && player.power < 0.85;
     this.points.visible = show;
     if (!show) return;
@@ -226,6 +238,7 @@ export class TrajectoryHint {
       + (CONFIG.bow.maxSpeed - CONFIG.bow.minSpeed) * player.power;
     const p = player.aimOrigin();
     const v = player.aimDir().multiplyScalar(speed);
+    const prev = new THREE.Vector3();
     const attr = this.points.geometry.attributes.position;
     // Integrate at the arrow's own frame step (semi-implicit Euler, ~1/60 s)
     // and emit a dot every few substeps — one coarse 0.07 s step over-applies
@@ -237,7 +250,11 @@ export class TrajectoryHint {
     for (let i = 0; i < this.n && !landed; i++) {
       for (let k = 0; k < perDot; k++) {
         v.y += CONFIG.arrow.gravity * step;
+        prev.copy(p);
         p.addScaledVector(v, step);
+        // The preview dies where the arrow would: ground plane or cover.
+        const hit = obstacleHit(prev, p, obstacles, CONFIG.arrow.radius);
+        if (hit) { p.copy(hit); landed = true; break; }
         if (p.y <= 0.05) { landed = true; break; } // same plane arrows die on
       }
       attr.setXYZ(n++, p.x, Math.max(p.y, 0.05), p.z);
