@@ -275,8 +275,11 @@ def test_skeleton_shoots_the_player(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
     page.evaluate("() => window.__ARCHER.spawnEnemy('skeleton', 0, 12)")
-    # Peek/shoot cycle is ~3.4 s; several volleys land within 25 s.
-    page.wait_for_function("() => window.__ARCHER.state.hp < 100", timeout=25000)
+    # Peek/shoot cycle is ~3.4 s game time; several volleys land within ~20 s.
+    # Wall-clock headroom on top: SwiftShader renders ~15 fps with the shadow
+    # pass, and the dt clamp (0.05 s) makes game time run slower than wall
+    # time below 20 fps.
+    page.wait_for_function("() => window.__ARCHER.state.hp < 100", timeout=45000)
 
 
 def test_exploding_arrow_splashes_the_group(server_url, page):

@@ -187,7 +187,10 @@ export function buildStage(name, rng) {
   // player keep a lit front — they must stay readable targets.
   sun.position.set(32, 42, 6);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(1024, 1024);
+  // 512² keeps the shadow pass affordable on software renderers (e2e runs
+  // on SwiftShader); PCF softens the coarser texels and the low-poly look
+  // hides the rest.
+  sun.shadow.mapSize.set(512, 512);
   const sc = sun.shadow.camera;
   sc.left = -48; sc.right = 48; sc.top = 48; sc.bottom = -48; // arena + shadow reach
   sc.near = 5; sc.far = 150;
