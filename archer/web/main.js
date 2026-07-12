@@ -63,7 +63,7 @@ const initialStage = Math.max(0, STAGE_ORDER.indexOf(params.get('stage') || 'for
 loadStage(initialStage);
 game.player = new Player(camera);
 game.arrows = new ArrowSystem(game);
-const trajectoryHint = new TrajectoryHint(scene);
+const trajectoryHint = new TrajectoryHint(game);
 // No manual arrow selection: every shot spends the strongest special in
 // stock, then normal arrows once the quiver is dry. Priority is the
 // declaration order of CONFIG.arrow.types — strongest special first.
@@ -269,7 +269,7 @@ function tick(now) {
   if (game.screen === 'playing') {
     game.player.update(dt);
     game.arrows.update(dt);
-    trajectoryHint.update(game.player, true, game.obstacles);
+    trajectoryHint.update(game.player, true);
     game.enemies.update(dt);
     game.waves.update(dt);
   }

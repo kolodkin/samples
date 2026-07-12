@@ -63,6 +63,7 @@ function buildSkeleton(c) {
 const BUILDERS = { goblin: buildGoblin, ogre: buildOgre, skeleton: buildSkeleton };
 
 const PROJ_GRAVITY = 4; // m/s² drop on skeleton projectiles (shoot() compensates)
+const PROJ_RADIUS = 0.09; // skeleton projectile: mesh size and collision pad
 
 export class EnemySystem {
   constructor(game) {
@@ -283,7 +284,7 @@ export class EnemySystem {
     dir.z += rng.range(-e.c.spread, e.c.spread);
     dir.normalize();
     const mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(0.09, 6, 5),
+      new THREE.SphereGeometry(PROJ_RADIUS, 6, 5),
       new THREE.MeshBasicMaterial({ color: 0x332222 }),
     );
     mesh.position.copy(from);
@@ -301,7 +302,7 @@ export class EnemySystem {
       // Cover works both ways: obstacles eat skeleton shots too. Clip the
       // frame's travel at the impact so a shot can't reach the player
       // through a tree it crossed mid-frame.
-      const blocked = obstacleHit(prev, p.mesh.position, this.game.obstacles);
+      const blocked = obstacleHit(prev, p.mesh.position, this.game.obstacles, PROJ_RADIUS);
       // Segment-vs-sphere like player arrows: on slow machines a frame's
       // travel exceeds the 0.9 m hit sphere, and a point test tunnels.
       if (segClosest(prev, blocked ?? p.mesh.position, playerPos)

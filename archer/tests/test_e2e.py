@@ -288,7 +288,7 @@ def test_obstacle_blocks_player_arrow(server_url, page):
           return g;
         }"""
     )
-    page.evaluate("(g) => window.__ARCHER.fireAt(g.x, 0.65, g.z, 'normal', 1)", target)
+    page.evaluate("(g) => window.__ARCHER.fireAt(g.x, 0.65, g.z)", target)
     # The arrow dies on the obstacle, well before its 6 s lifetime…
     page.wait_for_function("() => window.__ARCHER.state.arrowCount === 0", timeout=5000)
     # …and the shielded goblin is untouched (fireAt at an exposed goblin

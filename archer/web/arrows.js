@@ -167,16 +167,11 @@ export class ArrowSystem {
       }
 
       if (consumed) { this.remove(a); continue; }
-      if (blocked) {
-        // Exploding arrows detonate on the cover itself — splash is the
-        // designed counter to enemies hiding behind it (see explode()).
+      if (blocked || pos.y <= 0.05 || a.age > CONFIG.arrow.lifetime) {
+        // Exploding arrows detonate on whatever stopped them — on cover,
+        // splash is the designed counter to enemies hiding behind it.
         if (a.type === 'exploding') this.explode(pos);
-        else this.game.effects?.burst(pos, 0x8a7a66, 8, 3);
-        this.remove(a);
-        continue;
-      }
-      if (pos.y <= 0.05 || a.age > CONFIG.arrow.lifetime) {
-        if (a.type === 'exploding') this.explode(pos);
+        else if (blocked) this.game.effects?.burst(pos, 0x8a7a66, 8, 3);
         this.remove(a);
       }
     }
@@ -207,7 +202,8 @@ export class ArrowSystem {
 // Dotted arc preview shown at partial power; fades out toward max power so
 // full-power shots stay skill-based.
 export class TrajectoryHint {
-  constructor(scene) {
+  constructor(game) {
+    this.game = game;
     this.n = 24;
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.n * 3), 3));
@@ -215,7 +211,7 @@ export class TrajectoryHint {
       color: 0xffffff, size: 0.12, transparent: true, opacity: 0.5,
     }));
     this.points.visible = false;
-    scene.add(this.points);
+    game.scene.add(this.points);
   }
 
   // e2e handle: world positions of the visible dots.
@@ -230,7 +226,7 @@ export class TrajectoryHint {
     return out;
   }
 
-  update(player, active, obstacles = []) {
+  update(player, active) {
     const show = active && player.power < 0.85;
     this.points.visible = show;
     if (!show) return;
@@ -248,15 +244,17 @@ export class TrajectoryHint {
     let n = 0;
     let landed = false;
     for (let i = 0; i < this.n && !landed; i++) {
+      prev.copy(p);
       for (let k = 0; k < perDot; k++) {
         v.y += CONFIG.arrow.gravity * step;
-        prev.copy(p);
         p.addScaledVector(v, step);
-        // The preview dies where the arrow would: ground plane or cover.
-        const hit = obstacleHit(prev, p, obstacles, CONFIG.arrow.radius);
-        if (hit) { p.copy(hit); landed = true; break; }
         if (p.y <= 0.05) { landed = true; break; } // same plane arrows die on
       }
+      // The preview dies where the arrow would. One obstacle check per dot
+      // chord, not per substep: the arc sags ~3 cm across a chord, invisible
+      // under a 0.12-size dot, and it cuts the scans 4×.
+      const hit = obstacleHit(prev, p, this.game.obstacles, CONFIG.arrow.radius);
+      if (hit) { p.copy(hit); landed = true; }
       attr.setXYZ(n++, p.x, Math.max(p.y, 0.05), p.z);
     }
     this.points.geometry.setDrawRange(0, n);
