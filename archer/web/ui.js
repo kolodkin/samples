@@ -81,10 +81,9 @@ function Hud({ s, actions }) {
         ${SLOTS.map(([type, label, icon]) => html`
           <div
             class="slot ${s.selected === type ? 'active' : ''} ${type !== 'normal' && !s.ammo[type] ? 'empty' : ''}"
-            data-testid="slot-${type}"
+            data-testid="slot-${type}" title=${label} aria-label=${label}
           >
             <span class="icon" aria-hidden="true">${icon}</span>
-            <span class="label">${label}</span>
             <span class="count" data-testid="ammo-${type}">${type === 'normal' ? '∞' : s.ammo[type]}</span>
           </div>
         `)}

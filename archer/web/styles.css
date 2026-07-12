@@ -50,7 +50,6 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000;
 .slot.active { border-color: #ffd257; background: rgba(60, 45, 0, 0.6); }
 .slot.empty { opacity: 0.45; }
 .slot .count { font-variant-numeric: tabular-nums; }
-.slot .icon { font-size: 12px; }
 
 /* Touch controls: shoot button in the right thumb zone, pause up top. */
 .fire-btn { position: absolute; right: calc(20px + env(safe-area-inset-right));
@@ -79,11 +78,10 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000;
   background: rgba(0, 0, 0, 0.45); color: #f2ede2; font-size: 14px;
   pointer-events: auto; }
 
-/* Narrow (portrait phone) screens: compact HUD, drop slot labels. */
+/* Narrow (portrait phone) screens: compact HUD. */
 @media (max-width: 520px) {
   .hp-bar { width: 140px; }
   .power-btn { width: 48px; height: 48px; font-size: 24px; }
-  .slot .label { display: none; }
   .slot { padding: 8px 10px; }
   .screen h1 { font-size: 40px; }
   .screen p { padding: 0 20px; }
