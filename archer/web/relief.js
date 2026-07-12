@@ -60,10 +60,25 @@ export function spread(n, k) {
   return clamp((n - 0.5) * k + 0.5, 0, 1);
 }
 
+// Texture seed derived from a value ALREADY drawn from the seeded rng.
+// Obstacle makers must never take fresh draws for texturing — that would
+// shift the per-seed layouts the e2e tests pin.
+export const seedFrom = (v) => Math.floor(v * 8191);
+
+// The scene-wide shadow policy: everything in the world casts; receivers
+// are opt-out for meshes that never show contact shadows (e.g. floating
+// pickups). The bow viewmodel is the one deliberate non-caster — it simply
+// never calls this.
+export function setShadows(root, receive = true) {
+  root.traverse((o) => {
+    if (o.isMesh) { o.castShadow = true; o.receiveShadow = receive; }
+  });
+}
+
 // Craggy relief: jitter each vertex by a hash of its quantized position.
 // Seam duplicates (and a cone tip's vertex fan) share a position, so they
 // displace together and the mesh never tears.
-export function roughen(geo, amp, seed) {
+function roughen(geo, amp, seed) {
   const pos = geo.attributes.position;
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);

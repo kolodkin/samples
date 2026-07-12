@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
 import { segClosest } from './geom.js';
+import { setShadows } from './relief.js';
 
 function lambert(color) { return new THREE.MeshLambertMaterial({ color }); }
 
@@ -77,7 +78,7 @@ export class EnemySystem {
     const c = CONFIG.enemies[type];
     const mesh = BUILDERS[type](c);
     mesh.position.set(x, 0, z);
-    mesh.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    setShadows(mesh);
     this.game.scene.add(mesh);
     const e = {
       type, c, mesh, hp: c.hp, state: 'advance', inert,

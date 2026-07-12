@@ -38,20 +38,29 @@ export function fletching(color, length, height, shaftR) {
   return g;
 }
 
+// Projectiles of one ammo type are pixel-identical, so the geometries,
+// materials and the CPU mottling pass run once per type; every shot clones
+// the template — clones share geometry/material (arrows are never tinted
+// per-instance), so spent arrows leak nothing.
+const arrowTemplates = new Map();
+
 function buildArrowMesh(type) {
-  const g = new THREE.Group();
-  const color = CONFIG.arrow.types[type].color;
-  // Slim proportions matching the arrow nocked on the bow viewmodel — the
-  // projectile reads as a thin arrow in flight, not a fat bolt. Collision
-  // stays at CONFIG.arrow.radius (gameplay tuning, not the visual).
-  const shaft = arrowShaft(0.008, 0.7);
-  shaft.castShadow = true; // in-flight ground shadow tracks the arc
-  const tip = arrowHead(0.02, 0.08);
-  tip.position.y = 0.39;
-  const fletch = fletching(color, 0.12, 0.03, 0.008);
-  fletch.position.y = -0.28;
-  g.add(shaft, tip, fletch);
-  return g;
+  let t = arrowTemplates.get(type);
+  if (!t) {
+    t = new THREE.Group();
+    // Slim proportions matching the arrow nocked on the bow viewmodel — the
+    // projectile reads as a thin arrow in flight, not a fat bolt. Collision
+    // stays at CONFIG.arrow.radius (gameplay tuning, not the visual).
+    const shaft = arrowShaft(0.008, 0.7);
+    shaft.castShadow = true; // in-flight ground shadow tracks the arc
+    const tip = arrowHead(0.02, 0.08);
+    tip.position.y = 0.39;
+    const fletch = fletching(CONFIG.arrow.types[type].color, 0.12, 0.03, 0.008);
+    fletch.position.y = -0.28;
+    t.add(shaft, tip, fletch);
+    arrowTemplates.set(type, t);
+  }
+  return t.clone();
 }
 
 export class ArrowSystem {

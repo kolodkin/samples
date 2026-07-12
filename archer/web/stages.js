@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
-import { hash2, fbm, spread, texturedMesh } from './relief.js';
+import { hash2, fbm, spread, seedFrom, setShadows, texturedMesh } from './relief.js';
 
 export const STAGE_ORDER = ['forest', 'desert', 'iceberg'];
 
@@ -57,24 +57,24 @@ function makeGround(theme, size) {
 // undisposed geometry each (stage groups are regenerated, not disposed).
 const groundCache = new Map();
 
-// Each maker returns { mesh, radius, height } with the mesh's base at y=0.
-// Texture seeds derive from values already drawn from the rng (never fresh
-// draws — see the layout-stream note in relief.js), so every instance gets
+// Each maker returns { mesh, radius, height } (base at y=0) plus an
+// optional sway handle for wind animation. Texture seeds go through
+// seedFrom() on values already drawn from the rng, so every instance gets
 // its own bark/crag pattern without shifting the pinned layouts.
 function makeTree(rng) {
   const g = new THREE.Group();
   const trunkH = rng.range(1.2, 2.0);
-  const seed = Math.floor(trunkH * 8191);
+  const seed = seedFrom(trunkH);
   const trunk = texturedMesh(new THREE.CylinderGeometry(0.22, 0.4, trunkH, 7, 4), {
     dark: 0x4a3220, light: 0x7d5a38, seed, amp: 0.05, freq: 6, grainY: 0.25,
   });
   trunk.position.y = trunkH / 2;
   g.add(trunk);
   let y = trunkH;
-  // Canopy cones are tagged for the per-frame wind sway (visual only — the
-  // collision cylinder and cover logic stay put). Phase from trunk height so
-  // neighboring trees never swing in lockstep.
-  g.userData.sway = { parts: [], phase: trunkH * 37 };
+  // Canopy cones join the wind sway (visual only — the collision cylinder
+  // and cover logic stay put). Phase from trunk height so neighboring trees
+  // never swing in lockstep.
+  const sway = { parts: [], phase: trunkH * 37 };
   for (const r of [1.5, 1.1]) {
     // Roughened cones read as clumped boughs instead of party hats.
     const cone = texturedMesh(new THREE.ConeGeometry(r, 2.2, 7, 3), {
@@ -82,10 +82,10 @@ function makeTree(rng) {
     });
     cone.position.y = y + 1.1;
     g.add(cone);
-    g.userData.sway.parts.push(cone);
+    sway.parts.push(cone);
     y += 1.4;
   }
-  return { mesh: g, radius: 1.5, height: y + 1.8 };
+  return { mesh: g, radius: 1.5, height: y + 1.8, sway };
 }
 
 function makeDesertObstacle(rng) {
@@ -93,7 +93,7 @@ function makeDesertObstacle(rng) {
     // saguaro cactus: trunk + two arms, ribbed skin via lengthwise grain
     const g = new THREE.Group();
     const h = rng.range(2.5, 3.5);
-    const seed = Math.floor(h * 8191);
+    const seed = seedFrom(h);
     const skin = { dark: 0x2e5f36, light: 0x5c9455, amp: 0.04, freq: 7, grainY: 0.2 };
     const trunk = texturedMesh(new THREE.CylinderGeometry(0.35, 0.4, h, 8, 4), { ...skin, seed });
     trunk.position.y = h / 2;
@@ -108,7 +108,7 @@ function makeDesertObstacle(rng) {
   }
   const r = rng.range(1.2, 2.2);
   const rock = texturedMesh(new THREE.DodecahedronGeometry(r, 1), {
-    dark: 0x7d5e40, light: 0xc5a072, seed: Math.floor(r * 8191), amp: r * 0.16, freq: 1.6,
+    dark: 0x7d5e40, light: 0xc5a072, seed: seedFrom(r), amp: r * 0.16, freq: 1.6,
   });
   rock.position.y = r * 0.6;
   rock.scale.y = 0.7;
@@ -122,7 +122,7 @@ function makeIcePillar(rng) {
   const pillar = texturedMesh(
     new THREE.CylinderGeometry(rng.range(0.6, 1.0), rng.range(1.0, 1.6), h, 6, 4),
     {
-      dark: 0x9cc8e4, light: 0xf4fbff, seed: Math.floor(h * 8191), amp: 0.14, freq: 2,
+      dark: 0x9cc8e4, light: 0xf4fbff, seed: seedFrom(h), amp: 0.14, freq: 2,
       emissive: 0x224455,
     },
   );
@@ -222,17 +222,29 @@ export function buildStage(name, rng) {
 
   // Obstacles scattered over the battlefield, clear of the player perch.
   const obstacles = [];
-  const sway = [];
+  const swayers = [];
   for (let i = 0; i < theme.obstacleCount; i++) {
     const x = rng.range(-36, 36);
     const z = rng.range(-30, 22);
-    const { mesh, radius, height } = theme.obstacle(rng);
+    const { mesh, radius, height, sway } = theme.obstacle(rng);
     mesh.position.set(x, 0, z);
-    mesh.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-    if (mesh.userData.sway) sway.push(mesh.userData.sway);
+    setShadows(mesh);
+    if (sway) swayers.push(sway);
     group.add(mesh);
     obstacles.push({ x, z, radius, height });
   }
 
-  return { group, obstacles, sway, sky: theme.sky, fog: theme.fog };
+  // Per-frame ambient motion, owned by the stage: gentle canopy sway on two
+  // incommensurate frequencies per tree so the movement never loops visibly.
+  // Amplitudes are small — wind, not a storm.
+  function animate(t) {
+    for (const s of swayers) {
+      s.parts.forEach((part, i) => {
+        part.rotation.x = Math.sin(t * 1.2 + s.phase + i * 0.7) * 0.025;
+        part.rotation.z = Math.cos(t * 0.8 + s.phase * 1.7 + i * 0.7) * 0.02;
+      });
+    }
+  }
+
+  return { group, obstacles, animate, sky: theme.sky, fog: theme.fog };
 }

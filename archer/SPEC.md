@@ -106,9 +106,9 @@ is a ±48 ortho box over the arena at 1024²; `normalBias` handles
 flat-shaded acne. Gotcha: geometries that receive shadows MUST keep their
 `normal` attribute — deleting it (the old "dead weight" optimization)
 silently disables shadow reception in three r160's Lambert path. Tree
-canopies also sway per frame (`userData.sway` collected by `buildStage()`
-into the stage handle, driven from the main tick) — visual only; collision
-radii and cover points stay static.
+canopies also sway in the wind: the stage handle owns the motion
+(`animate(t)`, built by `buildStage()`), and the main tick just calls it —
+visual only; collision radii and cover points stay static.
 
 ## Determinism and e2e
 
