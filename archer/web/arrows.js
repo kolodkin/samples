@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
-import { segClosest } from './geom.js';
+import { segClosest, obstacleHit } from './geom.js';
 
 function buildArrowMesh(type) {
   const g = new THREE.Group();
@@ -128,7 +128,11 @@ export class ArrowSystem {
         new THREE.Vector3(0, 1, 0), a.vel.clone().normalize(),
       );
       this.pushTrail(a);
-      const pos = a.pos;
+      // Trees and similar obstacles block arrows: clip this frame's travel
+      // at the first impact, so a target peeking in front of cover can
+      // still be hit but anything behind it is shielded.
+      const blocked = obstacleHit(prev, a.pos, this.game.obstacles, R);
+      const pos = blocked ?? a.pos;
 
       // Pickups are collected by shooting them (segment check: arrows are fast).
       let consumed = false;
@@ -163,8 +167,11 @@ export class ArrowSystem {
       }
 
       if (consumed) { this.remove(a); continue; }
-      if (pos.y <= 0.05 || a.age > CONFIG.arrow.lifetime) {
+      if (blocked || pos.y <= 0.05 || a.age > CONFIG.arrow.lifetime) {
+        // Exploding arrows detonate on whatever stopped them — on cover,
+        // splash is the designed counter to enemies hiding behind it.
         if (a.type === 'exploding') this.explode(pos);
+        else if (blocked) this.game.effects?.burst(pos, 0x8a7a66, 8, 3);
         this.remove(a);
       }
     }
@@ -195,7 +202,8 @@ export class ArrowSystem {
 // Dotted arc preview shown at partial power; fades out toward max power so
 // full-power shots stay skill-based.
 export class TrajectoryHint {
-  constructor(scene) {
+  constructor(game) {
+    this.game = game;
     this.n = 24;
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.n * 3), 3));
@@ -203,7 +211,7 @@ export class TrajectoryHint {
       color: 0xffffff, size: 0.12, transparent: true, opacity: 0.5,
     }));
     this.points.visible = false;
-    scene.add(this.points);
+    game.scene.add(this.points);
   }
 
   // e2e handle: world positions of the visible dots.
@@ -226,6 +234,7 @@ export class TrajectoryHint {
       + (CONFIG.bow.maxSpeed - CONFIG.bow.minSpeed) * player.power;
     const p = player.aimOrigin();
     const v = player.aimDir().multiplyScalar(speed);
+    const prev = new THREE.Vector3();
     const attr = this.points.geometry.attributes.position;
     // Integrate at the arrow's own frame step (semi-implicit Euler, ~1/60 s)
     // and emit a dot every few substeps — one coarse 0.07 s step over-applies
@@ -235,11 +244,17 @@ export class TrajectoryHint {
     let n = 0;
     let landed = false;
     for (let i = 0; i < this.n && !landed; i++) {
+      prev.copy(p);
       for (let k = 0; k < perDot; k++) {
         v.y += CONFIG.arrow.gravity * step;
         p.addScaledVector(v, step);
         if (p.y <= 0.05) { landed = true; break; } // same plane arrows die on
       }
+      // The preview dies where the arrow would. One obstacle check per dot
+      // chord, not per substep: the arc sags ~3 cm across a chord, invisible
+      // under a 0.12-size dot, and it cuts the scans 4×.
+      const hit = obstacleHit(prev, p, this.game.obstacles, CONFIG.arrow.radius);
+      if (hit) { p.copy(hit); landed = true; }
       attr.setXYZ(n++, p.x, Math.max(p.y, 0.05), p.z);
     }
     this.points.geometry.setDrawRange(0, n);
