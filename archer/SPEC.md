@@ -118,7 +118,7 @@ readable.
 The sun is a shadow-casting directional light plus a fog-exempt disc and
 halo in the sky. Ground, props, monsters, arrows, skeleton projectiles and
 pickups all cast/receive (the bow viewmodel does not). The shadow camera
-is a ±48 ortho box over the arena at 1024²; `normalBias` handles
+is a ±48 ortho box over the arena at 512²; `normalBias` handles
 flat-shaded acne. Gotcha: geometries that receive shadows MUST keep their
 `normal` attribute — deleting it (the old "dead weight" optimization)
 silently disables shadow reception in three r160's Lambert path. Tree

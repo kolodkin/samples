@@ -372,9 +372,12 @@ def test_freezing_arrow_halts_advance_then_thaws(server_url, page):
     page.wait_for_timeout(1500)  # frozen solid: no advance, no attacks
     assert page.evaluate("() => window.__ARCHER.state.enemies[0].z") == z0
     assert page.evaluate("() => window.__ARCHER.state.hp") == 100
+    # Thaws after freezeTime (3 s game time). Generous wall-clock timeout:
+    # SwiftShader renders slowly enough that the dt clamp (0.05 s) stretches
+    # game seconds well past wall seconds (see the skeleton-volley test).
     page.wait_for_function(
-        "() => !window.__ARCHER.state.enemies[0].frozen", timeout=5000
-    )  # thaws after freezeTime
+        "() => !window.__ARCHER.state.enemies[0].frozen", timeout=15000
+    )
 
 
 def test_burning_arrow_ticks_and_spreads(server_url, page):
