@@ -39,7 +39,7 @@ function segCylinderT(a, b, cx, cz, r, h) {
 // First impact along [a,b] against obstacles ({x, z, radius, height}
 // cylinders based at y=0), padded by the projectile radius; null if the
 // path is clear.
-export function obstacleHit(a, b, obstacles, pad = 0) {
+export function obstacleHit(a, b, obstacles, pad) {
   let best = null;
   for (const o of obstacles) {
     const t = segCylinderT(a, b, o.x, o.z, o.radius + pad, o.height);

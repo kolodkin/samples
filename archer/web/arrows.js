@@ -122,17 +122,20 @@ export class ArrowSystem {
       a.vel.y += CONFIG.arrow.gravity * dt;
       a.pos.addScaledVector(a.vel, dt);
       a.age += dt;
+      // Trees and similar obstacles block arrows: clip this frame's travel
+      // at the first impact, so a target peeking in front of cover can
+      // still be hit but anything behind it is shielded. Clipping a.pos
+      // itself keeps one authoritative position — the mesh, trail, hit
+      // tests, and impact effects all see the same point.
+      const blocked = obstacleHit(prev, a.pos, this.game.obstacles, R);
+      if (blocked) a.pos.copy(blocked);
       a.mesh.position.copy(a.pos)
         .addScaledVector(a.visualOffset, Math.max(0, 1 - a.age / SPAWN_BLEND));
       a.mesh.quaternion.setFromUnitVectors(
         new THREE.Vector3(0, 1, 0), a.vel.clone().normalize(),
       );
       this.pushTrail(a);
-      // Trees and similar obstacles block arrows: clip this frame's travel
-      // at the first impact, so a target peeking in front of cover can
-      // still be hit but anything behind it is shielded.
-      const blocked = obstacleHit(prev, a.pos, this.game.obstacles, R);
-      const pos = blocked ?? a.pos;
+      const pos = a.pos;
 
       // Pickups are collected by shooting them (segment check: arrows are fast).
       let consumed = false;
@@ -168,8 +171,7 @@ export class ArrowSystem {
 
       if (consumed) { this.remove(a); continue; }
       if (blocked || pos.y <= 0.05 || a.age > CONFIG.arrow.lifetime) {
-        // Exploding arrows detonate on whatever stopped them — on cover,
-        // splash is the designed counter to enemies hiding behind it.
+        // Exploding arrows detonate on whatever stopped them (see explode()).
         if (a.type === 'exploding') this.explode(pos);
         else if (blocked) this.game.effects?.burst(pos, 0x8a7a66, 8, 3);
         this.remove(a);
