@@ -108,7 +108,7 @@ export class WaveManager {
     if (p.type === 'heal') {
       this.game.player.heal(CONFIG.drops.heal.amount);
     } else {
-      const n = this.game.rng.int(CONFIG.drops.min, CONFIG.drops.max);
+      const n = this.game.rng.int(CONFIG.drops.ammo.min, CONFIG.drops.ammo.max);
       this.game.stats.ammo[p.type] += n;
     }
     this.game.effects?.burst(p.mesh.position, DROP_COLORS[p.type], 16, 5);

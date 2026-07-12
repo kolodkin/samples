@@ -145,6 +145,36 @@ def test_click_locks_pointer_then_fires(server_url, page):
     assert page.evaluate("() => window.__ARCHER.state.power") == 0.6
 
 
+def test_shot_arrow_launches_from_bow_with_trail(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    _lock_pointer(page)  # the mousedown fire path is gated on pointer lock
+    # Fire via the input path and read state in the same synchronous task —
+    # no frame has run yet, so the arrow still sits at its visual spawn.
+    offset = page.evaluate(
+        """() => {
+          const canvas = document.getElementById('game');
+          canvas.dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true }));
+          const a = window.__ARCHER.state.arrows[0];
+          return Math.hypot(a.visX - a.x, a.visY - a.y, a.visZ - a.z);
+        }"""
+    )
+    # The projectile appears at the bow, not centered on the aim line, so
+    # the shot reads as an arrow leaving the bow instead of a dot.
+    assert offset > 0.2
+    # It converges onto the true flight line while a tracer trail builds up.
+    page.wait_for_function(
+        """() => {
+          const a = window.__ARCHER.state.arrows[0];
+          return !a || (a.trailPoints >= 4
+            && Math.hypot(a.visX - a.x, a.visY - a.y, a.visZ - a.z) < 0.05);
+        }""",
+        timeout=5000,
+    )
+    # Physics is untouched: the arrow still lands and expires.
+    page.wait_for_function("() => window.__ARCHER.state.arrowCount === 0", timeout=10000)
+
+
 def test_shot_releases_arrow_then_renocks(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
@@ -235,6 +265,37 @@ def test_goblin_advances_hits_once_and_despawns(server_url, page):
     # One strike and the monster is spent: it disappears after landing its hit.
     page.wait_for_function("() => window.__ARCHER.state.enemyCount === 0", timeout=2000)
     assert page.evaluate("() => window.__ARCHER.state.hp") == 90  # exactly one hit
+
+
+def test_obstacle_blocks_player_arrow(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
+    # Park an inert goblin right behind an obstacle as seen from the perch
+    # (0, 3.2, 34), then shoot straight at it: the obstacle must eat the
+    # arrow before it reaches the goblin.
+    target = page.evaluate(
+        """() => {
+          const P = { x: 0, z: 34 };
+          // A tall obstacle well inside the arena so the goblin fits behind.
+          const o = window.__ARCHER.state.obstacles
+            .filter((o) => Math.abs(o.x) < 25 && o.z > -20 && o.z < 15 && o.height > 2)
+            .sort((a, b) => b.radius - a.radius)[0];
+          const d = Math.hypot(o.x - P.x, o.z - P.z);
+          const ux = (o.x - P.x) / d, uz = (o.z - P.z) / d;
+          const g = { x: o.x + ux * (o.radius + 1.2), z: o.z + uz * (o.radius + 1.2) };
+          window.__ARCHER.spawnEnemy('goblin', g.x, g.z, true);
+          return g;
+        }"""
+    )
+    page.evaluate("(g) => window.__ARCHER.fireAt(g.x, 0.65, g.z)", target)
+    # The arrow dies on the obstacle, well before its 6 s lifetime…
+    page.wait_for_function("() => window.__ARCHER.state.arrowCount === 0", timeout=5000)
+    # …and the shielded goblin is untouched (fireAt at an exposed goblin
+    # lands the hit — see test_arrow_kills_goblin_and_scores).
+    state = page.evaluate("() => window.__ARCHER.state")
+    assert state["enemyCount"] == 1
+    assert state["enemies"][0]["hp"] == 40
 
 
 def test_player_death_shows_game_over(server_url, page):

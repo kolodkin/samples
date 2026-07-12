@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
-import { segClosest } from './geom.js';
+import { segClosest, obstacleHit } from './geom.js';
 import { texturedMesh } from './relief.js';
 
 // Wooden shaft with lengthwise grain; radius/length are the caller's.
@@ -63,6 +63,46 @@ function buildArrowMesh(type) {
   return t.clone();
 }
 
+// Tracer trail: the arrow's recent flight path as a line, brightest at the
+// arrow and fading to black toward the tail (additive blending: black
+// vertices contribute nothing). Without it a first-person shot reads as a
+// shrinking dot — the arrow flies straight away from the eye, so only its
+// rear cross-section is ever visible; the trail is what makes the arc read.
+const TRAIL_POINTS = 24;
+// One material for all trails (per-arrow color lives in the vertex colors),
+// and one fade gradient per arrow type, shared by every trail of that type.
+const TRAIL_MATERIAL = new THREE.LineBasicMaterial({
+  vertexColors: true, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false,
+});
+const TRAIL_FADES = new Map();
+
+function trailFade(color) {
+  let colors = TRAIL_FADES.get(color);
+  if (!colors) {
+    colors = new Float32Array(TRAIL_POINTS * 3);
+    const c = new THREE.Color(color);
+    for (let i = 0; i < TRAIL_POINTS; i++) {
+      const k = 1 - i / (TRAIL_POINTS - 1);
+      colors.set([c.r * k, c.g * k, c.b * k], i * 3);
+    }
+    TRAIL_FADES.set(color, colors);
+  }
+  return colors;
+}
+
+function buildTrail(color) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL_POINTS * 3), 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(trailFade(color), 3));
+  geo.setDrawRange(0, 0);
+  const line = new THREE.Line(geo, TRAIL_MATERIAL);
+  line.frustumCulled = false; // positions mutate per frame; culling would lag
+  return line;
+}
+
+// Seconds over which a bow-spawned arrow's visual offset blends away.
+const SPAWN_BLEND = 0.12;
+
 export class ArrowSystem {
   constructor(game) {
     this.game = game;
@@ -71,35 +111,65 @@ export class ArrowSystem {
 
   get count() { return this.list.length; }
 
-  fire(origin, dir, power, type) {
+  // `visualOrigin` (the nocked-arrow tip on the bow viewmodel) is where the
+  // mesh appears; physics always runs on `pos` from `origin` on the aim
+  // line, so where the arrow *lands* is unaffected. The gap between the two
+  // blends away over SPAWN_BLEND seconds — the shot visibly leaves the bow
+  // and converges onto the flight line instead of popping in at the
+  // crosshair as a dot.
+  fire(origin, dir, power, type, visualOrigin = null) {
     const speed = CONFIG.bow.minSpeed + (CONFIG.bow.maxSpeed - CONFIG.bow.minSpeed) * power;
     const mesh = buildArrowMesh(type);
-    mesh.position.copy(origin);
-    this.game.scene.add(mesh);
-    this.list.push({ mesh, vel: dir.clone().multiplyScalar(speed), type, age: 0 });
+    mesh.position.copy(visualOrigin ?? origin); // oriented by the first update()
+    const trail = buildTrail(CONFIG.arrow.types[type].color);
+    this.game.scene.add(mesh, trail);
+    this.list.push({
+      mesh, trail, pos: origin.clone(),
+      vel: dir.clone().multiplyScalar(speed), type, age: 0,
+      visualOffset: (visualOrigin ?? origin).clone().sub(origin), // zero without a bow
+    });
   }
 
   clear() {
-    for (const a of [...this.list]) this.game.scene.remove(a.mesh);
-    this.list.length = 0;
+    for (const a of [...this.list]) this.remove(a);
   }
 
   remove(a) {
-    this.game.scene.remove(a.mesh);
+    this.game.scene.remove(a.mesh, a.trail);
+    a.trail.geometry.dispose(); // material is shared, never disposed
     this.list.splice(this.list.indexOf(a), 1);
+  }
+
+  // Append the arrow's current visual position to the head of its trail.
+  pushTrail(a) {
+    const geo = a.trail.geometry;
+    const attr = geo.attributes.position;
+    attr.array.copyWithin(3, 0, (TRAIL_POINTS - 1) * 3);
+    attr.array[0] = a.mesh.position.x;
+    attr.array[1] = a.mesh.position.y;
+    attr.array[2] = a.mesh.position.z;
+    geo.setDrawRange(0, Math.min(geo.drawRange.count + 1, TRAIL_POINTS));
+    attr.needsUpdate = true;
   }
 
   update(dt) {
     const R = CONFIG.arrow.radius;
     for (const a of [...this.list]) {
-      const prev = a.mesh.position.clone();
+      const prev = a.pos.clone();
       a.vel.y += CONFIG.arrow.gravity * dt;
-      a.mesh.position.addScaledVector(a.vel, dt);
+      a.pos.addScaledVector(a.vel, dt);
+      a.age += dt;
+      a.mesh.position.copy(a.pos)
+        .addScaledVector(a.visualOffset, Math.max(0, 1 - a.age / SPAWN_BLEND));
       a.mesh.quaternion.setFromUnitVectors(
         new THREE.Vector3(0, 1, 0), a.vel.clone().normalize(),
       );
-      a.age += dt;
-      const pos = a.mesh.position;
+      this.pushTrail(a);
+      // Trees and similar obstacles block arrows: clip this frame's travel
+      // at the first impact, so a target peeking in front of cover can
+      // still be hit but anything behind it is shielded.
+      const blocked = obstacleHit(prev, a.pos, this.game.obstacles, R);
+      const pos = blocked ?? a.pos;
 
       // Pickups are collected by shooting them (segment check: arrows are fast).
       let consumed = false;
@@ -134,8 +204,11 @@ export class ArrowSystem {
       }
 
       if (consumed) { this.remove(a); continue; }
-      if (pos.y <= 0.05 || a.age > CONFIG.arrow.lifetime) {
+      if (blocked || pos.y <= 0.05 || a.age > CONFIG.arrow.lifetime) {
+        // Exploding arrows detonate on whatever stopped them — on cover,
+        // splash is the designed counter to enemies hiding behind it.
         if (a.type === 'exploding') this.explode(pos);
+        else if (blocked) this.game.effects?.burst(pos, 0x8a7a66, 8, 3);
         this.remove(a);
       }
     }
@@ -147,8 +220,8 @@ export class ArrowSystem {
     const alive = e.hp > 0;
     if (arrow.type === 'freezing' && alive) this.game.enemies.freeze(e);
     if (arrow.type === 'burning' && alive) this.game.enemies.ignite(e);
-    if (arrow.type === 'exploding') this.explode(arrow.mesh.position);
-    else this.game.effects?.burst(arrow.mesh.position, 0xaa3333, 10, 4);
+    if (arrow.type === 'exploding') this.explode(arrow.pos);
+    else this.game.effects?.burst(arrow.pos, 0xaa3333, 10, 4);
   }
 
   // AoE with linear falloff. Deliberately no line-of-sight check: splash
@@ -166,7 +239,8 @@ export class ArrowSystem {
 // Dotted arc preview shown at partial power; fades out toward max power so
 // full-power shots stay skill-based.
 export class TrajectoryHint {
-  constructor(scene) {
+  constructor(game) {
+    this.game = game;
     this.n = 24;
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.n * 3), 3));
@@ -174,7 +248,7 @@ export class TrajectoryHint {
       color: 0xffffff, size: 0.12, transparent: true, opacity: 0.5,
     }));
     this.points.visible = false;
-    scene.add(this.points);
+    game.scene.add(this.points);
   }
 
   // e2e handle: world positions of the visible dots.
@@ -197,6 +271,7 @@ export class TrajectoryHint {
       + (CONFIG.bow.maxSpeed - CONFIG.bow.minSpeed) * player.power;
     const p = player.aimOrigin();
     const v = player.aimDir().multiplyScalar(speed);
+    const prev = new THREE.Vector3();
     const attr = this.points.geometry.attributes.position;
     // Integrate at the arrow's own frame step (semi-implicit Euler, ~1/60 s)
     // and emit a dot every few substeps — one coarse 0.07 s step over-applies
@@ -206,11 +281,17 @@ export class TrajectoryHint {
     let n = 0;
     let landed = false;
     for (let i = 0; i < this.n && !landed; i++) {
+      prev.copy(p);
       for (let k = 0; k < perDot; k++) {
         v.y += CONFIG.arrow.gravity * step;
         p.addScaledVector(v, step);
         if (p.y <= 0.05) { landed = true; break; } // same plane arrows die on
       }
+      // The preview dies where the arrow would. One obstacle check per dot
+      // chord, not per substep: the arc sags ~3 cm across a chord, invisible
+      // under a 0.12-size dot, and it cuts the scans 4×.
+      const hit = obstacleHit(prev, p, this.game.obstacles, CONFIG.arrow.radius);
+      if (hit) { p.copy(hit); landed = true; }
       attr.setXYZ(n++, p.x, Math.max(p.y, 0.05), p.z);
     }
     this.points.geometry.setDrawRange(0, n);

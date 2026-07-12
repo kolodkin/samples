@@ -64,7 +64,7 @@ const initialStage = Math.max(0, STAGE_ORDER.indexOf(params.get('stage') || 'for
 loadStage(initialStage);
 game.player = new Player(camera);
 game.arrows = new ArrowSystem(game);
-const trajectoryHint = new TrajectoryHint(scene);
+const trajectoryHint = new TrajectoryHint(game);
 // No manual arrow selection: every shot spends the strongest special in
 // stock, then normal arrows once the quiver is dry. Priority is the
 // declaration order of CONFIG.arrow.types — strongest special first.
@@ -77,7 +77,10 @@ function fireArrow() {
   if (!game.player.canShoot()) return; // still re-nocking from the last shot
   const type = selectedType();
   if (type !== 'normal') game.stats.ammo[type] -= 1;
-  game.arrows.fire(game.player.aimOrigin(), game.player.aimDir(), game.player.power, type);
+  game.arrows.fire(
+    game.player.aimOrigin(), game.player.aimDir(), game.player.power, type,
+    game.player.arrowSpawnPoint(),
+  );
   game.player.shoot(); // string snap + reload animation, and the shot gate
   game.syncUI();
 }
@@ -303,6 +306,11 @@ window.__ARCHER = {
       canShoot: game.player.canShoot(),
       bowX: game.player.bow.group.position.x,
       arrowCount: game.arrows.count,
+      arrows: game.arrows.list.map((a) => ({
+        x: a.pos.x, y: a.pos.y, z: a.pos.z, // physics (aim-line) position
+        visX: a.mesh.position.x, visY: a.mesh.position.y, visZ: a.mesh.position.z,
+        trailPoints: a.trail.geometry.drawRange.count,
+      })),
       trajectory: trajectoryHint.snapshot(),
       enemyCount: game.enemies.list.length,
       enemies: game.enemies.list.map((e) => ({

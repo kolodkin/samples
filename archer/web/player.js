@@ -51,7 +51,7 @@ function buildBowViewmodel() {
   nocked.add(fletch);
   g.add(nocked);
   g.position.set(0.26, -0.22, -0.6);
-  return { group: g, stringTop, stringBottom, nocked };
+  return { group: g, stringTop, stringBottom, nocked, nockedTip: tip };
 }
 
 const STRING_TIP_Y = 0.16; // limb tip height (torus radius)
@@ -100,6 +100,12 @@ export class Player {
   aimOrigin() {
     return this.camera.getWorldPosition(new THREE.Vector3())
       .addScaledVector(this.aimDir(), 0.7);
+  }
+
+  // World-space tip of the nocked arrow — where a released shot visually
+  // leaves the bow before converging onto the aim line (see ArrowSystem.fire).
+  arrowSpawnPoint() {
+    return this.bow.nockedTip.getWorldPosition(new THREE.Vector3());
   }
 
   update(dt) {
