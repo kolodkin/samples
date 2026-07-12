@@ -20,6 +20,7 @@ try {
   throw err;
 }
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true; // sun shadows (default PCF; see stages.js)
 
 const scene = new THREE.Scene();
 const SKY_FALLBACK = 0x87b5d4;
@@ -271,6 +272,16 @@ function tick(now) {
     game.waves.update(dt);
   }
   game.effects.update(dt);
+  // Gentle canopy sway, always on (the stage breathes even behind menus).
+  // Two incommensurate frequencies per tree so the motion never loops
+  // visibly; amplitudes are small — wind, not a storm.
+  const t = now / 1000;
+  for (const s of stageHandle.sway) {
+    s.parts.forEach((part, i) => {
+      part.rotation.x = Math.sin(t * 1.2 + s.phase + i * 0.7) * 0.025;
+      part.rotation.z = Math.cos(t * 0.8 + s.phase * 1.7 + i * 0.7) * 0.02;
+    });
+  }
   document.documentElement.style.setProperty('--power', game.player.power.toFixed(3));
   renderer.render(scene, camera);
   framesRendered++;
@@ -281,6 +292,7 @@ renderer.setAnimationLoop(tick);
 // Deterministic e2e handle (pcl-viewer's window.__PCL pattern).
 window.__ARCHER = {
   ready: false,
+  _internals: { renderer, scene, THREE }, // debug/probing only — not test API
   get state() {
     return {
       screen: game.screen,

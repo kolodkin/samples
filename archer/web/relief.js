@@ -96,12 +96,12 @@ function mottle(geo, darkIn, lightIn, seed, freq, grainY) {
 }
 
 // Roughened, mottled, flat-shaded mesh. flatShading lights each facet by an
-// in-shader derived normal, so the stored normals (and the uvs of a map-less
-// material) are dead weight — same trick as the ground.
+// in-shader derived normal, so only the uvs of a map-less material are dead
+// weight. The normal attribute MUST stay: the shadow-map path reads it, and
+// deleting it silently kills shadow reception (three r160 Lambert).
 export function texturedMesh(geo, { dark, light, seed = 0, amp = 0, freq = 3, grainY = 1, ...mat }) {
   if (amp > 0) roughen(geo, amp, seed);
   mottle(geo, dark, light, seed, freq, grainY);
-  geo.deleteAttribute('normal');
   geo.deleteAttribute('uv');
   return new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true, ...mat }));
 }

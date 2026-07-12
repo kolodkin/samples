@@ -98,6 +98,7 @@ export class WaveManager {
       glowMaterial(DROP_COLORS[type]),
     );
     mesh.position.set(e.mesh.position.x, 1.1, e.mesh.position.z);
+    mesh.traverse((o) => { if (o.isMesh) o.castShadow = true; }); // floats: shadow anchors it
     this.game.scene.add(mesh);
     this.pickups.push({ mesh, type, age: 0 });
   }

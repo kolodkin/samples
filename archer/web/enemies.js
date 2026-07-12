@@ -1,33 +1,25 @@
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
 import { segClosest } from './geom.js';
-import { texturedMesh } from './relief.js';
 
-// Mottle tones bracketing a base color — hide/skin/bone shading instead of
-// one flat tint. Materials stay per-mesh so setTint() can flash one enemy.
-function hide(hex, seed, amp, freq = 4) {
-  const base = new THREE.Color(hex);
-  return {
-    dark: base.clone().multiplyScalar(0.68),
-    light: base.clone().lerp(new THREE.Color(0xffffff), 0.22),
-    seed, amp, freq,
-  };
-}
+function lambert(color) { return new THREE.MeshLambertMaterial({ color }); }
 
 // Builders return a Group whose base sits at y=0; collision spheres are
 // derived from config (bodyRadius/height/headRadius), not from the meshes.
+// Deliberately smooth flat tints (no relief-mottle treatment): monsters must
+// pop against the textured terrain and props, not blend into them.
 function buildGoblin(c) {
   const g = new THREE.Group();
-  const body = texturedMesh(
-    new THREE.CylinderGeometry(c.bodyRadius * 0.7, c.bodyRadius, c.height * 0.75, 8, 3),
-    hide(c.color, 3, 0.03, 6),
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(c.bodyRadius * 0.7, c.bodyRadius, c.height * 0.75, 8),
+    lambert(c.color),
   );
   body.position.y = c.height * 0.375;
-  const head = texturedMesh(new THREE.SphereGeometry(c.headRadius, 8, 6), hide(0x5ea34c, 5, 0.015, 8));
+  const head = new THREE.Mesh(new THREE.SphereGeometry(c.headRadius, 8, 6), lambert(0x5ea34c));
   head.position.y = c.height;
   g.add(body, head);
   for (const s of [-1, 1]) {
-    const ear = texturedMesh(new THREE.ConeGeometry(0.07, 0.25, 4), hide(0x5ea34c, 7 + s, 0.01, 10));
+    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.25, 4), lambert(0x5ea34c));
     ear.position.set(s * c.headRadius, c.height + 0.1, 0);
     ear.rotation.z = -s * 1.2;
     g.add(ear);
@@ -37,17 +29,16 @@ function buildGoblin(c) {
 
 function buildOgre(c) {
   const g = new THREE.Group();
-  // Lumpier relief than the goblin: ogre hide reads warty at its scale.
-  const body = texturedMesh(
-    new THREE.CylinderGeometry(c.bodyRadius * 0.8, c.bodyRadius, c.height * 0.8, 8, 4),
-    hide(c.color, 11, 0.07, 3),
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(c.bodyRadius * 0.8, c.bodyRadius, c.height * 0.8, 8),
+    lambert(c.color),
   );
   body.position.y = c.height * 0.4;
-  const head = texturedMesh(new THREE.SphereGeometry(c.headRadius, 8, 6), hide(0x8a765f, 13, 0.03, 5));
+  const head = new THREE.Mesh(new THREE.SphereGeometry(c.headRadius, 8, 6), lambert(0x8a765f));
   head.position.y = c.height;
   g.add(body, head);
   for (const s of [-1, 1]) {
-    const arm = texturedMesh(new THREE.BoxGeometry(0.3, c.height * 0.6, 0.3, 2, 4, 2), hide(c.color, 17 + s, 0.04, 4));
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.3, c.height * 0.6, 0.3), lambert(c.color));
     arm.position.set(s * (c.bodyRadius + 0.18), c.height * 0.5, 0);
     g.add(arm);
   }
@@ -56,17 +47,14 @@ function buildOgre(c) {
 
 function buildSkeleton(c) {
   const g = new THREE.Group();
-  // Lengthwise grain bands the ribcage like bone and tattered wrap.
-  const body = texturedMesh(
-    new THREE.CylinderGeometry(0.22, 0.3, c.height * 0.8, 6, 4),
-    { ...hide(c.color, 19, 0.025, 9), grainY: 0.3 },
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.22, 0.3, c.height * 0.8, 6), lambert(c.color),
   );
   body.position.y = c.height * 0.4;
-  const head = texturedMesh(new THREE.SphereGeometry(c.headRadius, 8, 6), hide(0xe8e4d8, 23, 0.02, 7));
+  const head = new THREE.Mesh(new THREE.SphereGeometry(c.headRadius, 8, 6), lambert(0xe8e4d8));
   head.position.y = c.height;
-  const bow = texturedMesh(
-    new THREE.TorusGeometry(0.3, 0.03, 5, 16, Math.PI),
-    { dark: 0x4a3220, light: 0x7d5a38, seed: 29, freq: 12 },
+  const bow = new THREE.Mesh(
+    new THREE.TorusGeometry(0.3, 0.03, 5, 16, Math.PI), lambert(0x6b4a2f),
   );
   bow.position.set(0.35, c.height * 0.65, 0.1);
   bow.rotation.y = Math.PI / 2;
@@ -89,6 +77,7 @@ export class EnemySystem {
     const c = CONFIG.enemies[type];
     const mesh = BUILDERS[type](c);
     mesh.position.set(x, 0, z);
+    mesh.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     this.game.scene.add(mesh);
     const e = {
       type, c, mesh, hp: c.hp, state: 'advance', inert,
@@ -300,6 +289,7 @@ export class EnemySystem {
       new THREE.SphereGeometry(0.09, 6, 5),
       new THREE.MeshBasicMaterial({ color: 0x332222 }),
     );
+    mesh.castShadow = true; // the racing ground shadow telegraphs the arc
     mesh.position.copy(from);
     this.game.scene.add(mesh);
     this.projectiles.push({ mesh, vel: dir.multiplyScalar(e.c.projectileSpeed), age: 0 });

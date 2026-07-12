@@ -86,17 +86,29 @@ it. Terrain noise is hash-based on vertex position and deliberately does
 NOT draw from the seeded rng stream, so per-seed obstacle layouts (which
 tests pin) are unaffected.
 
-Everything else in the scene shares the same low-poly texturing recipe via
+Props and the player's gear share the same low-poly texturing recipe via
 `web/relief.js` (`texturedMesh()`: hash-noise vertex relief + two-tone
 mottling + flat shading): tree bark and boughs, cactus ribs, sandstone
-rocks, ice crags, monster hide/bone, the bow's grained wood and leather
-grip, and arrow shafts (a `grainY` stretch elongates the noise for
-lengthwise wood grain). The same no-rng rule applies — obstacle makers
-derive their texture seeds from values already drawn (e.g. trunk height),
-never from fresh draws, so the pinned layouts don't shift. Enemy materials
-stay per-mesh so `setTint()` freeze/burn emissive flashes keep working per
-enemy. Arrow fletching is three flat swept vanes (`fletching()` in
-`web/arrows.js`), unlit so the ammo-type color stays readable.
+rocks, ice crags, the bow's grained wood and leather grip, and arrow
+shafts (a `grainY` stretch elongates the noise for lengthwise wood
+grain). Monsters are deliberately NOT textured — smooth flat tints keep
+them visually distinct from the terrain and props they move through.
+The same no-rng rule applies — obstacle makers derive their texture seeds
+from values already drawn (e.g. trunk height), never from fresh draws, so
+the pinned layouts don't shift. Arrow fletching is three flat swept vanes
+(`fletching()` in `web/arrows.js`), unlit so the ammo-type color stays
+readable.
+
+The sun is a shadow-casting directional light plus a fog-exempt disc and
+halo in the sky. Ground, props, monsters, arrows, skeleton projectiles and
+pickups all cast/receive (the bow viewmodel does not). The shadow camera
+is a ±48 ortho box over the arena at 1024²; `normalBias` handles
+flat-shaded acne. Gotcha: geometries that receive shadows MUST keep their
+`normal` attribute — deleting it (the old "dead weight" optimization)
+silently disables shadow reception in three r160's Lambert path. Tree
+canopies also sway per frame (`userData.sway` collected by `buildStage()`
+into the stage handle, driven from the main tick) — visual only; collision
+radii and cover points stay static.
 
 ## Determinism and e2e
 

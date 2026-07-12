@@ -45,6 +45,7 @@ function buildArrowMesh(type) {
   // projectile reads as a thin arrow in flight, not a fat bolt. Collision
   // stays at CONFIG.arrow.radius (gameplay tuning, not the visual).
   const shaft = arrowShaft(0.008, 0.7);
+  shaft.castShadow = true; // in-flight ground shadow tracks the arc
   const tip = arrowHead(0.02, 0.08);
   tip.position.y = 0.39;
   const fletch = fletching(color, 0.12, 0.03, 0.008);
