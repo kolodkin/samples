@@ -30,10 +30,10 @@ function useStore(store) {
 }
 
 const SLOTS = [
-  ['normal', 'Normal'],
-  ['exploding', 'Explode'],
-  ['freezing', 'Freeze'],
-  ['burning', 'Burn'],
+  ['normal', 'Normal', '🏹'],
+  ['exploding', 'Explode', '💥'],
+  ['freezing', 'Freeze', '❄️'],
+  ['burning', 'Burn', '🔥'],
 ];
 
 // The one fire control on touch. preventDefault stops the synthetic mouse
@@ -78,11 +78,12 @@ function Hud({ s, actions }) {
           onClick=${actions.pause}>❚❚</button>`}
       <${PowerControls} s=${s} actions=${actions} />
       <div class="quiver">
-        ${SLOTS.map(([type, label]) => html`
+        ${SLOTS.map(([type, label, icon]) => html`
           <div
             class="slot ${s.selected === type ? 'active' : ''} ${type !== 'normal' && !s.ammo[type] ? 'empty' : ''}"
             data-testid="slot-${type}"
           >
+            <span class="icon" aria-hidden="true">${icon}</span>
             <span class="label">${label}</span>
             <span class="count" data-testid="ammo-${type}">${type === 'normal' ? '∞' : s.ammo[type]}</span>
           </div>
