@@ -32,7 +32,8 @@ export const CONFIG = {
     lookScale: 2.2,   // touch-drag aim, relative to mouse sensitivity
   },
   drops: {
-    chance: 0.4, min: 3, max: 5, lifetime: 20, radius: 0.6,
+    chance: 0.4, lifetime: 20, radius: 0.6,
+    ammo: { min: 3, max: 5 },           // special arrows per ammo package
     heal: { chance: 0.25, amount: 25 }, // fraction of drops that are a potion instead of ammo
   },
   enemies: {
