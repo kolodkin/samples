@@ -123,9 +123,9 @@ function Screens({ s, actions }) {
   if (s.screen === 'title') {
     return html`
       <${Screen} testid="title-screen" title="ARCHER">
-        <p>Click to take aim, then click to shoot. Set power with the +/− buttons (or +/− keys). The ✨ Auto slot fires the strongest arrow in your quiver first; click a quiver slot (or press 1–5) to choose the arrow yourself.</p>
+        <p>Click to take aim, then click to shoot. Set power with the +/− buttons (or +/− keys). The ✨ Auto slot picks the arrow the shot deserves — specials for packs and ogres, the free arrow for stragglers; click a quiver slot (or press 1–5) to choose the arrow yourself.</p>
         <p>On touch: drag to aim, the 🏹 button shoots.</p>
-        <p data-testid="best">Best: ${s.best.score} pts, stage ${s.best.stage}/3</p>
+        <p data-testid="best">Best: ${s.best.score} pts, stage ${s.best.stage}/${s.totalStages}</p>
         <button data-testid="start-btn" onClick=${actions.start}>Start</button>
       <//>`;
   }

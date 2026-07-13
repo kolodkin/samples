@@ -663,9 +663,8 @@ def _clear_final_wave(page, wave):
     page.evaluate("() => window.__ARCHER.setDropChance(0)")
     page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
     page.evaluate(f"() => window.__ARCHER.skipToWave({wave})")
-    # Generous wall-clock timeout: a 16-enemy final wave spawns over ~13 game
-    # seconds, and under SwiftShader the dt clamp stretches game seconds well
-    # past wall seconds (see the skeleton-volley test).
+    # Generous timeout: 16-enemy final waves spawn over ~13 game seconds,
+    # stretched further by the dt clamp (see the skeleton-volley test).
     page.wait_for_function(
         """() => {
           window.__ARCHER.killAll();
@@ -936,6 +935,8 @@ def test_title_screen_and_start_button(server_url, page):
     page.goto(server_url + "/?seed=1&waves=0")  # no autostart: land on the title
     _wait_ready(page)
     expect(page.get_by_test_id("title-screen")).to_be_visible()
+    # The best-so-far line counts stages out of the real stage count.
+    expect(page.get_by_test_id("best")).to_contain_text("stage 0/5")
     _shot(page, "title-screen")
     page.get_by_test_id("start-btn").click()
     page.wait_for_function("() => window.__ARCHER.state.screen === 'playing'", timeout=5000)
