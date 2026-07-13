@@ -71,20 +71,20 @@ export const CONFIG = {
       { goblin: 4, skeleton: 2 },
       { goblin: 5, skeleton: 2 },
     ] },
-    desert:  { speedMult: 1.0, waves: [
+    desert:  { speedMult: 1.0, grant: { freezing: 10 }, waves: [
       { goblin: 4, skeleton: 2 },
       { goblin: 5, skeleton: 2 },
       { goblin: 5, skeleton: 2, ogre: 1 },
       { goblin: 6, skeleton: 3, ogre: 1 },
     ] },
-    iceberg: { speedMult: 1.1, waves: [
+    iceberg: { speedMult: 1.1, grant: { exploding: 15, freezing: 10 }, waves: [
       { goblin: 5, skeleton: 2 },
       { goblin: 6, skeleton: 2 },
       { goblin: 6, skeleton: 2, ogre: 1 },
       { goblin: 7, skeleton: 3, ogre: 1 },
       { goblin: 7, skeleton: 3, ogre: 2 },
     ] },
-    volcano: { speedMult: 1.15, waves: [
+    volcano: { speedMult: 1.15, grant: { exploding: 20, freezing: 10 }, waves: [
       { goblin: 6, skeleton: 2 },
       { goblin: 8, skeleton: 2 },
       { goblin: 8, skeleton: 3, ogre: 1 },

@@ -637,6 +637,44 @@ def test_retry_restores_stage_start_inventory(server_url, page):
     assert state["enemyCount"] == 0  # battlefield cleared
 
 
+def test_stage_grant_tops_up_a_dry_quiver(server_url, page):
+    # Desert (first ogre stage) begins with a freezing floor even when the
+    # player arrives with nothing.
+    page.goto(server_url + "/?autostart=1&seed=42&waves=0&stage=desert")
+    _wait_ready(page)
+    ammo = page.evaluate("() => window.__ARCHER.state.ammo")
+    assert ammo["freezing"] == 10
+    assert ammo["exploding"] == 0  # exploding floors start at iceberg
+    # Volcano gets the biggest floors.
+    page.goto(server_url + "/?autostart=1&seed=42&waves=0&stage=volcano")
+    _wait_ready(page)
+    ammo = page.evaluate("() => window.__ARCHER.state.ammo")
+    assert ammo["exploding"] == 20
+    assert ammo["freezing"] == 10
+
+
+def test_stage_grant_is_a_floor_not_a_bonus(server_url, page):
+    # Carry-over above the floor is untouched — the grant never adds on top.
+    page.goto(server_url + BOOT)  # forest
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.giveAmmo('freezing', 25)")
+    page.evaluate("() => window.__ARCHER.nextStage()")  # desert: freezing floor 10
+    state = page.evaluate("() => window.__ARCHER.state")
+    assert state["stage"] == "desert"
+    assert state["ammo"]["freezing"] == 25
+
+
+def test_retry_keeps_the_stage_grant(server_url, page):
+    # The grant lands before the stage-start snapshot, so retries keep it.
+    page.goto(server_url + "/?autostart=1&seed=42&waves=0&stage=desert")
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setPlayerHp(1)")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32)")
+    page.wait_for_function("() => window.__ARCHER.state.screen === 'gameOver'", timeout=10000)
+    page.evaluate("() => window.__ARCHER.retryStage()")
+    assert page.evaluate("() => window.__ARCHER.state.ammo.freezing") == 10
+
+
 def test_multikill_combo_bonus(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)

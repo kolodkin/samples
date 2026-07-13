@@ -168,6 +168,12 @@ function startGame(stageIndex) {
   game.waves.state = 'idle';
   loadStage(stageIndex);
   game.player.resetHp();
+  // Stage-start ammo floor (CONFIG.stages[].grant): tops up a dry quiver
+  // where the difficulty steps up, but never adds on top of carry-over.
+  // Applied before the snapshot so retries restore the granted stock.
+  for (const [type, n] of Object.entries(CONFIG.stages[game.stage].grant ?? {})) {
+    game.stats.ammo[type] = Math.max(game.stats.ammo[type], n);
+  }
   game.stageInventory = { ...game.stats.ammo }; // retry restores this snapshot
   game.screen = 'playing';
   if (params.get('waves') !== '0') game.waves.startWave(1);
