@@ -225,6 +225,13 @@ export class EnemySystem {
     if (e.state === 'advance') {
       if (dist > e.c.range) { this.moveToward(e, playerPos, dt, this.speedOf(e)); return; }
       e.cover = this.pickCover(e, playerPos);
+      if (!e.cover && obstacleHit(this.headCenter(e), playerPos, this.game.obstacles)) {
+        // In range but blind, with no workable cover nearby: keep closing in
+        // until a shot line opens. Camping a spot with no line of fire would
+        // stall the wave — neither side can hit the other through obstacles.
+        this.moveToward(e, playerPos, dt, this.speedOf(e));
+        return;
+      }
       e.state = 'cover';
       e.coverTimer = e.c.hideTime * 0.5; // first hide is short: pressure early
     }
@@ -234,7 +241,7 @@ export class EnemySystem {
       e.coverTimer -= dt;
       if (e.coverTimer <= 0) { e.state = 'peek'; e.coverTimer = e.c.peekTime; e.hasShot = false; }
     } else if (e.state === 'peek') {
-      if (e.cover) this.moveToward(e, this.peekPoint(e, playerPos), dt, speed);
+      if (e.cover) this.moveToward(e, this.peekPoint(e.cover, e.peekSide, playerPos), dt, speed);
       if (!e.hasShot && e.coverTimer <= e.c.peekTime * 0.5) {
         this.shoot(e, playerPos);
         e.hasShot = true;
@@ -245,10 +252,15 @@ export class EnemySystem {
   }
 
   // Nearest obstacle roughly on the line between this archer and the player.
+  // Neighboring obstacles can bury both of a cover's peek points (the archer
+  // would shuttle between the trees permanently hidden — unhittable and
+  // unable to hit — stalling the wave), so a candidate must leave at least
+  // one peek side with a line of fire; the archer commits to that side.
   pickCover(e, playerPos) {
     const pos = e.mesh.position;
     let best = null;
     let bestD = 18;
+    let bestSide = 0;
     for (const o of this.game.obstacles) {
       const d = Math.hypot(o.x - pos.x, o.z - pos.z);
       if (d >= bestD) continue;
@@ -256,10 +268,25 @@ export class EnemySystem {
       const toArcher = new THREE.Vector2(pos.x - playerPos.x, pos.z - playerPos.z);
       if (toObstacle.length() >= toArcher.length()) continue; // must shield the archer
       if (toObstacle.normalize().dot(toArcher.normalize()) < 0.7) continue;
+      const side = this.exposedPeekSide(e, o, playerPos);
+      if (side === 0) continue; // every peek is buried behind neighbors
       best = o;
       bestD = d;
+      bestSide = side;
     }
+    if (best) e.peekSide = bestSide;
     return best;
+  }
+
+  // First peek side of `cover` (preferring the archer's preset one) whose
+  // peek point still sees the player; 0 when both are buried.
+  exposedPeekSide(e, cover, playerPos) {
+    for (const side of [e.peekSide, -e.peekSide]) {
+      const p = this.peekPoint(cover, side, playerPos);
+      p.y = e.c.height; // sight line from the head, where shoot() fires from
+      if (!obstacleHit(p, playerPos, this.game.obstacles)) return side;
+    }
+    return 0;
   }
 
   coverPoint(cover, playerPos) {
@@ -267,11 +294,11 @@ export class EnemySystem {
     return new THREE.Vector3(cover.x, 0, cover.z).addScaledVector(away, cover.radius + 0.7);
   }
 
-  peekPoint(e, playerPos) {
-    const c = this.coverPoint(e.cover, playerPos);
-    const away = new THREE.Vector3(e.cover.x - playerPos.x, 0, e.cover.z - playerPos.z).normalize();
+  peekPoint(cover, side, playerPos) {
+    const c = this.coverPoint(cover, playerPos);
+    const away = new THREE.Vector3(cover.x - playerPos.x, 0, cover.z - playerPos.z).normalize();
     const perp = new THREE.Vector3(-away.z, 0, away.x);
-    return c.addScaledVector(perp, e.peekSide * (e.cover.radius + 0.5));
+    return c.addScaledVector(perp, side * (cover.radius + 0.5));
   }
 
   shoot(e, playerPos) {
