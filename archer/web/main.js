@@ -219,6 +219,7 @@ game.syncUI = () => {
     power: game.player.power,
     wave: game.waves.waveIndex,
     totalWaves: CONFIG.stages[game.stage].waves.length,
+    totalStages: STAGE_ORDER.length,
     stage: game.stage,
     best: loadBest(),
     touch: game.touchMode,

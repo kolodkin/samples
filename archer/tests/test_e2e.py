@@ -1,5 +1,6 @@
 """End-to-end tests for the archer game (Playwright, Chromium)."""
 import re
+from pathlib import Path
 
 import pytest
 from playwright.sync_api import expect
@@ -26,12 +27,25 @@ def _lock_pointer(page):
     )
 
 
-def _drop_and_shoot_pickup(page):
+# Curated screenshots for the e2e visual report (/screenshots harvests
+# test-results/): taken inline at the moment a test just proved, not at its
+# final frame — the explosion while it splashes, the tint while it's frozen.
+SHOTS = Path(__file__).resolve().parent.parent / "test-results" / "shots"
+
+
+def _shot(page, name):
+    SHOTS.mkdir(parents=True, exist_ok=True)
+    page.screenshot(path=str(SHOTS / f"{name}.png"))
+
+
+def _drop_and_shoot_pickup(page, shot_name=None):
     """Kill an inert goblin, shoot the pickup it drops, return the pickup."""
     page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32, true)")
     page.evaluate("() => window.__ARCHER.killAll()")
     page.wait_for_function("() => window.__ARCHER.state.pickupCount === 1", timeout=2000)
     pickup = page.evaluate("() => window.__ARCHER.state.pickups[0]")
+    if shot_name:
+        _shot(page, shot_name)  # the pickup floating, before we shoot it
     page.evaluate("(p) => window.__ARCHER.fireAt(p.x, p.y, p.z)", pickup)
     page.wait_for_function("() => window.__ARCHER.state.pickupCount === 0", timeout=5000)
     return pickup
@@ -82,6 +96,7 @@ def test_each_stage_builds(server_url, page):
         state = page.evaluate("() => window.__ARCHER.state")
         assert state["stage"] == name
         assert len(state["obstacles"]) > 5
+        _shot(page, f"stage-{name}")
 
 
 def test_perch_visible_underfoot(server_url, page):
@@ -146,6 +161,7 @@ def test_trajectory_hint_ends_at_ground_impact(server_url, page):
     # The landing dot sits near the analytic impact point.
     assert abs(dots[-1]["z"] - 0.9) < 2
     assert abs(dots[-1]["x"]) < 0.1
+    _shot(page, "trajectory-hint")
 
 
 def test_click_locks_pointer_then_fires(server_url, page):
@@ -275,9 +291,11 @@ def test_goblin_advances_hits_once_and_despawns(server_url, page):
     _wait_ready(page)
     page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 10)")
     z0 = page.evaluate("() => window.__ARCHER.state.enemies[0].z")
-    page.wait_for_timeout(1500)
-    z1 = page.evaluate("() => window.__ARCHER.state.enemies[0].z")
-    assert z1 > z0 + 3  # closing in on the player at z=34
+    # Closing in on the player at z=34 (condition-based: wall-clock sleeps
+    # under-shoot when SwiftShader fps drops and the dt clamp slows game time).
+    page.wait_for_function(
+        f"() => window.__ARCHER.state.enemies[0].z > {z0} + 3", timeout=15000
+    )
     page.wait_for_function("() => window.__ARCHER.state.hp < 100", timeout=15000)
     # One strike and the monster is spent: it disappears after landing its hit.
     page.wait_for_function("() => window.__ARCHER.state.enemyCount === 0", timeout=2000)
@@ -347,6 +365,7 @@ def test_skeleton_takes_cover_behind_obstacle(server_url, page):
     # Hugging its obstacle (cover point is edge+0.7; a peek adds ~edge+0.5
     # sideways, worst case ~2 m from the edge).
     assert _nearest_obstacle_gap(state) < 2.0
+    _shot(page, "skeleton-behind-cover")
 
 
 def test_skeleton_peek_is_never_buried_by_neighbor_trees(server_url, page):
@@ -410,6 +429,7 @@ def test_exploding_arrow_splashes_the_group(server_url, page):
     state = page.evaluate("() => window.__ARCHER.state")
     assert state["enemyCount"] < 3
     assert all(e["hp"] < 40 for e in state["enemies"])
+    _shot(page, "exploding-splash")
 
 
 def test_freezing_arrow_halts_advance_then_thaws(server_url, page):
@@ -427,6 +447,7 @@ def test_freezing_arrow_halts_advance_then_thaws(server_url, page):
     page.wait_for_timeout(1500)  # frozen solid: no advance, no attacks
     assert page.evaluate("() => window.__ARCHER.state.enemies[0].z") == z0
     assert page.evaluate("() => window.__ARCHER.state.hp") == 100
+    _shot(page, "frozen-ogre")  # while the ice tint is on
     # Thaws after freezeTime (3 s game time). Generous wall-clock timeout:
     # SwiftShader renders slowly enough that the dt clamp (0.05 s) stretches
     # game seconds well past wall seconds (see the skeleton-volley test).
@@ -455,6 +476,7 @@ def test_burning_arrow_ticks_and_spreads(server_url, page):
         "() => window.__ARCHER.state.enemies.length > 1 && window.__ARCHER.state.enemies[1].burning",
         timeout=5000,
     )
+    _shot(page, "burning-spread")  # both ogres alight
 
 
 # Smart auto: the ✨ mode reads the battlefield per shot — a special is
@@ -483,6 +505,7 @@ def test_auto_picks_exploding_for_a_cluster(server_url, page):
     page.evaluate("() => window.__ARCHER.giveAmmo('exploding', 1)")
     _spawn_cluster(page)
     assert page.evaluate("() => window.__ARCHER.state.selected") == "exploding"
+    _shot(page, "auto-picks-exploding-for-cluster")
 
 
 def test_auto_picks_freezing_for_an_ogre(server_url, page):
@@ -615,7 +638,7 @@ def test_drops_spawn_and_are_shot_to_collect(server_url, page):
     page.evaluate("() => window.__ARCHER.setDropChance(1)")
     page.evaluate("() => window.__ARCHER.setHealChance(0)")  # force an ammo drop
     ammo0 = page.evaluate("() => window.__ARCHER.state.ammo")
-    pickup = _drop_and_shoot_pickup(page)
+    pickup = _drop_and_shoot_pickup(page, shot_name="ammo-pickup")
     ammo1 = page.evaluate("() => window.__ARCHER.state.ammo")
     assert 15 <= ammo1[pickup["type"]] - ammo0[pickup["type"]] <= 25
 
@@ -627,7 +650,7 @@ def test_heal_potion_drop_restores_hp_capped_at_max(server_url, page):
     page.evaluate("() => window.__ARCHER.setHealChance(1)")  # force a potion drop
     # Wounded player: the potion restores CONFIG.drops.heal.amount HP.
     page.evaluate("() => window.__ARCHER.setPlayerHp(50)")
-    assert _drop_and_shoot_pickup(page)["type"] == "heal"
+    assert _drop_and_shoot_pickup(page, shot_name="heal-potion")["type"] == "heal"
     assert page.evaluate("() => window.__ARCHER.state.hp") == 75
     # Near full: healing clamps at max HP instead of overhealing.
     page.evaluate("() => window.__ARCHER.setPlayerHp(90)")
@@ -640,12 +663,15 @@ def _clear_final_wave(page, wave):
     page.evaluate("() => window.__ARCHER.setDropChance(0)")
     page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
     page.evaluate(f"() => window.__ARCHER.skipToWave({wave})")
+    # Generous wall-clock timeout: a 16-enemy final wave spawns over ~13 game
+    # seconds, and under SwiftShader the dt clamp stretches game seconds well
+    # past wall seconds (see the skeleton-volley test).
     page.wait_for_function(
         """() => {
           window.__ARCHER.killAll();
           return window.__ARCHER.state.screen !== 'playing';
         }""",
-        timeout=30000,
+        timeout=90000,
     )
 
 
@@ -654,6 +680,7 @@ def test_meadow_clears_after_three_waves_then_forest(server_url, page):
     _wait_ready(page)
     _clear_final_wave(page, 3)  # meadow has only 3 waves
     assert page.evaluate("() => window.__ARCHER.state.screen") == "stageClear"
+    _shot(page, "stage-clear-screen")
     page.evaluate("() => window.__ARCHER.nextStage()")
     state = page.evaluate("() => window.__ARCHER.state")
     assert state["stage"] == "forest"
@@ -673,6 +700,9 @@ def test_volcano_final_wave_wins_the_game(server_url, page):
     _wait_ready(page)
     _clear_final_wave(page, 5)  # volcano is the last stage: clearing it wins
     assert page.evaluate("() => window.__ARCHER.state.screen") == "victory"
+    # The victory banner counts the stages it actually took to win.
+    expect(page.get_by_test_id("victory-screen")).to_contain_text("All 5 lands defended!")
+    _shot(page, "victory-screen")
 
 
 def test_retry_restores_stage_start_inventory(server_url, page):
@@ -829,6 +859,7 @@ def test_touch_enables_touch_hud(server_url, page):
     _touch(page, "touchend", 400, 300)
     expect(page.get_by_test_id("fire-btn")).to_be_visible()
     expect(page.get_by_test_id("pause-btn")).to_be_visible()
+    _shot(page, "touch-hud")
 
 
 def test_fire_button_shoots_on_tap(server_url, page):
@@ -898,12 +929,14 @@ def test_bow_viewmodel_stays_on_screen_in_portrait(server_url, page):
         }""",
         timeout=5000,
     )
+    _shot(page, "portrait-bow")
 
 
 def test_title_screen_and_start_button(server_url, page):
     page.goto(server_url + "/?seed=1&waves=0")  # no autostart: land on the title
     _wait_ready(page)
     expect(page.get_by_test_id("title-screen")).to_be_visible()
+    _shot(page, "title-screen")
     page.get_by_test_id("start-btn").click()
     page.wait_for_function("() => window.__ARCHER.state.screen === 'playing'", timeout=5000)
     expect(page.get_by_test_id("hud")).to_be_visible()
@@ -922,6 +955,7 @@ def test_hud_reflects_score_ammo_and_selection(server_url, page):
     # An ogre in the sights makes freezing the auto pick, and the HUD shows it.
     page.evaluate("() => window.__ARCHER.spawnEnemy('ogre', 0, 20, true)")
     expect(page.get_by_test_id("slot-freezing")).to_have_class(re.compile(r"\bactive\b"))
+    _shot(page, "hud-auto-freezing-pick")
     # Wave counter shows the current stage's own wave count (forest: 4).
     expect(page.get_by_test_id("wave")).to_contain_text("forest")
     expect(page.get_by_test_id("wave")).to_contain_text("/4")
@@ -945,6 +979,7 @@ def test_radar_tracks_enemies(server_url, page):
     page.evaluate("() => window.__ARCHER.spawnEnemy('ogre', 0, -34, true)")
     far = page.evaluate("() => window.__ARCHER.state.radar[2]")
     assert far["clamped"] and far["y"] < 0
+    _shot(page, "radar-contacts")
 
 
 def test_game_over_screen_retry_button(server_url, page):
@@ -954,6 +989,7 @@ def test_game_over_screen_retry_button(server_url, page):
     page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32)")
     page.wait_for_function("() => window.__ARCHER.state.screen === 'gameOver'", timeout=10000)
     expect(page.get_by_test_id("gameover-screen")).to_be_visible()
+    _shot(page, "game-over-screen")
     page.get_by_test_id("retry-btn").click()
     page.wait_for_function("() => window.__ARCHER.state.screen === 'playing'", timeout=5000)
     assert page.evaluate("() => window.__ARCHER.state.hp") == 100

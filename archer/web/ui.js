@@ -144,7 +144,7 @@ function Screens({ s, actions }) {
   }
   if (s.screen === 'victory') {
     return html`
-      <${Screen} testid="victory-screen" title="All three lands defended!">
+      <${Screen} testid="victory-screen" title="All ${s.totalStages} lands defended!">
         <p>Final score: ${s.score}</p>
         <button data-testid="restart-btn" onClick=${actions.restart}>Play again</button>
       <//>`;
