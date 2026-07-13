@@ -29,12 +29,24 @@ function useStore(store) {
   return s;
 }
 
+// Quiver slots in HUD (and digit-key) order. 'auto' is a mode, not an ammo
+// type: it fires the strongest special in stock, so it has no count.
 const SLOTS = [
+  ['auto', 'Auto', '🅰️'],
   ['normal', 'Normal', '🏹'],
   ['exploding', 'Explode', '💥'],
   ['freezing', 'Freeze', '❄️'],
   ['burning', 'Burn', '🔥'],
 ];
+
+// Auto highlights while it's the chosen mode; an ammo slot highlights while
+// it's what the next shot fires — so in auto mode the auto-picked type
+// lights up alongside Auto, and a pinned slot lights up alone.
+function slotClass(s, type) {
+  const active = type === 'auto' ? s.mode === 'auto' : s.selected === type;
+  const empty = type !== 'auto' && type !== 'normal' && !s.ammo[type];
+  return `slot ${active ? 'active' : ''} ${empty ? 'empty' : ''}`;
+}
 
 // The one fire control on touch. preventDefault stops the synthetic mouse
 // events a tap would otherwise generate.
@@ -79,13 +91,16 @@ function Hud({ s, actions }) {
       <${PowerControls} s=${s} actions=${actions} />
       <div class="quiver">
         ${SLOTS.map(([type, label, icon]) => html`
-          <div
-            class="slot ${s.selected === type ? 'active' : ''} ${type !== 'normal' && !s.ammo[type] ? 'empty' : ''}"
+          <button
+            class=${slotClass(s, type)}
             data-testid="slot-${type}" title=${label} aria-label=${label}
+            onPointerDown=${(e) => { e.preventDefault(); actions.selectAmmo(type); }}
+            onContextMenu=${(e) => e.preventDefault()}
           >
             <span class="icon" aria-hidden="true">${icon}</span>
-            <span class="count" data-testid="ammo-${type}">${type === 'normal' ? '∞' : s.ammo[type]}</span>
-          </div>
+            ${type !== 'auto' && html`
+              <span class="count" data-testid="ammo-${type}">${type === 'normal' ? '∞' : s.ammo[type]}</span>`}
+          </button>
         `)}
       </div>
       ${s.touch && html`<${TouchControls} actions=${actions} />`}
@@ -106,7 +121,7 @@ function Screens({ s, actions }) {
   if (s.screen === 'title') {
     return html`
       <${Screen} testid="title-screen" title="ARCHER">
-        <p>Click to take aim, then click to shoot. Set power with the +/− buttons (or +/− keys). The strongest arrow in your quiver fires first, automatically.</p>
+        <p>Click to take aim, then click to shoot. Set power with the +/− buttons (or +/− keys). The 🅰️ Auto slot fires the strongest arrow in your quiver first; click a quiver slot (or press 1–5) to choose the arrow yourself.</p>
         <p>On touch: drag to aim, the 🏹 button shoots.</p>
         <p data-testid="best">Best: ${s.best.score} pts, stage ${s.best.stage}/3</p>
         <button data-testid="start-btn" onClick=${actions.start}>Start</button>

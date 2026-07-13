@@ -46,7 +46,9 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000;
   left: 50%; transform: translateX(-50%); display: flex; gap: 8px; }
 .slot { display: flex; gap: 6px; align-items: baseline; padding: 6px 12px;
   background: rgba(0, 0, 0, 0.45); border-radius: 6px; font-size: 14px;
-  border: 1px solid transparent; }
+  border: 1px solid transparent; color: inherit; font-family: inherit;
+  text-shadow: inherit; cursor: pointer; pointer-events: auto; touch-action: none; }
+.slot:active { background: rgba(60, 45, 0, 0.6); }
 .slot.active { border-color: #ffd257; background: rgba(60, 45, 0, 0.6); }
 .slot.empty { opacity: 0.45; }
 .slot .count { font-variant-numeric: tabular-nums; }

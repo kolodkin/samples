@@ -65,18 +65,35 @@ loadStage(initialStage);
 game.player = new Player(camera);
 game.arrows = new ArrowSystem(game);
 const trajectoryHint = new TrajectoryHint(game);
-// No manual arrow selection: every shot spends the strongest special in
-// stock, then normal arrows once the quiver is dry. Priority is the
-// declaration order of CONFIG.arrow.types — strongest special first.
+// Ammo selection. 'auto' (the default) spends the strongest special in
+// stock, then normal arrows once the quiver is dry — priority is the
+// declaration order of CONFIG.arrow.types, strongest special first. A
+// specific type pins every shot to that type until it runs dry or the
+// player picks another slot.
 const AMMO_PRIORITY = Object.keys(CONFIG.arrow.types).filter((t) => t !== 'normal');
+game.ammoMode = 'auto';
 function selectedType() {
+  const m = game.ammoMode;
+  if (m === 'normal' || (m !== 'auto' && game.stats.ammo[m] > 0)) return m;
   return AMMO_PRIORITY.find((t) => game.stats.ammo[t] > 0) ?? 'normal';
+}
+function selectAmmo(mode) {
+  if (game.screen !== 'playing') return;
+  // An empty special can't be pinned; auto and the infinite normal always can.
+  if (mode !== 'auto' && mode !== 'normal' && !game.stats.ammo[mode]) return;
+  game.ammoMode = mode;
+  game.syncUI();
 }
 function fireArrow() {
   if (game.screen !== 'playing') return; // one gate for every fire path
   if (!game.player.canShoot()) return; // still re-nocking from the last shot
   const type = selectedType();
-  if (type !== 'normal') game.stats.ammo[type] -= 1;
+  if (type !== 'normal') {
+    game.stats.ammo[type] -= 1;
+    // The pinned type just ran dry: unpin so the HUD never points at a
+    // selection the next shot can't honor.
+    if (game.ammoMode === type && game.stats.ammo[type] === 0) game.ammoMode = 'auto';
+  }
   game.arrows.fire(
     game.player.aimOrigin(), game.player.aimDir(), game.player.power, type,
     game.player.arrowSpawnPoint(),
@@ -119,13 +136,17 @@ function gameOver() {
 }
 game.effects = new Effects(scene);
 game.effects.setSnow(game.stage === 'iceberg');
-// +/- keys mirror the HUD power buttons: under pointer lock the cursor is
-// captive, so desktop players adjust power from the keyboard.
+// +/- keys mirror the HUD power buttons, and digits 1-5 mirror the quiver
+// slots (in HUD order): under pointer lock the cursor is captive, so
+// desktop players adjust power and pick ammo from the keyboard.
 const POWER_KEYS = { Equal: 1, NumpadAdd: 1, Minus: -1, NumpadSubtract: -1 };
+const AMMO_KEY_ORDER = ['auto', ...Object.keys(CONFIG.arrow.types)];
 document.addEventListener('keydown', (e) => {
   if (game.screen !== 'playing') return;
   const dir = POWER_KEYS[e.code];
   if (dir) adjustPower(dir);
+  const slot = /^(?:Digit|Numpad)([1-5])$/.exec(e.code);
+  if (slot) selectAmmo(AMMO_KEY_ORDER[slot[1] - 1]);
 });
 game.waves = new WaveManager(game);
 const BEST_KEY = 'archer.best';
@@ -148,6 +169,10 @@ function startGame(stageIndex) {
   loadStage(stageIndex);
   game.player.resetHp();
   game.stageInventory = { ...game.stats.ammo }; // retry restores this snapshot
+  // A retry snapshot may not stock the pinned type — unpin rather than
+  // start the stage pointing at an empty slot.
+  const m = game.ammoMode;
+  if (m !== 'auto' && m !== 'normal' && !game.stats.ammo[m]) game.ammoMode = 'auto';
   game.screen = 'playing';
   if (params.get('waves') !== '0') game.waves.startWave(1);
   game.syncUI();
@@ -171,6 +196,7 @@ game.syncUI = () => store.set({
   score: game.stats.score,
   ammo: { ...game.stats.ammo },
   selected: selectedType(),
+  mode: game.ammoMode,
   power: game.player.power,
   wave: game.waves.waveIndex,
   totalWaves: CONFIG.waves.perStage,
@@ -191,6 +217,7 @@ initUI(store, {
   },
   fire: fireArrow,
   power: (dir) => { if (game.screen === 'playing') adjustPower(dir); },
+  selectAmmo,
 });
 game.syncUI();
 
@@ -295,6 +322,7 @@ window.__ARCHER = {
       best: loadBest(),
       ammo: { ...game.stats.ammo },
       selected: selectedType(),
+      mode: game.ammoMode,
       stage: game.stage,
       obstacles: game.obstacles,
       hp: game.player.hp,
@@ -342,6 +370,7 @@ window.__ARCHER = {
   spawnEnemy: (type, x, z, inert = false) => { game.enemies.spawn(type, x, z, inert); },
   setPlayerHp: (n) => { game.player.hp = n; game.syncUI(); },
   giveAmmo: (type, n) => { game.stats.ammo[type] += n; game.syncUI(); },
+  selectAmmo: (mode) => selectAmmo(mode),
   setDropChance: (c) => { CONFIG.drops.chance = c; },
   setHealChance: (c) => { CONFIG.drops.heal.chance = c; },
   killAll: () => {
