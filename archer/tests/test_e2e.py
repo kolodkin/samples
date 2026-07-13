@@ -699,8 +699,11 @@ def test_volcano_final_wave_wins_the_game(server_url, page):
     _wait_ready(page)
     _clear_final_wave(page, 5)  # volcano is the last stage: clearing it wins
     assert page.evaluate("() => window.__ARCHER.state.screen") == "victory"
-    # The victory banner counts the stages it actually took to win.
-    expect(page.get_by_test_id("victory-screen")).to_contain_text("All 5 lands defended!")
+    # The victory banner quotes the game's real stage count, not a literal.
+    total = page.evaluate("() => window.__ARCHER.state.totalStages")
+    expect(page.get_by_test_id("victory-screen")).to_contain_text(
+        f"All {total} lands defended!"
+    )
     _shot(page, "victory-screen")
 
 
@@ -935,12 +938,25 @@ def test_title_screen_and_start_button(server_url, page):
     page.goto(server_url + "/?seed=1&waves=0")  # no autostart: land on the title
     _wait_ready(page)
     expect(page.get_by_test_id("title-screen")).to_be_visible()
-    # The best-so-far line counts stages out of the real stage count.
-    expect(page.get_by_test_id("best")).to_contain_text("stage 0/5")
     _shot(page, "title-screen")
     page.get_by_test_id("start-btn").click()
     page.wait_for_function("() => window.__ARCHER.state.screen === 'playing'", timeout=5000)
     expect(page.get_by_test_id("hud")).to_be_visible()
+
+
+def test_screen_copy_counts_stages_from_the_stage_list(server_url, page):
+    # Guard against hardcoded stage counts in UI copy — the victory banner
+    # and the title's best-so-far line both went stale when the arc grew
+    # from 3 to 5 stages. Every "stage x/y" in rendered screen text must
+    # quote the game's real stage count, never a literal.
+    page.goto(server_url + "/?seed=1&waves=0")  # no autostart: title screen
+    _wait_ready(page)
+    total = page.evaluate("() => window.__ARCHER.state.totalStages")
+    assert isinstance(total, int) and total >= 3
+    text = page.get_by_test_id("title-screen").text_content()
+    denominators = re.findall(r"stage\s+\d+/(\d+)", text)
+    assert denominators, "expected a 'stage x/y' line on the title screen"
+    assert all(int(d) == total for d in denominators)
 
 
 def test_hud_reflects_score_ammo_and_selection(server_url, page):

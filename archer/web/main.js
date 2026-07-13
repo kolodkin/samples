@@ -379,6 +379,7 @@ window.__ARCHER = {
       radar: radarBlips(game),
       wave: game.waves.waveIndex,
       waveState: game.waves.state,
+      totalStages: STAGE_ORDER.length,
       dropTuning: game.waves.dropTuning(),
       pickupCount: game.waves.pickups.length,
       pickups: game.waves.pickups.map((p) => ({
