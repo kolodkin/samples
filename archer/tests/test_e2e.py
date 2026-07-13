@@ -450,36 +450,68 @@ def test_burning_arrow_ticks_and_spreads(server_url, page):
     )
 
 
-def test_strongest_special_is_selected_automatically(server_url, page):
+# Smart auto: the ✨ mode reads the battlefield per shot — a special is
+# spent only where it pays for itself (cluster, ogre, spreadable pair);
+# stragglers and empty skies get the free normal arrow. The player at
+# (0, 3.2, 34) boots aiming dead ahead along -z, so enemies spawned near
+# x=0 sit on the aim line.
+
+
+def test_auto_conserves_specials_on_a_lone_target(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
-    # Empty quiver: the basic arrow is up.
+    page.evaluate("() => window.__ARCHER.giveAmmo('exploding', 5)")
+    page.evaluate("() => window.__ARCHER.giveAmmo('freezing', 5)")
+    page.evaluate("() => window.__ARCHER.giveAmmo('burning', 5)")
+    # A full quiver but nothing aimed at: the free arrow is up.
     assert page.evaluate("() => window.__ARCHER.state.selected") == "normal"
-    # Stocking specials auto-selects the strongest one, whatever the pickup order.
-    page.evaluate("() => window.__ARCHER.giveAmmo('burning', 1)")
-    assert page.evaluate("() => window.__ARCHER.state.selected") == "burning"
-    page.evaluate("() => window.__ARCHER.giveAmmo('freezing', 1)")
-    assert page.evaluate("() => window.__ARCHER.state.selected") == "freezing"
+    # A lone goblin is not worth a special either.
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 20, true)")
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "normal"
+
+
+def test_auto_picks_exploding_for_a_cluster(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
     page.evaluate("() => window.__ARCHER.giveAmmo('exploding', 1)")
+    # Three goblins bunched inside the blast radius on the aim line.
+    for x, z in ((0, 20), (1.5, 19), (-1.5, 21)):
+        page.evaluate(f"() => window.__ARCHER.spawnEnemy('goblin', {x}, {z}, true)")
     assert page.evaluate("() => window.__ARCHER.state.selected") == "exploding"
 
 
-def test_specials_are_spent_strongest_first_then_normal(server_url, page):
+def test_auto_picks_freezing_for_an_ogre(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.giveAmmo('exploding', 5)")
+    page.evaluate("() => window.__ARCHER.giveAmmo('freezing', 5)")
+    # A lone ogre: freezing (shatter setup), not exploding — no cluster.
+    page.evaluate("() => window.__ARCHER.spawnEnemy('ogre', 0, 20, true)")
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "freezing"
+
+
+def test_auto_picks_burning_for_a_spreadable_pair(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.giveAmmo('burning', 5)")
+    # Two goblins within the burn spread radius of each other.
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0.8, 20, true)")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', -0.8, 20, true)")
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "burning"
+
+
+def test_auto_spends_the_picked_special_and_falls_back(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
     _lock_pointer(page)
-    page.evaluate("() => window.__ARCHER.giveAmmo('burning', 1)")
     page.evaluate("() => window.__ARCHER.giveAmmo('exploding', 1)")
-    # First shot spends the exploding arrow (strongest in stock).
+    for x, z in ((0, 20), (1.5, 19), (-1.5, 21)):
+        page.evaluate(f"() => window.__ARCHER.spawnEnemy('goblin', {x}, {z}, true)")
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "exploding"
+    # The shot spends the exploding arrow; the stock is dry, so the next
+    # pick is the free normal arrow even though the cluster still stands.
     page.mouse.click(640, 360)
     page.wait_for_function("() => window.__ARCHER.state.ammo.exploding === 0", timeout=2000)
-    assert page.evaluate("() => window.__ARCHER.state.selected") == "burning"
-    # Next shot spends the burning arrow; the quiver is dry, back to normal.
-    page.wait_for_function("() => window.__ARCHER.state.canShoot === true", timeout=2000)
-    page.mouse.click(640, 360)
-    page.wait_for_function("() => window.__ARCHER.state.ammo.burning === 0", timeout=2000)
-    # Quiver dry: back to the infinite normal arrow (its firing is covered
-    # by test_click_locks_pointer_then_fires).
     assert page.evaluate("() => window.__ARCHER.state.selected") == "normal"
 
 
@@ -489,16 +521,16 @@ def test_manual_selection_pins_type_until_dry(server_url, page):
     _lock_pointer(page)
     page.evaluate("() => window.__ARCHER.giveAmmo('exploding', 1)")
     page.evaluate("() => window.__ARCHER.giveAmmo('burning', 1)")
-    # Auto puts the strongest special up; pinning burning overrides it.
-    assert page.evaluate("() => window.__ARCHER.state.selected") == "exploding"
+    # Auto conserves on an empty field; pinning burning overrides it.
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "normal"
     page.evaluate("() => window.__ARCHER.selectAmmo('burning')")
     assert page.evaluate("() => window.__ARCHER.state.selected") == "burning"
     page.mouse.click(640, 360)
     page.wait_for_function("() => window.__ARCHER.state.ammo.burning === 0", timeout=2000)
-    # The pinned type ran dry: unpinned back to auto, which has exploding up.
+    # The pinned type ran dry: unpinned back to auto's battlefield pick.
     state = page.evaluate("() => window.__ARCHER.state")
     assert state["mode"] == "auto"
-    assert state["selected"] == "exploding"
+    assert state["selected"] == "normal"
 
 
 def test_pinning_normal_conserves_specials(server_url, page):
@@ -794,7 +826,11 @@ def test_quiver_highlights_the_auto_selected_arrow(server_url, page):
     # Auto mode: the ✨ slot and the arrow it picked highlight together.
     expect(page.get_by_test_id("slot-auto")).to_have_class(re.compile(r"\bactive\b"))
     expect(page.get_by_test_id("slot-normal")).to_have_class(re.compile(r"\bactive\b"))
+    # A stocked special lights up once the battlefield calls for it — the
+    # HUD follows the smart pick as enemies appear, not just on shots.
     page.evaluate("() => window.__ARCHER.giveAmmo('exploding', 1)")
+    for x, z in ((0, 20), (1.5, 19), (-1.5, 21)):
+        page.evaluate(f"() => window.__ARCHER.spawnEnemy('goblin', {x}, {z}, true)")
     expect(page.get_by_test_id("slot-exploding")).to_have_class(re.compile(r"\bactive\b"))
 
 
@@ -807,11 +843,12 @@ def test_quiver_slot_click_pins_ammo(server_url, page):
     assert page.evaluate("() => window.__ARCHER.state.mode") == "burning"
     expect(page.get_by_test_id("slot-burning")).to_have_class(re.compile(r"\bactive\b"))
     expect(page.get_by_test_id("slot-auto")).not_to_have_class(re.compile(r"\bactive\b"))
-    # Clicking ✨ hands the choice back: the strongest special lights up again.
+    # Clicking ✨ hands the choice back to auto's battlefield pick (an empty
+    # field: the free normal arrow).
     page.get_by_test_id("slot-auto").dispatch_event("pointerdown")
     assert page.evaluate("() => window.__ARCHER.state.mode") == "auto"
     expect(page.get_by_test_id("slot-auto")).to_have_class(re.compile(r"\bactive\b"))
-    expect(page.get_by_test_id("slot-exploding")).to_have_class(re.compile(r"\bactive\b"))
+    expect(page.get_by_test_id("slot-normal")).to_have_class(re.compile(r"\bactive\b"))
 
 
 def test_touch_pause_and_resume(server_url, page):
@@ -862,7 +899,8 @@ def test_hud_reflects_score_ammo_and_selection(server_url, page):
     expect(page.get_by_test_id("score")).to_have_text("150")
     page.evaluate("() => window.__ARCHER.giveAmmo('freezing', 4)")
     expect(page.get_by_test_id("ammo-freezing")).to_have_text("4")
-    # The freshly stocked special becomes the auto-selected arrow.
+    # An ogre in the sights makes freezing the auto pick, and the HUD shows it.
+    page.evaluate("() => window.__ARCHER.spawnEnemy('ogre', 0, 20, true)")
     expect(page.get_by_test_id("slot-freezing")).to_have_class(re.compile(r"\bactive\b"))
     # Wave counter shows the current stage's own wave count (forest: 4).
     expect(page.get_by_test_id("wave")).to_contain_text("forest")

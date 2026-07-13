@@ -66,21 +66,58 @@ loadStage(initialStage);
 game.player = new Player(camera);
 game.arrows = new ArrowSystem(game);
 const trajectoryHint = new TrajectoryHint(game);
-// Ammo selection. 'auto' (the default) spends the strongest special in
-// stock, then normal arrows once the quiver is dry — priority is the
-// declaration order of CONFIG.arrow.types, strongest special first. A
+// Ammo selection. 'auto' (the default) reads the battlefield per shot and
+// spends a special only where it pays for itself (see autoType). A
 // specific type pins every shot to that type until it runs dry or the
 // player picks another slot.
-const AMMO_PRIORITY = Object.keys(CONFIG.arrow.types).filter((t) => t !== 'normal');
 game.ammoMode = 'auto';
 // Auto and the infinite normal arrow are always pinnable; a special only
 // while in stock. syncUI() re-checks this on every state change, so a
 // pinned special that runs dry (last shot spent, or a retry snapshot
 // without it) unpins back to auto — the mode never points at an empty slot.
 const stocked = (m) => m === 'auto' || m === 'normal' || game.stats.ammo[m] > 0;
+// The enemy under the crosshair: nearest along the aim ray, matched in the
+// XZ plane only — pitch is arc compensation on long shots, so it must never
+// unselect a target. The slack is a generous targeting cone, not a hitbox.
+const AIM_SLACK = 1.5;
+function aimedEnemy() {
+  const origin = game.player.aimOrigin();
+  const dir = game.player.aimDir();
+  const flat = Math.hypot(dir.x, dir.z);
+  if (flat < 1e-6) return null; // aiming straight up or down
+  const dx = dir.x / flat, dz = dir.z / flat;
+  let best = null;
+  let bestT = Infinity;
+  for (const e of game.enemies.list) {
+    const ex = e.mesh.position.x - origin.x, ez = e.mesh.position.z - origin.z;
+    const t = ex * dx + ez * dz;
+    if (t <= 0 || t >= bestT) continue;
+    if (Math.abs(ex * dz - ez * dx) < e.c.bodyRadius + AIM_SLACK) {
+      best = e;
+      bestT = t;
+    }
+  }
+  return best;
+}
+// Smart auto: exploding into a cluster, freezing at an unfrozen ogre,
+// burning where the fire can spread — otherwise the free normal arrow.
+// Stragglers never drain the quiver.
+function autoType() {
+  const aimed = aimedEnemy();
+  if (!aimed) return 'normal';
+  const packSize = (r) => game.enemies.list.filter(
+    (e) => e.mesh.position.distanceTo(aimed.mesh.position) < r,
+  ).length; // the aimed enemy counts itself
+  const types = CONFIG.arrow.types;
+  const { ammo } = game.stats;
+  if (ammo.exploding > 0 && packSize(types.exploding.radius) >= 3) return 'exploding';
+  if (ammo.freezing > 0 && aimed.type === 'ogre' && aimed.frozen <= 0) return 'freezing';
+  if (ammo.burning > 0 && aimed.burn <= 0 && packSize(types.burning.spreadRadius) >= 2) return 'burning';
+  return 'normal';
+}
 function selectedType() {
   if (game.ammoMode !== 'auto') return game.ammoMode;
-  return AMMO_PRIORITY.find((t) => game.stats.ammo[t] > 0) ?? 'normal';
+  return autoType();
 }
 function selectAmmo(mode) {
   if (game.screen !== 'playing' || !stocked(mode)) return;
@@ -298,6 +335,7 @@ for (const type of ['touchend', 'touchcancel']) {
 
 let last = performance.now();
 let framesRendered = 0;
+let lastAutoPick = null; // HUD follows the smart pick as aim/enemies move
 function tick(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
@@ -308,6 +346,13 @@ function tick(now) {
     game.enemies.update(dt);
     game.waves.update(dt);
     updateRadar(game);
+    // Smart auto re-picks continuously (aim moves, enemies move), but the
+    // UI store only hears about mutations — resync when the pick changes.
+    const pick = selectedType();
+    if (pick !== lastAutoPick) {
+      lastAutoPick = pick;
+      game.syncUI();
+    }
   }
   game.effects.update(dt);
   // Stage ambient motion (canopy sway), always on: the stage breathes even
