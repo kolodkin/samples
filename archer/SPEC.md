@@ -76,6 +76,11 @@ sensitivity × `CONFIG.touch.lookScale`.
 - **Skeleton archer** — advances into range, hides behind the nearest
   obstacle on the player line, peeks to shoot, hides again (cover/peek
   point selection: `pickCover()`/`coverPoint()` in `web/enemies.js`).
+  Cover is only accepted if at least one peek point has a line of fire to
+  the player (neighboring obstacles can bury both peek lanes — the archer
+  would shuttle between trees permanently hidden and stall the wave); it
+  commits to the exposed side. With no workable cover and no line of fire
+  from where it stands, it keeps advancing until a shot line opens.
   Projectiles drop at 4 m/s² with compensated aim, so long shots arc
   visibly; like player arrows they use segment-vs-sphere collision, so
   they cannot tunnel through the player even at low frame rates.
@@ -136,7 +141,8 @@ yaw/pitch/touch/power, nocked/canShoot, arrows with physics vs visual
 positions and trail length), and test hooks: `fireAt()` (gravity-compensated),
 `spawnEnemy()` (optional `inert` flag disables the AI), `skipToWave()`,
 `killAll()`, `giveAmmo()`, `setDropChance()`, `setHealChance()`,
-`setPlayerHp()`, `start()`,
+`setObstacles()` (replace the collision-obstacle list to build exact cover
+layouts; stage meshes stay), `setPlayerHp()`, `start()`,
 `nextStage()`, `retryStage()`, `visiblePixelCount()`. Tests boot with
 `?autostart=1&seed=42&waves=0` for a clean battlefield and park inert
 target dummies at melee reach to avoid leading moving targets (live melee

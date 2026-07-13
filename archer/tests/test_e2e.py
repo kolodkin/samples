@@ -332,6 +332,44 @@ def test_skeleton_takes_cover_behind_obstacle(server_url, page):
     assert _nearest_obstacle_gap(state) < 2.0
 
 
+def test_skeleton_peek_is_never_buried_by_neighbor_trees(server_url, page):
+    # Regression: a cover tree whose both peek lanes are buried by neighbor
+    # trees must not be chosen — the skeleton would shuttle between the trees
+    # permanently hidden and stall the wave (see SPEC.md, Enemies).
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
+    # Player is at (0, 3.2, 34). Tree at (0, 20) is the nearest shielding
+    # cover for a skeleton at (0, 16); its peek points sit at (±1.5, 18.3),
+    # and the flanking trees sit dead on the sightline from each peek point
+    # to the player (at z=24 the ray from (±1.5, 18.3) passes x=±0.955).
+    page.evaluate(
+        """() => {
+          window.__ARCHER.setObstacles([
+            { x: 0, z: 20, radius: 1, height: 5 },      // chosen cover
+            { x: 0.955, z: 24, radius: 1, height: 5 },  // buries the right peek
+            { x: -0.955, z: 24, radius: 1, height: 5 }, // buries the left peek
+          ]);
+          window.__ARCHER.spawnEnemy('skeleton', 0, 16);
+        }"""
+    )
+    # The archer must eventually hold a position with a clear line to the
+    # player — i.e. it is hittable at least once per hide/peek cycle.
+    page.wait_for_function(
+        """() => {
+          const P = { x: 0, z: 34 };
+          const e = window.__ARCHER.state.enemies[0];
+          const dx = e.x - P.x, dz = e.z - P.z;
+          return !window.__ARCHER.state.obstacles.some((o) => {
+            const t = Math.max(0, Math.min(1,
+              ((o.x - P.x) * dx + (o.z - P.z) * dz) / (dx * dx + dz * dz)));
+            return Math.hypot(P.x + t * dx - o.x, P.z + t * dz - o.z) < o.radius;
+          });
+        }""",
+        timeout=30000,
+    )
+
+
 def test_skeleton_shoots_the_player(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
