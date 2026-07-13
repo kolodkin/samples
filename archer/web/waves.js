@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
+import { setShadows } from './relief.js';
 
 const DROP_TYPES = ['exploding', 'freezing', 'burning'];
 const DROP_COLORS = { exploding: 0xff7733, freezing: 0x66ddff, burning: 0xff4422, heal: 0xff3366 };
@@ -98,6 +99,7 @@ export class WaveManager {
       glowMaterial(DROP_COLORS[type]),
     );
     mesh.position.set(e.mesh.position.x, 1.1, e.mesh.position.z);
+    setShadows(mesh, false); // floats: the cast shadow anchors it to the ground
     this.game.scene.add(mesh);
     this.pickups.push({ mesh, type, age: 0 });
   }

@@ -1,29 +1,66 @@
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
 import { segClosest, obstacleHit } from './geom.js';
+import { texturedMesh } from './relief.js';
+
+// Wooden shaft with lengthwise grain; radius/length are the caller's.
+export function arrowShaft(radius, length) {
+  return texturedMesh(new THREE.CylinderGeometry(radius, radius, length, 5, 4), {
+    dark: 0xb09a6e, light: 0xe4d6ae, seed: 37, freq: 9, grainY: 0.2,
+  });
+}
+
+// Four-sided cone + flat shading reads as a forged broadhead.
+export function arrowHead(radius, length) {
+  return new THREE.Mesh(
+    new THREE.ConeGeometry(radius, length, 4),
+    new THREE.MeshLambertMaterial({ color: 0x4a4a52, flatShading: true }),
+  );
+}
+
+// Three swept-back feather vanes at 120°, running along +y toward the nock.
+// Unlit and double-sided: the bright type color is the ammo ID and must stay
+// readable against any stage.
+export function fletching(color, length, height, shaftR) {
+  const g = new THREE.Group();
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+    shaftR, length / 2, 0,                    // front, on the shaft
+    shaftR, -length / 2, 0,                   // rear, on the shaft
+    shaftR + height, -length / 4, 0,          // outer corner, swept back
+  ]), 3));
+  const mat = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide });
+  for (let i = 0; i < 3; i++) {
+    const vane = new THREE.Mesh(geo, mat);
+    vane.rotation.y = (i * 2 * Math.PI) / 3;
+    g.add(vane);
+  }
+  return g;
+}
+
+// Projectiles of one ammo type are pixel-identical, so the geometries,
+// materials and the CPU mottling pass run once per type; every shot clones
+// the template — clones share geometry/material (arrows are never tinted
+// per-instance), so spent arrows leak nothing.
+const arrowTemplates = new Map();
 
 function buildArrowMesh(type) {
-  const g = new THREE.Group();
-  const color = CONFIG.arrow.types[type].color;
-  // Slim proportions matching the arrow nocked on the bow viewmodel — the
-  // projectile reads as a thin arrow in flight, not a fat bolt. Collision
-  // stays at CONFIG.arrow.radius (gameplay tuning, not the visual).
-  const shaft = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.008, 0.008, 0.7, 5),
-    new THREE.MeshLambertMaterial({ color: 0xd8c9a3 }),
-  );
-  const tip = new THREE.Mesh(
-    new THREE.ConeGeometry(0.02, 0.08, 6),
-    new THREE.MeshLambertMaterial({ color: 0x555555 }),
-  );
-  tip.position.y = 0.39;
-  const fletch = new THREE.Mesh(
-    new THREE.ConeGeometry(0.028, 0.12, 4),
-    new THREE.MeshBasicMaterial({ color }),
-  );
-  fletch.position.y = -0.3;
-  g.add(shaft, tip, fletch);
-  return g;
+  let t = arrowTemplates.get(type);
+  if (!t) {
+    t = new THREE.Group();
+    // Slim proportions matching the arrow nocked on the bow viewmodel — the
+    // projectile reads as a thin arrow in flight, not a fat bolt. Collision
+    // stays at CONFIG.arrow.radius (gameplay tuning, not the visual).
+    const shaft = arrowShaft(0.008, 0.7);
+    shaft.castShadow = true; // in-flight ground shadow tracks the arc
+    const tip = arrowHead(0.02, 0.08);
+    tip.position.y = 0.39;
+    const fletch = fletching(CONFIG.arrow.types[type].color, 0.12, 0.03, 0.008);
+    fletch.position.y = -0.28;
+    t.add(shaft, tip, fletch);
+    arrowTemplates.set(type, t);
+  }
+  return t.clone();
 }
 
 // Tracer trail: the arrow's recent flight path as a line, brightest at the

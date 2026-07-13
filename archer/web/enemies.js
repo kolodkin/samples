@@ -1,11 +1,14 @@
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
 import { segClosest, obstacleHit } from './geom.js';
+import { setShadows } from './relief.js';
 
 function lambert(color) { return new THREE.MeshLambertMaterial({ color }); }
 
 // Builders return a Group whose base sits at y=0; collision spheres are
 // derived from config (bodyRadius/height/headRadius), not from the meshes.
+// Deliberately smooth flat tints (no relief-mottle treatment): monsters must
+// pop against the textured terrain and props, not blend into them.
 function buildGoblin(c) {
   const g = new THREE.Group();
   const body = new THREE.Mesh(
@@ -76,6 +79,7 @@ export class EnemySystem {
     const c = CONFIG.enemies[type];
     const mesh = BUILDERS[type](c);
     mesh.position.set(x, 0, z);
+    setShadows(mesh);
     this.game.scene.add(mesh);
     const e = {
       type, c, mesh, hp: c.hp, state: 'advance', inert,
@@ -287,6 +291,7 @@ export class EnemySystem {
       new THREE.SphereGeometry(PROJ_RADIUS, 6, 5),
       new THREE.MeshBasicMaterial({ color: 0x332222 }),
     );
+    mesh.castShadow = true; // the racing ground shadow telegraphs the arc
     mesh.position.copy(from);
     this.game.scene.add(mesh);
     this.projectiles.push({ mesh, vel: dir.multiplyScalar(e.c.projectileSpeed), age: 0 });

@@ -1,47 +1,10 @@
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
+import { hash2, fbm, spread, seedFrom, setShadows, texturedMesh } from './relief.js';
 
 export const STAGE_ORDER = ['forest', 'desert', 'iceberg'];
 
-function lambert(color) { return new THREE.MeshLambertMaterial({ color }); }
-
-// --- Terrain noise -----------------------------------------------------
-// Deterministic hash noise keyed on vertex position — never the seeded
-// game rng: tests pin per-seed obstacle layouts, and terrain must not
-// shift that stream (see SPEC.md).
-function hash2(ix, iz, seed) {
-  let h = (ix * 374761393 + iz * 668265263 + seed * 1442695041) | 0;
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  h ^= h >>> 16;
-  return (h >>> 0) / 4294967296;
-}
-
-const { clamp, lerp, smoothstep } = THREE.MathUtils;
-
-function valueNoise(x, z, seed) {
-  const ix = Math.floor(x), iz = Math.floor(z);
-  const fx = smoothstep(x - ix, 0, 1), fz = smoothstep(z - iz, 0, 1);
-  const a = hash2(ix, iz, seed), b = hash2(ix + 1, iz, seed);
-  const c = hash2(ix, iz + 1, seed), d = hash2(ix + 1, iz + 1, seed);
-  return lerp(lerp(a, b, fx), lerp(c, d, fx), fz);
-}
-
-function fbm(x, z, seed) {
-  let sum = 0, amp = 1, freq = 1, norm = 0;
-  for (let i = 0; i < 3; i++) {
-    sum += valueNoise(x * freq, z * freq, seed + i * 101) * amp;
-    norm += amp;
-    amp *= 0.5;
-    freq *= 2;
-  }
-  return sum / norm; // 0..1
-}
-
-// Averaged-octave value noise clusters around 0.5; expand around the
-// midpoint so tints and relief actually use their full range.
-function spread(n, k) {
-  return clamp((n - 0.5) * k + 0.5, 0, 1);
-}
+const { clamp, smoothstep } = THREE.MathUtils;
 
 const MICRO_RELIEF = 0.12;
 
@@ -81,11 +44,12 @@ function makeGround(theme, size) {
   }
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   // flatShading lights each facet by an in-shader derived normal — the main
-  // depth cue on a texture-less ground — so the stored normals (and the uvs
-  // of a map-less material) are dead weight.
-  geo.deleteAttribute('normal');
+  // depth cue on a texture-less ground — but the stored normal attribute must
+  // stay: without it the ground cannot receive cast shadows (see relief.js).
   geo.deleteAttribute('uv');
-  return new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }));
+  const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }));
+  mesh.receiveShadow = true;
+  return mesh;
 }
 
 // Terrain is deterministic per theme, so build each ground once and reuse
@@ -93,33 +57,49 @@ function makeGround(theme, size) {
 // undisposed geometry each (stage groups are regenerated, not disposed).
 const groundCache = new Map();
 
-// Each maker returns { mesh, radius, height } with the mesh's base at y=0.
+// Each maker returns { mesh, radius, height } (base at y=0) plus an
+// optional sway handle for wind animation. Texture seeds go through
+// seedFrom() on values already drawn from the rng, so every instance gets
+// its own bark/crag pattern without shifting the pinned layouts.
 function makeTree(rng) {
   const g = new THREE.Group();
   const trunkH = rng.range(1.2, 2.0);
-  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.35, trunkH, 6), lambert(0x6b4a2f));
+  const seed = seedFrom(trunkH);
+  const trunk = texturedMesh(new THREE.CylinderGeometry(0.22, 0.4, trunkH, 7, 4), {
+    dark: 0x4a3220, light: 0x7d5a38, seed, amp: 0.05, freq: 6, grainY: 0.25,
+  });
   trunk.position.y = trunkH / 2;
   g.add(trunk);
   let y = trunkH;
+  // Canopy cones join the wind sway (visual only — the collision cylinder
+  // and cover logic stay put). Phase from trunk height so neighboring trees
+  // never swing in lockstep.
+  const sway = { parts: [], phase: trunkH * 37 };
   for (const r of [1.5, 1.1]) {
-    const cone = new THREE.Mesh(new THREE.ConeGeometry(r, 2.2, 7), lambert(0x2f6b2a));
+    // Roughened cones read as clumped boughs instead of party hats.
+    const cone = texturedMesh(new THREE.ConeGeometry(r, 2.2, 7, 3), {
+      dark: 0x24501f, light: 0x549540, seed: seed + Math.round(r * 100), amp: 0.18, freq: 2.5,
+    });
     cone.position.y = y + 1.1;
     g.add(cone);
+    sway.parts.push(cone);
     y += 1.4;
   }
-  return { mesh: g, radius: 1.5, height: y + 1.8 };
+  return { mesh: g, radius: 1.5, height: y + 1.8, sway };
 }
 
 function makeDesertObstacle(rng) {
   if (rng.random() < 0.5) {
-    // saguaro cactus: trunk + two arms
+    // saguaro cactus: trunk + two arms, ribbed skin via lengthwise grain
     const g = new THREE.Group();
     const h = rng.range(2.5, 3.5);
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.4, h, 8), lambert(0x3f7d46));
+    const seed = seedFrom(h);
+    const skin = { dark: 0x2e5f36, light: 0x5c9455, amp: 0.04, freq: 7, grainY: 0.2 };
+    const trunk = texturedMesh(new THREE.CylinderGeometry(0.35, 0.4, h, 8, 4), { ...skin, seed });
     trunk.position.y = h / 2;
     g.add(trunk);
     for (const side of [-1, 1]) {
-      const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 1.4, 6), lambert(0x3f7d46));
+      const arm = texturedMesh(new THREE.CylinderGeometry(0.22, 0.22, 1.4, 6, 3), { ...skin, seed: seed + side });
       arm.position.set(side * 0.6, h * 0.6, 0);
       arm.rotation.z = side * 0.5;
       g.add(arm);
@@ -127,7 +107,9 @@ function makeDesertObstacle(rng) {
     return { mesh: g, radius: 1.0, height: h };
   }
   const r = rng.range(1.2, 2.2);
-  const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), lambert(0xa8825d));
+  const rock = texturedMesh(new THREE.DodecahedronGeometry(r, 1), {
+    dark: 0x7d5e40, light: 0xc5a072, seed: seedFrom(r), amp: r * 0.16, freq: 1.6,
+  });
   rock.position.y = r * 0.6;
   rock.scale.y = 0.7;
   const g = new THREE.Group();
@@ -137,9 +119,12 @@ function makeDesertObstacle(rng) {
 
 function makeIcePillar(rng) {
   const h = rng.range(2.5, 4.5);
-  const pillar = new THREE.Mesh(
-    new THREE.CylinderGeometry(rng.range(0.6, 1.0), rng.range(1.0, 1.6), h, 6),
-    new THREE.MeshLambertMaterial({ color: 0xbfe8f7, emissive: 0x224455 }),
+  const pillar = texturedMesh(
+    new THREE.CylinderGeometry(rng.range(0.6, 1.0), rng.range(1.0, 1.6), h, 6, 4),
+    {
+      dark: 0x9cc8e4, light: 0xf4fbff, seed: seedFrom(h), amp: 0.14, freq: 2,
+      emissive: 0x224455,
+    },
   );
   pillar.position.y = h / 2;
   const g = new THREE.Group();
@@ -152,21 +137,21 @@ const THEMES = {
     sky: 0x87b5d4, fog: [0x87b5d4, 40, 130],
     groundColors: [0x2e5c28, 0x579a48],
     terrain: { seed: 11, freq: 0.05, colorFreq: 0.08, hillHeight: 5 },
-    sun: 0xfff4e0, sunIntensity: 1.0, ambient: 0x777788,
+    sun: 0xfff4e0, sunIntensity: 1.4, ambient: 0x777788,
     obstacleCount: 26, obstacle: makeTree, perch: 0x6b6f66,
   },
   desert: {
     sky: 0xf2d9a8, fog: [0xf2d9a8, 50, 150],
     groundColors: [0xc2984e, 0xeed091],
     terrain: { seed: 22, freq: 0.035, colorFreq: 0.05, hillHeight: 5 },
-    sun: 0xfff0c8, sunIntensity: 1.4, ambient: 0x998877,
+    sun: 0xfff0c8, sunIntensity: 1.7, ambient: 0x998877,
     obstacleCount: 14, obstacle: makeDesertObstacle, perch: 0x96703f,
   },
   iceberg: {
     sky: 0xbfe3f2, fog: [0xbfe3f2, 35, 120],
     groundColors: [0xaed4ea, 0xf6fbff],
     terrain: { seed: 33, freq: 0.06, colorFreq: 0.07, hillHeight: 6 },
-    sun: 0xe8f4ff, sunIntensity: 1.1, ambient: 0x8899aa,
+    sun: 0xe8f4ff, sunIntensity: 1.5, ambient: 0x8899aa,
     obstacleCount: 18, obstacle: makeIcePillar, perch: 0x9dbfd1,
   },
 };
@@ -189,25 +174,77 @@ export function buildStage(name, rng) {
     new THREE.MeshLambertMaterial({ color: theme.perch, transparent: true, opacity: 0.65 }),
   );
   perch.position.set(px, (py - 1) / 2, pz);
+  perch.castShadow = true; // grounds the platform on the terrain
   group.add(perch);
 
+  // Fill lights sit a notch below the old values: cast shadows only read if
+  // the sun's contribution dominates the shadowed-side fill.
   const bounce = new THREE.Color(theme.groundColors[0]).lerp(new THREE.Color(theme.groundColors[1]), 0.5);
-  group.add(new THREE.HemisphereLight(theme.sky, bounce, 0.9));
+  group.add(new THREE.HemisphereLight(theme.sky, bounce, 0.65));
   const sun = new THREE.DirectionalLight(theme.sun, theme.sunIntensity);
-  sun.position.set(20, 40, 10);
-  group.add(sun);
-  group.add(new THREE.AmbientLight(theme.ambient, 0.4));
+  // High and to the right, barely downrange: shadows rake sideways across
+  // the battlefield (fully visible from the perch) while enemies facing the
+  // player keep a lit front — they must stay readable targets.
+  sun.position.set(32, 42, 6);
+  sun.castShadow = true;
+  // 512² keeps the shadow pass affordable on software renderers (e2e runs
+  // on SwiftShader); PCF softens the coarser texels and the low-poly look
+  // hides the rest.
+  sun.shadow.mapSize.set(512, 512);
+  const sc = sun.shadow.camera;
+  sc.left = -48; sc.right = 48; sc.top = 48; sc.bottom = -48; // arena + shadow reach
+  sc.near = 5; sc.far = 150;
+  sc.updateProjectionMatrix();
+  // Flat-shaded low-poly acne is killed by a normal-space bias; a depth bias
+  // this small avoids peter-panning on thin trunks and limbs.
+  sun.shadow.normalBias = 0.4;
+  group.add(sun, sun.target); // target defaults to the origin; must be in-scene
+  group.add(new THREE.AmbientLight(theme.ambient, 0.3));
+
+  // Visible sun: a fog-exempt disc + soft halo far along the light direction
+  // (inside the camera far plane, beyond the fog band).
+  const sunDir = sun.position.clone().normalize();
+  const disc = new THREE.Mesh(
+    new THREE.CircleGeometry(9, 24),
+    new THREE.MeshBasicMaterial({ color: 0xfffbe8, fog: false }),
+  );
+  disc.position.copy(sunDir).multiplyScalar(230);
+  disc.lookAt(px, py, pz);
+  const halo = new THREE.Mesh(
+    new THREE.CircleGeometry(20, 24),
+    new THREE.MeshBasicMaterial({
+      color: theme.sun, fog: false, transparent: true, opacity: 0.35, depthWrite: false,
+    }),
+  );
+  halo.position.copy(sunDir).multiplyScalar(234);
+  halo.lookAt(px, py, pz);
+  group.add(disc, halo);
 
   // Obstacles scattered over the battlefield, clear of the player perch.
   const obstacles = [];
+  const swayers = [];
   for (let i = 0; i < theme.obstacleCount; i++) {
     const x = rng.range(-36, 36);
     const z = rng.range(-30, 22);
-    const { mesh, radius, height } = theme.obstacle(rng);
+    const { mesh, radius, height, sway } = theme.obstacle(rng);
     mesh.position.set(x, 0, z);
+    setShadows(mesh);
+    if (sway) swayers.push(sway);
     group.add(mesh);
     obstacles.push({ x, z, radius, height });
   }
 
-  return { group, obstacles, sky: theme.sky, fog: theme.fog };
+  // Per-frame ambient motion, owned by the stage: gentle canopy sway on two
+  // incommensurate frequencies per tree so the movement never loops visibly.
+  // Amplitudes are small — wind, not a storm.
+  function animate(t) {
+    for (const s of swayers) {
+      s.parts.forEach((part, i) => {
+        part.rotation.x = Math.sin(t * 1.2 + s.phase + i * 0.7) * 0.025;
+        part.rotation.z = Math.cos(t * 0.8 + s.phase * 1.7 + i * 0.7) * 0.02;
+      });
+    }
+  }
+
+  return { group, obstacles, animate, sky: theme.sky, fog: theme.fog };
 }

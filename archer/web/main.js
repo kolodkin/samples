@@ -20,6 +20,7 @@ try {
   throw err;
 }
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true; // sun shadows (default PCF; see stages.js)
 
 const scene = new THREE.Scene();
 const SKY_FALLBACK = 0x87b5d4;
@@ -274,6 +275,9 @@ function tick(now) {
     game.waves.update(dt);
   }
   game.effects.update(dt);
+  // Stage ambient motion (canopy sway), always on: the stage breathes even
+  // behind menus.
+  stageHandle.animate(now / 1000);
   document.documentElement.style.setProperty('--power', game.player.power.toFixed(3));
   renderer.render(scene, camera);
   framesRendered++;

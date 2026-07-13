@@ -1,16 +1,28 @@
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
+import { arrowShaft, arrowHead, fletching } from './arrows.js';
+import { texturedMesh } from './relief.js';
 
 function buildBowViewmodel() {
   const g = new THREE.Group();
-  const wood = new THREE.MeshLambertMaterial({ color: 0x7a5230 });
   // Limb + string live in their own group, rotated so the bow's plane
   // contains the aim line: the limb bulges downrange (toward the target)
   // and the string sits on the archer's side, like a bow actually held.
   const limbGroup = new THREE.Group();
-  const limb = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.014, 6, 24, Math.PI), wood);
+  // Grained, faceted wood — the viewmodel is the closest mesh on screen,
+  // so it gets the densest mottle in the scene.
+  const limb = texturedMesh(new THREE.TorusGeometry(0.16, 0.014, 6, 24, Math.PI), {
+    dark: 0x4d3118, light: 0x8a5f33, seed: 41, freq: 18,
+  });
   limb.rotation.z = Math.PI / 2; // tips at (0, ±0.16), bulge -x (pre-rotation)
   limbGroup.add(limb);
+  // Leather-wrapped grip at the bulge; the nocked arrow rides just past it,
+  // as on an arrow shelf.
+  const grip = texturedMesh(new THREE.CylinderGeometry(0.022, 0.022, 0.09, 6, 3), {
+    dark: 0x2a1d12, light: 0x4a3524, seed: 43, freq: 14, grainY: 0.3,
+  });
+  grip.position.x = -0.16;
+  limbGroup.add(grip);
   // String: two segments pinned at the limb tips, meeting at the nock —
   // they fold into a V as the draw pulls the nock back (see updateString).
   const stringMat = new THREE.MeshBasicMaterial({ color: 0xeeeeee });
@@ -24,25 +36,16 @@ function buildBowViewmodel() {
   // string (z=0) and the head protrudes past the bow's front (-0.16) —
   // even at full draw, when the whole arrow slides back with the string.
   const nocked = new THREE.Group();
-  const shaft = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.006, 0.006, 0.36, 5),
-    new THREE.MeshLambertMaterial({ color: 0xd8c9a3 }),
-  );
+  const shaft = arrowShaft(0.006, 0.36);
   shaft.rotation.x = Math.PI / 2;
   shaft.position.z = -0.18;
   nocked.add(shaft);
-  const tip = new THREE.Mesh(
-    new THREE.ConeGeometry(0.016, 0.05, 6),
-    new THREE.MeshLambertMaterial({ color: 0x555555 }),
-  );
+  const tip = arrowHead(0.016, 0.05);
   tip.rotation.x = -Math.PI / 2; // cone points downrange
   tip.position.z = -0.385;
   nocked.add(tip);
-  // Fletching: feather vanes at the nock, tapering forward from the string.
-  const fletch = new THREE.Mesh(
-    new THREE.ConeGeometry(0.02, 0.09, 4),
-    new THREE.MeshLambertMaterial({ color: 0xcc4444 }),
-  );
+  // Fletching: feather vanes at the nock, swept forward from the string.
+  const fletch = fletching(0xcc4444, 0.09, 0.022, 0.006);
   fletch.rotation.x = -Math.PI / 2;
   fletch.position.z = -0.045;
   nocked.add(fletch);
