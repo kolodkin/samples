@@ -698,7 +698,7 @@ def test_fire_button_shoots_on_tap(server_url, page):
 def test_quiver_highlights_the_auto_selected_arrow(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
-    # Auto mode: the 🅰️ slot and the arrow it picked highlight together.
+    # Auto mode: the ✨ slot and the arrow it picked highlight together.
     expect(page.get_by_test_id("slot-auto")).to_have_class(re.compile(r"\bactive\b"))
     expect(page.get_by_test_id("slot-normal")).to_have_class(re.compile(r"\bactive\b"))
     page.evaluate("() => window.__ARCHER.giveAmmo('exploding', 1)")
@@ -714,7 +714,7 @@ def test_quiver_slot_click_pins_ammo(server_url, page):
     assert page.evaluate("() => window.__ARCHER.state.mode") == "burning"
     expect(page.get_by_test_id("slot-burning")).to_have_class(re.compile(r"\bactive\b"))
     expect(page.get_by_test_id("slot-auto")).not_to_have_class(re.compile(r"\bactive\b"))
-    # Clicking 🅰️ hands the choice back: the strongest special lights up again.
+    # Clicking ✨ hands the choice back: the strongest special lights up again.
     page.get_by_test_id("slot-auto").dispatch_event("pointerdown")
     assert page.evaluate("() => window.__ARCHER.state.mode") == "auto"
     expect(page.get_by_test_id("slot-auto")).to_have_class(re.compile(r"\bactive\b"))

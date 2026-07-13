@@ -13,7 +13,7 @@ This spec covers behavior the numbers don't show.
 | Mouse move (pointer lock) | Aim |
 | Left click (pointer lock) | Shoot at the set power |
 | HUD +/− buttons (left middle), or +/− keys | Adjust shot power (`CONFIG.bow.power`: min/max/step) |
-| Quiver slot click/tap, or keys 1–5 | Select ammo: 🅰️ Auto or a specific arrow type |
+| Quiver slot click/tap, or keys 1–5 | Select ammo: ✨ Auto or a specific arrow type |
 | Esc (exits pointer lock) | Pause |
 | Touch: drag on the canvas | Aim (no pointer lock; one finger owns the camera) |
 | Touch: 🏹 button | Shoot at the set power |
@@ -41,7 +41,7 @@ inputs shoot: a click while pointer-locked on desktop, the 🏹 button on
 touch. Stray clicks or taps elsewhere on the screen never loose an arrow.
 
 Ammo selection is a mode picked on the HUD quiver (click/tap a slot, or
-keys 1–5 in slot order under pointer lock). The default 🅰️ Auto slot keeps
+keys 1–5 in slot order under pointer lock). The default ✨ Auto slot keeps
 the classic behavior: every shot spends the strongest special in stock —
 exploding, then freezing, then burning, the declaration order of
 `CONFIG.arrow.types` — and falls back to the infinite basic arrow once the
@@ -50,7 +50,7 @@ normal shots then conserve specials, and a pinned special unpins back to
 Auto when its last arrow is spent (or when a stage starts without it in
 stock — retry restores the stage-start snapshot). An empty special slot
 can't be pinned; the click is ignored. The highlighted ammo slot is always
-what the next shot will fire; in Auto mode the 🅰️ slot highlights alongside
+what the next shot will fire; in Auto mode the ✨ slot highlights alongside
 it, showing the choice is automatic.
 
 Touch mode is detected via `(pointer: coarse)` or the first `touchstart`;
