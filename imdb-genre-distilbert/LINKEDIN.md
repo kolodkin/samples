@@ -20,11 +20,7 @@ Comment
 ---
 
 🔗 Links:
-
 📊 Curated dataset (IMDb + Wikipedia, ~222k movies): https://huggingface.co/datasets/kolodkin/imdb-wikipedia-enriched
-
 🤖 Model card with per-genre test results: https://huggingface.co/kolodkin/imdb-genre-distilbert
-
 📓 Training Colab (runs end-to-end on a free T4 in ~15 min): https://colab.research.google.com/github/kolodkin/samples/blob/main/imdb-genre-distilbert/notebook.ipynb
-
 🛠️ Dataset-building pipeline and all source code: https://github.com/kolodkin/samples
