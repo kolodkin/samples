@@ -31,6 +31,9 @@ export const CONFIG = {
   touch: {
     lookScale: 2.2,   // touch-drag aim, relative to mouse sensitivity
   },
+  radar: {
+    range: 60,        // world units from player to the radar's rim
+  },
   drops: {
     chance: 0.4, lifetime: 20, radius: 0.6,
     ammo: { min: 15, max: 25 },         // special arrows per ammo package

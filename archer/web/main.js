@@ -5,6 +5,7 @@ import { buildStage, STAGE_ORDER } from './stages.js';
 import { Player } from './player.js';
 import { ArrowSystem, TrajectoryHint } from './arrows.js';
 import { EnemySystem } from './enemies.js';
+import { updateRadar, radarBlips } from './radar.js';
 import { Effects } from './effects.js';
 import { WaveManager } from './waves.js';
 import { createStore, initUI } from './ui.js';
@@ -300,6 +301,7 @@ function tick(now) {
     trajectoryHint.update(game.player, true);
     game.enemies.update(dt);
     game.waves.update(dt);
+    updateRadar(game);
   }
   game.effects.update(dt);
   // Stage ambient motion (canopy sway), always on: the stage breathes even
@@ -346,6 +348,7 @@ window.__ARCHER = {
         hp: e.hp, state: e.state, frozen: e.frozen > 0, burning: e.burn > 0,
         hasCover: !!e.cover,
       })),
+      radar: radarBlips(game),
       wave: game.waves.waveIndex,
       waveState: game.waves.state,
       pickupCount: game.waves.pickups.length,
@@ -368,6 +371,7 @@ window.__ARCHER = {
     game.arrows.fire(origin.addScaledVector(dir, 0.7), dir, power, type);
   },
   spawnEnemy: (type, x, z, inert = false) => { game.enemies.spawn(type, x, z, inert); },
+  setObstacles: (list) => { game.obstacles = list; }, // swap collision obstacles; meshes stay
   setPlayerHp: (n) => { game.player.hp = n; game.syncUI(); },
   giveAmmo: (type, n) => { game.stats.ammo[type] += n; game.syncUI(); },
   selectAmmo: (mode) => selectAmmo(mode),

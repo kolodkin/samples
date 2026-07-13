@@ -332,6 +332,44 @@ def test_skeleton_takes_cover_behind_obstacle(server_url, page):
     assert _nearest_obstacle_gap(state) < 2.0
 
 
+def test_skeleton_peek_is_never_buried_by_neighbor_trees(server_url, page):
+    # Regression: a cover tree whose both peek lanes are buried by neighbor
+    # trees must not be chosen — the skeleton would shuttle between the trees
+    # permanently hidden and stall the wave (see SPEC.md, Enemies).
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
+    # Player is at (0, 3.2, 34). Tree at (0, 20) is the nearest shielding
+    # cover for a skeleton at (0, 16); its peek points sit at (±1.5, 18.3),
+    # and the flanking trees sit dead on the sightline from each peek point
+    # to the player (at z=24 the ray from (±1.5, 18.3) passes x=±0.955).
+    page.evaluate(
+        """() => {
+          window.__ARCHER.setObstacles([
+            { x: 0, z: 20, radius: 1, height: 5 },      // chosen cover
+            { x: 0.955, z: 24, radius: 1, height: 5 },  // buries the right peek
+            { x: -0.955, z: 24, radius: 1, height: 5 }, // buries the left peek
+          ]);
+          window.__ARCHER.spawnEnemy('skeleton', 0, 16);
+        }"""
+    )
+    # The archer must eventually hold a position with a clear line to the
+    # player — i.e. it is hittable at least once per hide/peek cycle.
+    page.wait_for_function(
+        """() => {
+          const P = { x: 0, z: 34 };
+          const e = window.__ARCHER.state.enemies[0];
+          const dx = e.x - P.x, dz = e.z - P.z;
+          return !window.__ARCHER.state.obstacles.some((o) => {
+            const t = Math.max(0, Math.min(1,
+              ((o.x - P.x) * dx + (o.z - P.z) * dz) / (dx * dx + dz * dz)));
+            return Math.hypot(P.x + t * dx - o.x, P.z + t * dz - o.z) < o.radius;
+          });
+        }""",
+        timeout=30000,
+    )
+
+
 def test_skeleton_shoots_the_player(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
@@ -734,6 +772,26 @@ def test_hud_reflects_score_ammo_and_selection(server_url, page):
     # The freshly stocked special becomes the auto-selected arrow.
     expect(page.get_by_test_id("slot-freezing")).to_have_class(re.compile(r"\bactive\b"))
     expect(page.get_by_test_id("wave")).to_contain_text("forest")
+
+
+def test_radar_tracks_enemies(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    expect(page.get_by_test_id("radar")).to_be_visible()
+    assert page.evaluate("() => window.__ARCHER.state.radar") == []
+    # An enemy dead ahead (yaw=0 faces -z from the player at z=34) blips
+    # straight up; one off to the right blips right.
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 4, true)")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('skeleton', 20, 34, true)")
+    ahead, right = page.evaluate("() => window.__ARCHER.state.radar")
+    assert ahead["type"] == "goblin" and not ahead["clamped"]
+    assert abs(ahead["x"]) < 0.01 and ahead["y"] < 0
+    assert right["type"] == "skeleton" and not right["clamped"]
+    assert right["x"] > 0 and abs(right["y"]) < 0.01
+    # A contact beyond CONFIG.radar.range pins to the rim instead of vanishing.
+    page.evaluate("() => window.__ARCHER.spawnEnemy('ogre', 0, -34, true)")
+    far = page.evaluate("() => window.__ARCHER.state.radar[2]")
+    assert far["clamped"] and far["y"] < 0
 
 
 def test_game_over_screen_retry_button(server_url, page):
