@@ -41,17 +41,24 @@ inputs shoot: a click while pointer-locked on desktop, the 🏹 button on
 touch. Stray clicks or taps elsewhere on the screen never loose an arrow.
 
 Ammo selection is a mode picked on the HUD quiver (click/tap a slot, or
-keys 1–5 in slot order under pointer lock). The default ✨ Auto slot keeps
-the classic behavior: every shot spends the strongest special in stock —
-exploding, then freezing, then burning, the declaration order of
-`CONFIG.arrow.types` — and falls back to the infinite basic arrow once the
-quiver is dry. Picking an ammo slot instead pins every shot to that type:
+keys 1–5 in slot order under pointer lock). The default ✨ Auto slot is
+target-aware: each shot reads the battlefield and spends a special only
+where it pays for itself — exploding when 3+ enemies bunch inside the
+blast radius of the aimed enemy, freezing against an unfrozen ogre,
+burning when at least one neighbor sits inside the spread radius —
+otherwise the free normal arrow, so stragglers never drain the quiver.
+The aimed enemy is the nearest along the aim ray, matched in the XZ plane
+only (`aimedEnemy()` in `web/main.js`, slack `AIM_SLACK`): pitch is arc
+compensation on long shots and must never unselect a target. The main
+tick resyncs the HUD whenever the pick changes, so the highlighted slot
+tracks the crosshair. Picking an ammo slot instead pins every shot to that type:
 normal shots then conserve specials, and a pinned special unpins back to
 Auto when its last arrow is spent (or when a stage starts without it in
 stock — retry restores the stage-start snapshot). An empty special slot
 can't be pinned; the click is ignored. The highlighted ammo slot is always
 what the next shot will fire; in Auto mode the ✨ slot highlights alongside
-it, showing the choice is automatic.
+it, showing the choice is automatic (on an empty field that is the normal
+slot — a full quiver stays dark until something is worth it).
 
 Touch mode is detected via `(pointer: coarse)` or the first `touchstart`;
 hybrid devices keep both input paths live. Touch aim sensitivity is mouse
@@ -73,7 +80,9 @@ store.
 - A fraction of kills drop a floating pickup — shoot it to collect.
   Usually it's a random special arrow type (glowing octahedron); a
   config-tunable fraction (`CONFIG.drops.heal`) is a heal potion (corked
-  flask) that restores HP, clamped at max.
+  flask) that restores HP, clamped at max. Stages may scale both odds
+  (`dropMult`/`healMult` on the stage entry, over the global
+  `CONFIG.drops` values) — the late arc drops more, and more of it heals.
 - Exploding splash ignores cover (no LOS check); freezing doubles the
   next hit (shatter); burning spreads to nearby enemies.
 - Arrow collision is segment-vs-sphere per frame (no tunneling at 70 m/s).
@@ -109,10 +118,19 @@ store.
 
 ## Stages and waves
 
-Forest (dense cover) → desert (long sightlines) → iceberg (snow, fastest
-enemies), five waves each per `CONFIG.stages`. HP refills between stages;
-special ammo carries over. Death → retry the same stage with the ammo held
-at its start. Best score/stage persist in `localStorage['archer.best']`.
+Five stages, easiest first: meadow (goblins only, low cover) → forest
+(dense cover, skeleton archers debut) → desert (long sightlines, first
+ogre) → iceberg (sparse cover, ogre pairs) → volcano (ember dusk,
+obsidian crags — the finale, running exactly the pre-redesign desert
+wave table at the top speed multiplier). A stage's wave count is the
+length of its `waves` array in `CONFIG.stages` (3 → 4 → 4 → 5 → 5); the
+HUD counter and the stage-clear check both read it. HP refills between
+stages; special ammo carries over, and stages with a `grant` entry
+top the quiver up to a floor at stage start (`max(current, grant)`,
+before the retry snapshot, so retries keep it) — freezing arrives with
+the first ogres, exploding from iceberg on. Death → retry the same stage
+with the ammo held at its start. Best score/stage persist in
+`localStorage['archer.best']`.
 
 The ground is a vertex-displaced, vertex-colored, flat-shaded plane
 (`makeGround()` in `web/stages.js`): two-tone noise patches plus per-facet
@@ -162,7 +180,9 @@ vs visual positions and trail length), and test hooks: `fireAt()`
 `setObstacles()` (replace the collision-obstacle list to build exact cover
 layouts; stage meshes stay), `setPlayerHp()`, `start()`,
 `nextStage()`, `retryStage()`, `visiblePixelCount()`. Tests boot with
-`?autostart=1&seed=42&waves=0` for a clean battlefield and park inert
+`?autostart=1&seed=42&waves=0&stage=forest` (the combat suite predates the
+meadow opener and pins the seed-42 forest layout) for a clean battlefield
+and park inert
 target dummies at melee reach to avoid leading moving targets (live melee
 enemies there would strike once and vanish); touch tests dispatch
 synthetic `TouchEvent`s on the canvas (Chromium's `new Touch()`).
@@ -171,5 +191,5 @@ synthetic `TouchEvent`s on the canvas (Chromium's `new Touch()`).
 
 - No player movement; no sound.
 - Stage geometry is regenerated (not disposed) on stage change — a small,
-  bounded leak over a 3-stage run. The ground mesh is the exception: it is
+  bounded leak over a 5-stage run. The ground mesh is the exception: it is
   built once per theme and reused across loads.

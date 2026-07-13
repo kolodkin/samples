@@ -30,8 +30,8 @@ function useStore(store) {
 }
 
 // Quiver slots in HUD order — also the digit-key order (main.js derives its
-// key map from this). 'auto' is a mode, not an ammo type: it fires the
-// strongest special in stock, so it has no count.
+// key map from this). 'auto' is a mode, not an ammo type: it picks per shot
+// from the battlefield (see autoType in main.js), so it has no count.
 export const SLOTS = [
   ['auto', 'Auto', '✨'],
   ['normal', 'Normal', '🏹'],
