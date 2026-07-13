@@ -5,7 +5,7 @@ import { buildStage, STAGE_ORDER } from './stages.js';
 import { Player } from './player.js';
 import { ArrowSystem, TrajectoryHint } from './arrows.js';
 import { EnemySystem } from './enemies.js';
-import { Radar } from './radar.js';
+import { updateRadar, radarBlips } from './radar.js';
 import { Effects } from './effects.js';
 import { WaveManager } from './waves.js';
 import { createStore, initUI } from './ui.js';
@@ -90,7 +90,6 @@ function adjustPower(dir) {
   game.syncUI();
 }
 game.enemies = new EnemySystem(game);
-const radar = new Radar(game);
 game.onEnemyKilled = (e, isHead) => {
   const now = performance.now();
   const chained = now - (game.lastKillAt ?? -Infinity) < CONFIG.multiKillWindow * 1000;
@@ -275,7 +274,7 @@ function tick(now) {
     trajectoryHint.update(game.player, true);
     game.enemies.update(dt);
     game.waves.update(dt);
-    radar.update();
+    updateRadar(game);
   }
   game.effects.update(dt);
   // Stage ambient motion (canopy sway), always on: the stage breathes even
@@ -321,7 +320,7 @@ window.__ARCHER = {
         hp: e.hp, state: e.state, frozen: e.frozen > 0, burning: e.burn > 0,
         hasCover: !!e.cover,
       })),
-      radar: radar.blips(),
+      radar: radarBlips(game),
       wave: game.waves.waveIndex,
       waveState: game.waves.state,
       pickupCount: game.waves.pickups.length,
