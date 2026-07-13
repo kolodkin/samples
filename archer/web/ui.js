@@ -29,15 +29,21 @@ function useStore(store) {
   return s;
 }
 
-// Quiver slots in HUD (and digit-key) order. 'auto' is a mode, not an ammo
-// type: it fires the strongest special in stock, so it has no count.
-const SLOTS = [
+// Quiver slots in HUD order — also the digit-key order (main.js derives its
+// key map from this). 'auto' is a mode, not an ammo type: it fires the
+// strongest special in stock, so it has no count.
+export const SLOTS = [
   ['auto', 'Auto', '🅰️'],
   ['normal', 'Normal', '🏹'],
   ['exploding', 'Explode', '💥'],
   ['freezing', 'Freeze', '❄️'],
   ['burning', 'Burn', '🔥'],
 ];
+
+// HUD button press handling: preventDefault stops the synthetic mouse events
+// a tap would otherwise generate (and, on context-menu, the long-press menu).
+const press = (fn) => (e) => { e.preventDefault(); fn(); };
+const noMenu = (e) => e.preventDefault();
 
 // Auto highlights while it's the chosen mode; an ammo slot highlights while
 // it's what the next shot fires — so in auto mode the auto-picked type
@@ -48,14 +54,12 @@ function slotClass(s, type) {
   return `slot ${active ? 'active' : ''} ${empty ? 'empty' : ''}`;
 }
 
-// The one fire control on touch. preventDefault stops the synthetic mouse
-// events a tap would otherwise generate.
+// The one fire control on touch.
 function TouchControls({ actions }) {
   return html`
     <button
       class="fire-btn" data-testid="fire-btn" aria-label="Shoot"
-      onPointerDown=${(e) => { e.preventDefault(); actions.fire(); }}
-      onContextMenu=${(e) => e.preventDefault()}
+      onPointerDown=${press(actions.fire)} onContextMenu=${noMenu}
     ><span class="fire-ring" />🏹</button>`;
 }
 
@@ -65,12 +69,10 @@ function PowerControls({ s, actions }) {
   return html`
     <div class="power-controls">
       <button class="power-btn" data-testid="power-up" aria-label="Increase power"
-        onPointerDown=${(e) => { e.preventDefault(); actions.power(1); }}
-        onContextMenu=${(e) => e.preventDefault()}>+</button>
+        onPointerDown=${press(() => actions.power(1))} onContextMenu=${noMenu}>+</button>
       <div class="power-value" data-testid="power-value">${Math.round(s.power * 100)}%</div>
       <button class="power-btn" data-testid="power-down" aria-label="Decrease power"
-        onPointerDown=${(e) => { e.preventDefault(); actions.power(-1); }}
-        onContextMenu=${(e) => e.preventDefault()}>−</button>
+        onPointerDown=${press(() => actions.power(-1))} onContextMenu=${noMenu}>−</button>
     </div>`;
 }
 
@@ -95,8 +97,7 @@ function Hud({ s, actions }) {
           <button
             class=${slotClass(s, type)}
             data-testid="slot-${type}" title=${label} aria-label=${label}
-            onPointerDown=${(e) => { e.preventDefault(); actions.selectAmmo(type); }}
-            onContextMenu=${(e) => e.preventDefault()}
+            onPointerDown=${press(() => actions.selectAmmo(type))} onContextMenu=${noMenu}
           >
             <span class="icon" aria-hidden="true">${icon}</span>
             ${type !== 'auto' && html`
