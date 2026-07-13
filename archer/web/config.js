@@ -33,7 +33,7 @@ export const CONFIG = {
   },
   drops: {
     chance: 0.4, lifetime: 20, radius: 0.6,
-    ammo: { min: 3, max: 5 },           // special arrows per ammo package
+    ammo: { min: 15, max: 25 },         // special arrows per ammo package
     heal: { chance: 0.25, amount: 25 }, // fraction of drops that are a potion instead of ammo
   },
   enemies: {
