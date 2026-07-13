@@ -463,7 +463,7 @@ def test_drops_spawn_and_are_shot_to_collect(server_url, page):
     ammo0 = page.evaluate("() => window.__ARCHER.state.ammo")
     pickup = _drop_and_shoot_pickup(page)
     ammo1 = page.evaluate("() => window.__ARCHER.state.ammo")
-    assert 3 <= ammo1[pickup["type"]] - ammo0[pickup["type"]] <= 5
+    assert 15 <= ammo1[pickup["type"]] - ammo0[pickup["type"]] <= 25
 
 
 def test_heal_potion_drop_restores_hp_capped_at_max(server_url, page):
