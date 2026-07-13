@@ -80,7 +80,7 @@ export class WaveManager {
     } else if (this.state === 'cleared') {
       this.betweenTimer -= dt;
       if (this.betweenTimer <= 0) {
-        if (this.waveIndex >= CONFIG.waves.perStage) this.game.onStageCleared();
+        if (this.waveIndex >= CONFIG.stages[this.game.stage].waves.length) this.game.onStageCleared();
         else this.startWave(this.waveIndex + 1);
       }
     }

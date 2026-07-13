@@ -4,8 +4,10 @@ import re
 from playwright.sync_api import expect
 
 # Deterministic, menu-skipping boot with wave spawning disabled — combat
-# tests spawn their own enemies on an empty battlefield.
-BOOT = "/?autostart=1&seed=42&waves=0"
+# tests spawn their own enemies on an empty battlefield. Pinned to forest:
+# the default starting stage is meadow, but the combat tests were written
+# against the seed-42 forest layout.
+BOOT = "/?autostart=1&seed=42&waves=0&stage=forest"
 
 
 def _wait_ready(page):
@@ -58,8 +60,15 @@ def test_stage_param_and_determinism(server_url, page):
     assert s1["obstacles"] == s2["obstacles"]
 
 
+def test_boot_defaults_to_meadow(server_url, page):
+    # A fresh run starts on the gentle stage 1, not forest.
+    page.goto(server_url + "/?autostart=1&seed=1&waves=0")
+    _wait_ready(page)
+    assert page.evaluate("() => window.__ARCHER.state.stage") == "meadow"
+
+
 def test_each_stage_builds(server_url, page):
-    for name in ("forest", "desert", "iceberg"):
+    for name in ("meadow", "forest", "desert", "iceberg", "volcano"):
         page.goto(server_url + f"/?autostart=1&seed=3&stage={name}")
         _wait_ready(page)
         state = page.evaluate("() => window.__ARCHER.state")
@@ -526,22 +535,22 @@ def test_digit_keys_select_ammo(server_url, page):
     assert page.evaluate("() => window.__ARCHER.state.mode") == "auto"
 
 
-def test_wave_one_spawns_forest_mix(server_url, page):
-    page.goto(server_url + "/?autostart=1&seed=42")  # waves ON
+def test_wave_one_spawns_meadow_mix(server_url, page):
+    page.goto(server_url + "/?autostart=1&seed=42")  # waves ON, default stage
     _wait_ready(page)
-    # Forest wave 1 = 4 goblins, staggered by spawnInterval.
-    page.wait_for_function("() => window.__ARCHER.state.enemyCount === 4", timeout=15000)
+    # Meadow wave 1 = 2 goblins, staggered by spawnInterval.
+    page.wait_for_function("() => window.__ARCHER.state.enemyCount === 2", timeout=15000)
     assert page.evaluate("() => window.__ARCHER.state.wave") == 1
     types = page.evaluate("() => window.__ARCHER.state.enemies.map(e => e.type)")
-    assert types == ["goblin"] * 4
+    assert types == ["goblin"] * 2
 
 
 def test_skip_to_wave(server_url, page):
     page.goto(server_url + "/?autostart=1&seed=42")
     _wait_ready(page)
     page.evaluate("() => window.__ARCHER.skipToWave(3)")
-    # Forest wave 3 = 5 goblins + 2 skeletons.
-    page.wait_for_function("() => window.__ARCHER.state.enemyCount === 7", timeout=15000)
+    # Meadow wave 3 (its last) = 4 goblins.
+    page.wait_for_function("() => window.__ARCHER.state.enemyCount === 4", timeout=15000)
     assert page.evaluate("() => window.__ARCHER.state.wave") == 3
 
 
@@ -572,25 +581,44 @@ def test_heal_potion_drop_restores_hp_capped_at_max(server_url, page):
     assert page.evaluate("() => window.__ARCHER.state.hp") == 100
 
 
-def test_stage_clear_advances_to_desert(server_url, page):
-    page.goto(server_url + "/?autostart=1&seed=42")
-    _wait_ready(page)
+def _clear_final_wave(page, wave):
+    """Skip to a stage's last wave and kill everything as it spawns."""
     page.evaluate("() => window.__ARCHER.setDropChance(0)")
     page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
-    page.evaluate("() => window.__ARCHER.skipToWave(5)")
-    # Kill every wave-5 enemy as it spawns until the wave is done.
+    page.evaluate(f"() => window.__ARCHER.skipToWave({wave})")
     page.wait_for_function(
         """() => {
           window.__ARCHER.killAll();
-          return window.__ARCHER.state.screen === 'stageClear';
+          return window.__ARCHER.state.screen !== 'playing';
         }""",
         timeout=30000,
     )
+
+
+def test_meadow_clears_after_three_waves_then_forest(server_url, page):
+    page.goto(server_url + "/?autostart=1&seed=42")  # default stage: meadow
+    _wait_ready(page)
+    _clear_final_wave(page, 3)  # meadow has only 3 waves
+    assert page.evaluate("() => window.__ARCHER.state.screen") == "stageClear"
     page.evaluate("() => window.__ARCHER.nextStage()")
     state = page.evaluate("() => window.__ARCHER.state")
-    assert state["stage"] == "desert"
+    assert state["stage"] == "forest"
     assert state["screen"] == "playing"
     assert state["hp"] == 100  # HP refills between stages
+
+
+def test_forest_clears_after_four_waves(server_url, page):
+    page.goto(server_url + "/?autostart=1&seed=42&stage=forest")
+    _wait_ready(page)
+    _clear_final_wave(page, 4)  # forest has 4 waves in the 5-stage arc
+    assert page.evaluate("() => window.__ARCHER.state.screen") == "stageClear"
+
+
+def test_volcano_final_wave_wins_the_game(server_url, page):
+    page.goto(server_url + "/?autostart=1&seed=42&stage=volcano")
+    _wait_ready(page)
+    _clear_final_wave(page, 5)  # volcano is the last stage: clearing it wins
+    assert page.evaluate("() => window.__ARCHER.state.screen") == "victory"
 
 
 def test_retry_restores_stage_start_inventory(server_url, page):
@@ -771,7 +799,9 @@ def test_hud_reflects_score_ammo_and_selection(server_url, page):
     expect(page.get_by_test_id("ammo-freezing")).to_have_text("4")
     # The freshly stocked special becomes the auto-selected arrow.
     expect(page.get_by_test_id("slot-freezing")).to_have_class(re.compile(r"\bactive\b"))
+    # Wave counter shows the current stage's own wave count (forest: 4).
     expect(page.get_by_test_id("wave")).to_contain_text("forest")
+    expect(page.get_by_test_id("wave")).to_contain_text("/4")
 
 
 def test_radar_tracks_enemies(server_url, page):

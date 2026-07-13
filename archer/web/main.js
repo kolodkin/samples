@@ -61,7 +61,7 @@ function loadStage(index) {
   // (the setup block re-applies snow for that first load).
   game.effects?.setSnow(name === 'iceberg');
 }
-const initialStage = Math.max(0, STAGE_ORDER.indexOf(params.get('stage') || 'forest'));
+const initialStage = Math.max(0, STAGE_ORDER.indexOf(params.get('stage') || STAGE_ORDER[0]));
 loadStage(initialStage);
 game.player = new Player(camera);
 game.arrows = new ArrowSystem(game);
@@ -199,7 +199,7 @@ game.syncUI = () => {
     mode: game.ammoMode,
     power: game.player.power,
     wave: game.waves.waveIndex,
-    totalWaves: CONFIG.waves.perStage,
+    totalWaves: CONFIG.stages[game.stage].waves.length,
     stage: game.stage,
     best: loadBest(),
     touch: game.touchMode,
