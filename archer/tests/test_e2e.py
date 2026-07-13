@@ -665,6 +665,26 @@ def test_hud_reflects_score_ammo_and_selection(server_url, page):
     expect(page.get_by_test_id("wave")).to_contain_text("forest")
 
 
+def test_radar_tracks_enemies(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    expect(page.get_by_test_id("radar")).to_be_visible()
+    assert page.evaluate("() => window.__ARCHER.state.radar") == []
+    # An enemy dead ahead (yaw=0 faces -z from the player at z=34) blips
+    # straight up; one off to the right blips right.
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 4, true)")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('skeleton', 20, 34, true)")
+    ahead, right = page.evaluate("() => window.__ARCHER.state.radar")
+    assert ahead["type"] == "goblin" and not ahead["clamped"]
+    assert abs(ahead["x"]) < 0.01 and ahead["y"] < 0
+    assert right["type"] == "skeleton" and not right["clamped"]
+    assert right["x"] > 0 and abs(right["y"]) < 0.01
+    # A contact beyond CONFIG.radar.range pins to the rim instead of vanishing.
+    page.evaluate("() => window.__ARCHER.spawnEnemy('ogre', 0, -34, true)")
+    far = page.evaluate("() => window.__ARCHER.state.radar[2]")
+    assert far["clamped"] and far["y"] < 0
+
+
 def test_game_over_screen_retry_button(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)

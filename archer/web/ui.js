@@ -66,6 +66,7 @@ function Hud({ s, actions }) {
   return html`
     <div class="hud" data-testid="hud">
       <div class="top-left">
+        <canvas id="radar" class="radar" data-testid="radar" />
         <div class="hp-bar"><div class="hp-fill" style="width:${(100 * s.hp) / s.maxHp}%" /></div>
         <div class="hp-text" data-testid="hp-text">${s.hp} HP</div>
       </div>
