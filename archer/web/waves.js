@@ -87,12 +87,22 @@ export class WaveManager {
     this.updatePickups(dt);
   }
 
+  // Per-stage generosity: a stage may scale the global drop odds (dropMult)
+  // and the heal share of drops (healMult) — the late arc drops more.
+  dropTuning() {
+    const stage = CONFIG.stages[this.game.stage];
+    return {
+      chance: CONFIG.drops.chance * (stage.dropMult ?? 1),
+      healChance: CONFIG.drops.heal.chance * (stage.healMult ?? 1),
+    };
+  }
+
   onEnemyKilled(e) {
-    if (this.game.rng.random() < CONFIG.drops.chance) this.dropPickup(e);
+    if (this.game.rng.random() < this.dropTuning().chance) this.dropPickup(e);
   }
 
   dropPickup(e) {
-    const type = this.game.rng.random() < CONFIG.drops.heal.chance
+    const type = this.game.rng.random() < this.dropTuning().healChance
       ? 'heal' : this.game.rng.pick(DROP_TYPES);
     const mesh = type === 'heal' ? buildPotionMesh() : new THREE.Mesh(
       new THREE.OctahedronGeometry(CONFIG.drops.radius * 0.7, 0),

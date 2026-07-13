@@ -1,6 +1,7 @@
 """End-to-end tests for the archer game (Playwright, Chromium)."""
 import re
 
+import pytest
 from playwright.sync_api import expect
 
 # Deterministic, menu-skipping boot with wave spawning disabled — combat
@@ -635,6 +636,32 @@ def test_retry_restores_stage_start_inventory(server_url, page):
     assert state["hp"] == 100
     assert state["ammo"]["burning"] == 0
     assert state["enemyCount"] == 0  # battlefield cleared
+
+
+def test_drop_tuning_scales_by_stage(server_url, page):
+    # Early stages run the global odds; the late arc is more generous.
+    page.goto(server_url + BOOT)  # forest: no multipliers
+    _wait_ready(page)
+    tuning = page.evaluate("() => window.__ARCHER.state.dropTuning")
+    assert tuning["chance"] == pytest.approx(0.4)
+    assert tuning["healChance"] == pytest.approx(0.25)
+    page.goto(server_url + "/?autostart=1&seed=42&waves=0&stage=volcano")
+    _wait_ready(page)
+    tuning = page.evaluate("() => window.__ARCHER.state.dropTuning")
+    assert tuning["chance"] == pytest.approx(0.4 * 1.25)
+    assert tuning["healChance"] == pytest.approx(0.25 * 1.4)
+
+
+def test_stage_drop_mult_composes_with_the_drop_roll(server_url, page):
+    # volcano's 1.25 dropMult lifts a patched 0.8 base to a guaranteed drop.
+    page.goto(server_url + "/?autostart=1&seed=42&waves=0&stage=volcano")
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setDropChance(0.8)")
+    # 0.8 alone cannot guarantee 10 drops in 10 kills; 0.8 × 1.25 = 1 must.
+    for _ in range(10):
+        page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32, true)")
+        page.evaluate("() => window.__ARCHER.killAll()")
+    page.wait_for_function("() => window.__ARCHER.state.pickupCount === 10", timeout=4000)
 
 
 def test_stage_grant_tops_up_a_dry_quiver(server_url, page):
