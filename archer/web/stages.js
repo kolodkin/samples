@@ -138,36 +138,33 @@ function makeMeadowObstacle(rng) {
   return makeRock(rng, 0x6a6f6a, 0xa9b0a5, 1.0, 1.8); // granite boulder
 }
 
-function makeIcePillar(rng) {
-  const h = rng.range(2.5, 4.5);
-  const pillar = texturedMesh(
-    new THREE.CylinderGeometry(rng.range(0.6, 1.0), rng.range(1.0, 1.6), h, 6, 4),
-    {
-      dark: 0x9cc8e4, light: 0xf4fbff, seed: seedFrom(h), amp: 0.14, freq: 2,
-      emissive: 0x224455,
-    },
+// Faceted spire, palette per biome (ice pillar, obsidian crag): a tapered
+// six-sided column with a faint inner glow.
+function makeSpire(rng, { hMin, hMax, topMin, topMax, dark, light, emissive, amp }) {
+  const h = rng.range(hMin, hMax);
+  const spire = texturedMesh(
+    new THREE.CylinderGeometry(rng.range(topMin, topMax), rng.range(1.0, 1.6), h, 6, 4),
+    { dark, light, seed: seedFrom(h), amp, freq: 2, emissive },
   );
-  pillar.position.y = h / 2;
+  spire.position.y = h / 2;
   const g = new THREE.Group();
-  g.add(pillar);
+  g.add(spire);
   return { mesh: g, radius: 1.4, height: h };
 }
 
+function makeIcePillar(rng) {
+  return makeSpire(rng, {
+    hMin: 2.5, hMax: 4.5, topMin: 0.6, topMax: 1.0,
+    dark: 0x9cc8e4, light: 0xf4fbff, emissive: 0x224455, amp: 0.14,
+  });
+}
+
 function makeVolcanoObstacle(rng) {
-  // Obsidian crag: a dark glassy spire, ember glow seeping from the facets
-  // (same silhouette recipe as the ice pillar, finale palette).
-  const h = rng.range(2.2, 4.2);
-  const crag = texturedMesh(
-    new THREE.CylinderGeometry(rng.range(0.4, 0.8), rng.range(1.0, 1.6), h, 6, 4),
-    {
-      dark: 0x17121a, light: 0x3d3242, seed: seedFrom(h), amp: 0.16, freq: 2,
-      emissive: 0x551d05,
-    },
-  );
-  crag.position.y = h / 2;
-  const g = new THREE.Group();
-  g.add(crag);
-  return { mesh: g, radius: 1.4, height: h };
+  // Obsidian crag: dark glass, ember glow seeping from the facets.
+  return makeSpire(rng, {
+    hMin: 2.2, hMax: 4.2, topMin: 0.4, topMax: 0.8,
+    dark: 0x17121a, light: 0x3d3242, emissive: 0x551d05, amp: 0.16,
+  });
 }
 
 const THEMES = {

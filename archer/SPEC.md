@@ -45,11 +45,13 @@ keys 1–5 in slot order under pointer lock). The default ✨ Auto slot is
 target-aware: each shot reads the battlefield and spends a special only
 where it pays for itself — exploding when 3+ enemies bunch inside the
 blast radius of the aimed enemy, freezing against an unfrozen ogre,
-burning when at least one neighbor sits inside the spread radius —
-otherwise the free normal arrow, so stragglers never drain the quiver.
-The aimed enemy is the nearest along the aim ray, matched in the XZ plane
-only (`aimedEnemy()` in `web/main.js`, slack `AIM_SLACK`): pitch is arc
-compensation on long shots and must never unselect a target. The main
+burning when the fire can still catch a neighbor (the same ignitability
+rule the actual spread uses — `EnemySystem.ignitable()` — so a frozen or
+already-burning neighbor doesn't count) — otherwise the free normal
+arrow, so stragglers never drain the quiver. The aimed enemy is the
+nearest along the aim ray, matched in the XZ plane only
+(`EnemySystem.aimedFrom()`): pitch is arc compensation on long shots and
+must never unselect a target. The main
 tick resyncs the HUD whenever the pick changes, so the highlighted slot
 tracks the crosshair. Picking an ammo slot instead pins every shot to that type:
 normal shots then conserve specials, and a pinned special unpins back to

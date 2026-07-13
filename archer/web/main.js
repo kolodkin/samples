@@ -76,43 +76,19 @@ game.ammoMode = 'auto';
 // pinned special that runs dry (last shot spent, or a retry snapshot
 // without it) unpins back to auto — the mode never points at an empty slot.
 const stocked = (m) => m === 'auto' || m === 'normal' || game.stats.ammo[m] > 0;
-// The enemy under the crosshair: nearest along the aim ray, matched in the
-// XZ plane only — pitch is arc compensation on long shots, so it must never
-// unselect a target. The slack is a generous targeting cone, not a hitbox.
-const AIM_SLACK = 1.5;
-function aimedEnemy() {
-  const origin = game.player.aimOrigin();
-  const dir = game.player.aimDir();
-  const flat = Math.hypot(dir.x, dir.z);
-  if (flat < 1e-6) return null; // aiming straight up or down
-  const dx = dir.x / flat, dz = dir.z / flat;
-  let best = null;
-  let bestT = Infinity;
-  for (const e of game.enemies.list) {
-    const ex = e.mesh.position.x - origin.x, ez = e.mesh.position.z - origin.z;
-    const t = ex * dx + ez * dz;
-    if (t <= 0 || t >= bestT) continue;
-    if (Math.abs(ex * dz - ez * dx) < e.c.bodyRadius + AIM_SLACK) {
-      best = e;
-      bestT = t;
-    }
-  }
-  return best;
-}
 // Smart auto: exploding into a cluster, freezing at an unfrozen ogre,
-// burning where the fire can spread — otherwise the free normal arrow.
-// Stragglers never drain the quiver.
+// burning where the fire can still catch a neighbor — otherwise the free
+// normal arrow. Stragglers never drain the quiver. The spatial queries
+// live on EnemySystem so the burn pick shares spreadBurn's ignitability
+// rule instead of drifting from it.
 function autoType() {
-  const aimed = aimedEnemy();
+  const aimed = game.enemies.aimedFrom(game.player.aimOrigin(), game.player.aimDir());
   if (!aimed) return 'normal';
-  const packSize = (r) => game.enemies.list.filter(
-    (e) => e.mesh.position.distanceTo(aimed.mesh.position) < r,
-  ).length; // the aimed enemy counts itself
-  const types = CONFIG.arrow.types;
   const { ammo } = game.stats;
-  if (ammo.exploding > 0 && packSize(types.exploding.radius) >= 3) return 'exploding';
+  if (ammo.exploding > 0
+      && game.enemies.packSize(aimed, CONFIG.arrow.types.exploding.radius) >= 3) return 'exploding';
   if (ammo.freezing > 0 && aimed.type === 'ogre' && aimed.frozen <= 0) return 'freezing';
-  if (ammo.burning > 0 && aimed.burn <= 0 && packSize(types.burning.spreadRadius) >= 2) return 'burning';
+  if (ammo.burning > 0 && aimed.burn <= 0 && game.enemies.ignitable(aimed).length > 0) return 'burning';
   return 'normal';
 }
 function selectedType() {
