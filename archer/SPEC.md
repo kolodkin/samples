@@ -49,6 +49,15 @@ Touch mode is detected via `(pointer: coarse)` or the first `touchstart`;
 hybrid devices keep both input paths live. Touch aim sensitivity is mouse
 sensitivity × `CONFIG.touch.lookScale`.
 
+A monster radar sits in the HUD's top-left corner (above the HP bar): a
+player-centered minimap rotated so "up" is the aim direction, with enemy
+blips tinted like their meshes (ogres draw bigger). Contacts beyond
+`CONFIG.radar.range` pin to the rim at half opacity, so an incoming wave
+reads as bearings before it closes. The canvas lives in the HUD (Preact),
+but `web/radar.js` redraws it imperatively every frame — like the
+`--power` CSS variable, per-frame enemy motion is too chatty for the UI
+store.
+
 ## Combat
 
 - Headshots deal double damage plus a score bonus; kills in quick
