@@ -13,6 +13,7 @@ This spec covers behavior the numbers don't show.
 | Mouse move (pointer lock) | Aim |
 | Left click (pointer lock) | Shoot at the set power |
 | HUD +/− buttons (left middle), or +/− keys | Adjust shot power (`CONFIG.bow.power`: min/max/step) |
+| Quiver slot click/tap, or keys 1–5 | Select ammo: ✨ Auto or a specific arrow type |
 | Esc (exits pointer lock) | Pause |
 | Touch: drag on the canvas | Aim (no pointer lock; one finger owns the camera) |
 | Touch: 🏹 button | Shoot at the set power |
@@ -39,11 +40,18 @@ blocking obstacle. Only deliberate fire
 inputs shoot: a click while pointer-locked on desktop, the 🏹 button on
 touch. Stray clicks or taps elsewhere on the screen never loose an arrow.
 
-There is no manual arrow selection: every shot automatically spends the
-strongest special in stock — exploding, then freezing, then burning, the
-declaration order of `CONFIG.arrow.types` — and falls back to the infinite
-basic arrow once the quiver is dry. The HUD quiver is a read-only stock
-display; the highlighted slot is what the next shot will fire.
+Ammo selection is a mode picked on the HUD quiver (click/tap a slot, or
+keys 1–5 in slot order under pointer lock). The default ✨ Auto slot keeps
+the classic behavior: every shot spends the strongest special in stock —
+exploding, then freezing, then burning, the declaration order of
+`CONFIG.arrow.types` — and falls back to the infinite basic arrow once the
+quiver is dry. Picking an ammo slot instead pins every shot to that type:
+normal shots then conserve specials, and a pinned special unpins back to
+Auto when its last arrow is spent (or when a stage starts without it in
+stock — retry restores the stage-start snapshot). An empty special slot
+can't be pinned; the click is ignored. The highlighted ammo slot is always
+what the next shot will fire; in Auto mode the ✨ slot highlights alongside
+it, showing the choice is automatic.
 
 Touch mode is detected via `(pointer: coarse)` or the first `touchstart`;
 hybrid devices keep both input paths live. Touch aim sensitivity is mouse
@@ -146,10 +154,11 @@ All gameplay randomness flows through one seeded mulberry32 stream
 (`web/rng.js`, `?seed=N`); particles are visual-only and exempt.
 `window.__ARCHER` (defined in `web/main.js`) exposes `ready`, a `state`
 snapshot (screen, hp, score, wave, enemies, pickups, obstacles, best,
-yaw/pitch/touch/power, nocked/canShoot, arrows with physics vs visual
-positions and trail length), and test hooks: `fireAt()` (gravity-compensated),
+yaw/pitch/touch/power, selected/mode, nocked/canShoot, arrows with physics
+vs visual positions and trail length), and test hooks: `fireAt()`
+(gravity-compensated),
 `spawnEnemy()` (optional `inert` flag disables the AI), `skipToWave()`,
-`killAll()`, `giveAmmo()`, `setDropChance()`, `setHealChance()`,
+`killAll()`, `giveAmmo()`, `selectAmmo()`, `setDropChance()`, `setHealChance()`,
 `setObstacles()` (replace the collision-obstacle list to build exact cover
 layouts; stage meshes stay), `setPlayerHp()`, `start()`,
 `nextStage()`, `retryStage()`, `visiblePixelCount()`. Tests boot with

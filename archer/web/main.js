@@ -8,7 +8,7 @@ import { EnemySystem } from './enemies.js';
 import { updateRadar, radarBlips } from './radar.js';
 import { Effects } from './effects.js';
 import { WaveManager } from './waves.js';
-import { createStore, initUI } from './ui.js';
+import { createStore, initUI, SLOTS } from './ui.js';
 
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('game');
@@ -66,12 +66,26 @@ loadStage(initialStage);
 game.player = new Player(camera);
 game.arrows = new ArrowSystem(game);
 const trajectoryHint = new TrajectoryHint(game);
-// No manual arrow selection: every shot spends the strongest special in
-// stock, then normal arrows once the quiver is dry. Priority is the
-// declaration order of CONFIG.arrow.types — strongest special first.
+// Ammo selection. 'auto' (the default) spends the strongest special in
+// stock, then normal arrows once the quiver is dry — priority is the
+// declaration order of CONFIG.arrow.types, strongest special first. A
+// specific type pins every shot to that type until it runs dry or the
+// player picks another slot.
 const AMMO_PRIORITY = Object.keys(CONFIG.arrow.types).filter((t) => t !== 'normal');
+game.ammoMode = 'auto';
+// Auto and the infinite normal arrow are always pinnable; a special only
+// while in stock. syncUI() re-checks this on every state change, so a
+// pinned special that runs dry (last shot spent, or a retry snapshot
+// without it) unpins back to auto — the mode never points at an empty slot.
+const stocked = (m) => m === 'auto' || m === 'normal' || game.stats.ammo[m] > 0;
 function selectedType() {
+  if (game.ammoMode !== 'auto') return game.ammoMode;
   return AMMO_PRIORITY.find((t) => game.stats.ammo[t] > 0) ?? 'normal';
+}
+function selectAmmo(mode) {
+  if (game.screen !== 'playing' || !stocked(mode)) return;
+  game.ammoMode = mode;
+  game.syncUI();
 }
 function fireArrow() {
   if (game.screen !== 'playing') return; // one gate for every fire path
@@ -120,13 +134,19 @@ function gameOver() {
 }
 game.effects = new Effects(scene);
 game.effects.setSnow(game.stage === 'iceberg');
-// +/- keys mirror the HUD power buttons: under pointer lock the cursor is
-// captive, so desktop players adjust power from the keyboard.
+// +/- keys mirror the HUD power buttons, and digit keys mirror the quiver
+// slots (SLOTS order): under pointer lock the cursor is captive, so desktop
+// players adjust power and pick ammo from the keyboard.
 const POWER_KEYS = { Equal: 1, NumpadAdd: 1, Minus: -1, NumpadSubtract: -1 };
+const AMMO_KEYS = Object.fromEntries(SLOTS.flatMap(([type], i) => [
+  [`Digit${i + 1}`, type], [`Numpad${i + 1}`, type],
+]));
 document.addEventListener('keydown', (e) => {
   if (game.screen !== 'playing') return;
   const dir = POWER_KEYS[e.code];
   if (dir) adjustPower(dir);
+  const mode = AMMO_KEYS[e.code];
+  if (mode) selectAmmo(mode);
 });
 game.waves = new WaveManager(game);
 const BEST_KEY = 'archer.best';
@@ -165,20 +185,26 @@ game.onStageCleared = () => {
   game.syncUI();
 };
 const store = createStore({});
-game.syncUI = () => store.set({
-  screen: game.screen,
-  hp: game.player.hp,
-  maxHp: CONFIG.player.hp,
-  score: game.stats.score,
-  ammo: { ...game.stats.ammo },
-  selected: selectedType(),
-  power: game.player.power,
-  wave: game.waves.waveIndex,
-  totalWaves: CONFIG.waves.perStage,
-  stage: game.stage,
-  best: loadBest(),
-  touch: game.touchMode,
-});
+game.syncUI = () => {
+  // Every ammo mutation flows through here — the one place the pin
+  // invariant is enforced (see `stocked`).
+  if (!stocked(game.ammoMode)) game.ammoMode = 'auto';
+  store.set({
+    screen: game.screen,
+    hp: game.player.hp,
+    maxHp: CONFIG.player.hp,
+    score: game.stats.score,
+    ammo: { ...game.stats.ammo },
+    selected: selectedType(),
+    mode: game.ammoMode,
+    power: game.player.power,
+    wave: game.waves.waveIndex,
+    totalWaves: CONFIG.waves.perStage,
+    stage: game.stage,
+    best: loadBest(),
+    touch: game.touchMode,
+  });
+};
 initUI(store, {
   start: () => startGame(initialStage),
   resume: () => { game.screen = 'playing'; game.syncUI(); },
@@ -192,6 +218,7 @@ initUI(store, {
   },
   fire: fireArrow,
   power: (dir) => { if (game.screen === 'playing') adjustPower(dir); },
+  selectAmmo,
 });
 game.syncUI();
 
@@ -297,6 +324,7 @@ window.__ARCHER = {
       best: loadBest(),
       ammo: { ...game.stats.ammo },
       selected: selectedType(),
+      mode: game.ammoMode,
       stage: game.stage,
       obstacles: game.obstacles,
       hp: game.player.hp,
@@ -346,6 +374,7 @@ window.__ARCHER = {
   setObstacles: (list) => { game.obstacles = list; }, // swap collision obstacles; meshes stay
   setPlayerHp: (n) => { game.player.hp = n; game.syncUI(); },
   giveAmmo: (type, n) => { game.stats.ammo[type] += n; game.syncUI(); },
+  selectAmmo,
   setDropChance: (c) => { CONFIG.drops.chance = c; },
   setHealChance: (c) => { CONFIG.drops.heal.chance = c; },
   killAll: () => {

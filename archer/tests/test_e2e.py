@@ -473,6 +473,59 @@ def test_specials_are_spent_strongest_first_then_normal(server_url, page):
     assert page.evaluate("() => window.__ARCHER.state.selected") == "normal"
 
 
+def test_manual_selection_pins_type_until_dry(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    _lock_pointer(page)
+    page.evaluate("() => window.__ARCHER.giveAmmo('exploding', 1)")
+    page.evaluate("() => window.__ARCHER.giveAmmo('burning', 1)")
+    # Auto puts the strongest special up; pinning burning overrides it.
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "exploding"
+    page.evaluate("() => window.__ARCHER.selectAmmo('burning')")
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "burning"
+    page.mouse.click(640, 360)
+    page.wait_for_function("() => window.__ARCHER.state.ammo.burning === 0", timeout=2000)
+    # The pinned type ran dry: unpinned back to auto, which has exploding up.
+    state = page.evaluate("() => window.__ARCHER.state")
+    assert state["mode"] == "auto"
+    assert state["selected"] == "exploding"
+
+
+def test_pinning_normal_conserves_specials(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    _lock_pointer(page)
+    page.evaluate("() => window.__ARCHER.giveAmmo('exploding', 1)")
+    page.evaluate("() => window.__ARCHER.selectAmmo('normal')")
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "normal"
+    page.mouse.click(640, 360)
+    page.wait_for_function("() => window.__ARCHER.state.arrowCount === 1", timeout=2000)
+    # The special stays in stock, and normal stays pinned (it never runs dry).
+    state = page.evaluate("() => window.__ARCHER.state")
+    assert state["ammo"]["exploding"] == 1
+    assert state["mode"] == "normal"
+
+
+def test_empty_special_slot_cannot_be_pinned(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.selectAmmo('freezing')")
+    assert page.evaluate("() => window.__ARCHER.state.mode") == "auto"
+
+
+def test_digit_keys_select_ammo(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.giveAmmo('exploding', 1)")
+    # Digits follow the HUD slot order: 1 auto, 2 normal, 3 exploding, ...
+    page.keyboard.press("Digit2")
+    assert page.evaluate("() => window.__ARCHER.state.mode") == "normal"
+    page.keyboard.press("Digit3")
+    assert page.evaluate("() => window.__ARCHER.state.mode") == "exploding"
+    page.keyboard.press("Digit1")
+    assert page.evaluate("() => window.__ARCHER.state.mode") == "auto"
+
+
 def test_wave_one_spawns_forest_mix(server_url, page):
     page.goto(server_url + "/?autostart=1&seed=42")  # waves ON
     _wait_ready(page)
@@ -645,8 +698,26 @@ def test_fire_button_shoots_on_tap(server_url, page):
 def test_quiver_highlights_the_auto_selected_arrow(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
+    # Auto mode: the ✨ slot and the arrow it picked highlight together.
+    expect(page.get_by_test_id("slot-auto")).to_have_class(re.compile(r"\bactive\b"))
     expect(page.get_by_test_id("slot-normal")).to_have_class(re.compile(r"\bactive\b"))
     page.evaluate("() => window.__ARCHER.giveAmmo('exploding', 1)")
+    expect(page.get_by_test_id("slot-exploding")).to_have_class(re.compile(r"\bactive\b"))
+
+
+def test_quiver_slot_click_pins_ammo(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.giveAmmo('exploding', 1)")
+    page.evaluate("() => window.__ARCHER.giveAmmo('burning', 2)")
+    page.get_by_test_id("slot-burning").dispatch_event("pointerdown")
+    assert page.evaluate("() => window.__ARCHER.state.mode") == "burning"
+    expect(page.get_by_test_id("slot-burning")).to_have_class(re.compile(r"\bactive\b"))
+    expect(page.get_by_test_id("slot-auto")).not_to_have_class(re.compile(r"\bactive\b"))
+    # Clicking ✨ hands the choice back: the strongest special lights up again.
+    page.get_by_test_id("slot-auto").dispatch_event("pointerdown")
+    assert page.evaluate("() => window.__ARCHER.state.mode") == "auto"
+    expect(page.get_by_test_id("slot-auto")).to_have_class(re.compile(r"\bactive\b"))
     expect(page.get_by_test_id("slot-exploding")).to_have_class(re.compile(r"\bactive\b"))
 
 
