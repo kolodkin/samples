@@ -340,9 +340,7 @@ window.__ARCHER = {
     game.arrows.fire(origin.addScaledVector(dir, 0.7), dir, power, type);
   },
   spawnEnemy: (type, x, z, inert = false) => { game.enemies.spawn(type, x, z, inert); },
-  // Test helper: replace the collision-obstacle list to build exact cover
-  // layouts. Stage meshes stay — AI and arrow clipping only consult the list.
-  setObstacles: (list) => { game.obstacles = list; },
+  setObstacles: (list) => { game.obstacles = list; }, // swap collision obstacles; meshes stay
   setPlayerHp: (n) => { game.player.hp = n; game.syncUI(); },
   giveAmmo: (type, n) => { game.stats.ammo[type] += n; game.syncUI(); },
   setDropChance: (c) => { CONFIG.drops.chance = c; },

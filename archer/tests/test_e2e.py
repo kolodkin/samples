@@ -333,10 +333,9 @@ def test_skeleton_takes_cover_behind_obstacle(server_url, page):
 
 
 def test_skeleton_peek_is_never_buried_by_neighbor_trees(server_url, page):
-    # Regression: a cover tree whose left AND right peek lanes are blocked by
-    # neighbor trees. Naive cover selection parks the skeleton there and it
-    # shuttles between the trees, hidden in both states — unhittable, its own
-    # shots eaten by the cover — and the wave can never be cleared.
+    # Regression: a cover tree whose both peek lanes are buried by neighbor
+    # trees must not be chosen — the skeleton would shuttle between the trees
+    # permanently hidden and stall the wave (see SPEC.md, Enemies).
     page.goto(server_url + BOOT)
     _wait_ready(page)
     page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")

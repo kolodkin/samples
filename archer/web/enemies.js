@@ -223,12 +223,10 @@ export class EnemySystem {
     const pos = e.mesh.position;
     const dist = Math.hypot(playerPos.x - pos.x, playerPos.z - pos.z);
     if (e.state === 'advance') {
-      if (dist > e.c.range) { this.moveToward(e, playerPos, dt, this.speedOf(e)); return; }
-      e.cover = this.pickCover(e, playerPos);
-      if (!e.cover && obstacleHit(this.headCenter(e), playerPos, this.game.obstacles)) {
-        // In range but blind, with no workable cover nearby: keep closing in
-        // until a shot line opens. Camping a spot with no line of fire would
-        // stall the wave — neither side can hit the other through obstacles.
+      e.cover = dist > e.c.range ? null : this.pickCover(e, playerPos);
+      // Engage once in range with workable cover or a line of fire; keep
+      // closing in otherwise — camping blind would stall the wave (see SPEC.md).
+      if (!e.cover && (dist > e.c.range || !this.hasLineOfFire(e, e.mesh.position, playerPos))) {
         this.moveToward(e, playerPos, dt, this.speedOf(e));
         return;
       }
@@ -251,16 +249,14 @@ export class EnemySystem {
     }
   }
 
-  // Nearest obstacle roughly on the line between this archer and the player.
-  // Neighboring obstacles can bury both of a cover's peek points (the archer
-  // would shuttle between the trees permanently hidden — unhittable and
-  // unable to hit — stalling the wave), so a candidate must leave at least
-  // one peek side with a line of fire; the archer commits to that side.
+  // Nearest obstacle roughly on the line between this archer and the player
+  // that leaves at least one peek side with a line of fire (neighbors can
+  // bury both — see SPEC.md); accepting a cover commits e.peekSide to its
+  // exposed side.
   pickCover(e, playerPos) {
     const pos = e.mesh.position;
     let best = null;
     let bestD = 18;
-    let bestSide = 0;
     for (const o of this.game.obstacles) {
       const d = Math.hypot(o.x - pos.x, o.z - pos.z);
       if (d >= bestD) continue;
@@ -272,9 +268,8 @@ export class EnemySystem {
       if (side === 0) continue; // every peek is buried behind neighbors
       best = o;
       bestD = d;
-      bestSide = side;
+      e.peekSide = side;
     }
-    if (best) e.peekSide = bestSide;
     return best;
   }
 
@@ -282,11 +277,16 @@ export class EnemySystem {
   // peek point still sees the player; 0 when both are buried.
   exposedPeekSide(e, cover, playerPos) {
     for (const side of [e.peekSide, -e.peekSide]) {
-      const p = this.peekPoint(cover, side, playerPos);
-      p.y = e.c.height; // sight line from the head, where shoot() fires from
-      if (!obstacleHit(p, playerPos, this.game.obstacles)) return side;
+      if (this.hasLineOfFire(e, this.peekPoint(cover, side, playerPos), playerPos)) return side;
     }
     return 0;
+  }
+
+  // The one "can a shot get through from here" test for cover decisions:
+  // sight line from the archer's head over `point` to the player.
+  hasLineOfFire(e, point, playerPos) {
+    const head = new THREE.Vector3(point.x, e.c.height, point.z);
+    return !obstacleHit(head, playerPos, this.game.obstacles);
   }
 
   coverPoint(cover, playerPos) {
