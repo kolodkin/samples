@@ -61,26 +61,39 @@ function loadStage(index) {
   // (the setup block re-applies snow for that first load).
   game.effects?.setSnow(name === 'iceberg');
 }
-const initialStage = Math.max(0, STAGE_ORDER.indexOf(params.get('stage') || 'forest'));
+const initialStage = Math.max(0, STAGE_ORDER.indexOf(params.get('stage') || STAGE_ORDER[0]));
 loadStage(initialStage);
 game.player = new Player(camera);
 game.arrows = new ArrowSystem(game);
 const trajectoryHint = new TrajectoryHint(game);
-// Ammo selection. 'auto' (the default) spends the strongest special in
-// stock, then normal arrows once the quiver is dry — priority is the
-// declaration order of CONFIG.arrow.types, strongest special first. A
+// Ammo selection. 'auto' (the default) reads the battlefield per shot and
+// spends a special only where it pays for itself (see autoType). A
 // specific type pins every shot to that type until it runs dry or the
 // player picks another slot.
-const AMMO_PRIORITY = Object.keys(CONFIG.arrow.types).filter((t) => t !== 'normal');
 game.ammoMode = 'auto';
 // Auto and the infinite normal arrow are always pinnable; a special only
 // while in stock. syncUI() re-checks this on every state change, so a
 // pinned special that runs dry (last shot spent, or a retry snapshot
 // without it) unpins back to auto — the mode never points at an empty slot.
 const stocked = (m) => m === 'auto' || m === 'normal' || game.stats.ammo[m] > 0;
+// Smart auto: exploding into a cluster, freezing at an unfrozen ogre,
+// burning where the fire can still catch a neighbor — otherwise the free
+// normal arrow. Stragglers never drain the quiver. The spatial queries
+// live on EnemySystem so the burn pick shares spreadBurn's ignitability
+// rule instead of drifting from it.
+function autoType() {
+  const aimed = game.enemies.aimedFrom(game.player.aimOrigin(), game.player.aimDir());
+  if (!aimed) return 'normal';
+  const { ammo } = game.stats;
+  if (ammo.exploding > 0
+      && game.enemies.packSize(aimed, CONFIG.arrow.types.exploding.radius) >= 3) return 'exploding';
+  if (ammo.freezing > 0 && aimed.type === 'ogre' && aimed.frozen <= 0) return 'freezing';
+  if (ammo.burning > 0 && aimed.burn <= 0 && game.enemies.ignitable(aimed).length > 0) return 'burning';
+  return 'normal';
+}
 function selectedType() {
   if (game.ammoMode !== 'auto') return game.ammoMode;
-  return AMMO_PRIORITY.find((t) => game.stats.ammo[t] > 0) ?? 'normal';
+  return autoType();
 }
 function selectAmmo(mode) {
   if (game.screen !== 'playing' || !stocked(mode)) return;
@@ -168,6 +181,12 @@ function startGame(stageIndex) {
   game.waves.state = 'idle';
   loadStage(stageIndex);
   game.player.resetHp();
+  // Stage-start ammo floor (CONFIG.stages[].grant): tops up a dry quiver
+  // where the difficulty steps up, but never adds on top of carry-over.
+  // Applied before the snapshot so retries restore the granted stock.
+  for (const [type, n] of Object.entries(CONFIG.stages[game.stage].grant ?? {})) {
+    game.stats.ammo[type] = Math.max(game.stats.ammo[type], n);
+  }
   game.stageInventory = { ...game.stats.ammo }; // retry restores this snapshot
   game.screen = 'playing';
   if (params.get('waves') !== '0') game.waves.startWave(1);
@@ -199,7 +218,8 @@ game.syncUI = () => {
     mode: game.ammoMode,
     power: game.player.power,
     wave: game.waves.waveIndex,
-    totalWaves: CONFIG.waves.perStage,
+    totalWaves: CONFIG.stages[game.stage].waves.length,
+    totalStages: STAGE_ORDER.length,
     stage: game.stage,
     best: loadBest(),
     touch: game.touchMode,
@@ -292,6 +312,7 @@ for (const type of ['touchend', 'touchcancel']) {
 
 let last = performance.now();
 let framesRendered = 0;
+let lastAutoPick = null; // HUD follows the smart pick as aim/enemies move
 function tick(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
@@ -302,6 +323,13 @@ function tick(now) {
     game.enemies.update(dt);
     game.waves.update(dt);
     updateRadar(game);
+    // Smart auto re-picks continuously (aim moves, enemies move), but the
+    // UI store only hears about mutations — resync when the pick changes.
+    const pick = selectedType();
+    if (pick !== lastAutoPick) {
+      lastAutoPick = pick;
+      game.syncUI();
+    }
   }
   game.effects.update(dt);
   // Stage ambient motion (canopy sway), always on: the stage breathes even
@@ -351,6 +379,8 @@ window.__ARCHER = {
       radar: radarBlips(game),
       wave: game.waves.waveIndex,
       waveState: game.waves.state,
+      totalStages: STAGE_ORDER.length,
+      dropTuning: game.waves.dropTuning(),
       pickupCount: game.waves.pickups.length,
       pickups: game.waves.pickups.map((p) => ({
         type: p.type, x: p.mesh.position.x, y: p.mesh.position.y, z: p.mesh.position.z,

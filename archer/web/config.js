@@ -53,31 +53,46 @@ export const CONFIG = {
   multiKillBonus: 25,    // extra score per combo step (kills ≤1.5 s apart)
   multiKillWindow: 1.5,  // seconds between kills to sustain a combo
   waves: {
-    perStage: 5,
     clearDelay: 2.0,     // seconds after a cleared wave before the next
     spawnInterval: 0.8,  // stagger between spawns within a wave
   },
+  // Five-stage arc, easiest first. A stage's wave count is its waves array
+  // length. The volcano finale is exactly the pre-redesign desert table —
+  // the difficulty ceiling of the whole game.
   stages: {
-    forest:  { speedMult: 1.0, waves: [
+    meadow:  { speedMult: 0.8, waves: [
+      { goblin: 2 },
+      { goblin: 3 },
       { goblin: 4 },
-      { goblin: 6 },
+    ] },
+    forest:  { speedMult: 0.9, waves: [
+      { goblin: 3, skeleton: 1 },
+      { goblin: 4, skeleton: 1 },
+      { goblin: 4, skeleton: 2 },
       { goblin: 5, skeleton: 2 },
-      { goblin: 6, skeleton: 3 },
+    ] },
+    desert:  { speedMult: 1.0, dropMult: 1.1, healMult: 1.2,
+               grant: { freezing: 10 }, waves: [
+      { goblin: 4, skeleton: 2 },
+      { goblin: 5, skeleton: 2 },
+      { goblin: 5, skeleton: 2, ogre: 1 },
       { goblin: 6, skeleton: 3, ogre: 1 },
     ] },
-    desert:  { speedMult: 1.15, waves: [
+    iceberg: { speedMult: 1.1, dropMult: 1.25, healMult: 1.3,
+               grant: { exploding: 15, freezing: 10 }, waves: [
+      { goblin: 5, skeleton: 2 },
+      { goblin: 6, skeleton: 2 },
+      { goblin: 6, skeleton: 2, ogre: 1 },
+      { goblin: 7, skeleton: 3, ogre: 1 },
+      { goblin: 7, skeleton: 3, ogre: 2 },
+    ] },
+    volcano: { speedMult: 1.15, dropMult: 1.25, healMult: 1.4,
+               grant: { exploding: 20, freezing: 10 }, waves: [
       { goblin: 6, skeleton: 2 },
       { goblin: 8, skeleton: 2 },
       { goblin: 8, skeleton: 3, ogre: 1 },
       { goblin: 10, skeleton: 3, ogre: 1 },
       { goblin: 10, skeleton: 4, ogre: 2 },
-    ] },
-    iceberg: { speedMult: 1.25, waves: [
-      { goblin: 6, skeleton: 3, ogre: 1 },
-      { goblin: 8, skeleton: 3, ogre: 1 },
-      { goblin: 8, skeleton: 4, ogre: 2 },
-      { goblin: 10, skeleton: 4, ogre: 2 },
-      { goblin: 12, skeleton: 5, ogre: 3 },
     ] },
   },
 };

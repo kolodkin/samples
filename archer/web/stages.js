@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { CONFIG } from './config.js';
 import { hash2, fbm, spread, seedFrom, setShadows, texturedMesh } from './relief.js';
 
-export const STAGE_ORDER = ['forest', 'desert', 'iceberg'];
+export const STAGE_ORDER = ['meadow', 'forest', 'desert', 'iceberg', 'volcano'];
 
 const { clamp, smoothstep } = THREE.MathUtils;
 
@@ -88,6 +88,19 @@ function makeTree(rng) {
   return { mesh: g, radius: 1.5, height: y + 1.8, sway };
 }
 
+// Squat roughened boulder, palette per biome (desert sandstone, meadow granite).
+function makeRock(rng, dark, light, rMin = 1.2, rMax = 2.2) {
+  const r = rng.range(rMin, rMax);
+  const rock = texturedMesh(new THREE.DodecahedronGeometry(r, 1), {
+    dark, light, seed: seedFrom(r), amp: r * 0.16, freq: 1.6,
+  });
+  rock.position.y = r * 0.6;
+  rock.scale.y = 0.7;
+  const g = new THREE.Group();
+  g.add(rock);
+  return { mesh: g, radius: r, height: r * 1.1 };
+}
+
 function makeDesertObstacle(rng) {
   if (rng.random() < 0.5) {
     // saguaro cactus: trunk + two arms, ribbed skin via lengthwise grain
@@ -106,33 +119,62 @@ function makeDesertObstacle(rng) {
     }
     return { mesh: g, radius: 1.0, height: h };
   }
-  const r = rng.range(1.2, 2.2);
-  const rock = texturedMesh(new THREE.DodecahedronGeometry(r, 1), {
-    dark: 0x7d5e40, light: 0xc5a072, seed: seedFrom(r), amp: r * 0.16, freq: 1.6,
-  });
-  rock.position.y = r * 0.6;
-  rock.scale.y = 0.7;
-  const g = new THREE.Group();
-  g.add(rock);
-  return { mesh: g, radius: r, height: r * 1.1 };
+  return makeRock(rng, 0x7d5e40, 0xc5a072);
 }
 
-function makeIcePillar(rng) {
-  const h = rng.range(2.5, 4.5);
-  const pillar = texturedMesh(
-    new THREE.CylinderGeometry(rng.range(0.6, 1.0), rng.range(1.0, 1.6), h, 6, 4),
-    {
-      dark: 0x9cc8e4, light: 0xf4fbff, seed: seedFrom(h), amp: 0.14, freq: 2,
-      emissive: 0x224455,
-    },
+function makeMeadowObstacle(rng) {
+  if (rng.random() < 0.5) {
+    // leafy bush: a squashed roughened ball, low cover for the gentle stage
+    const r = rng.range(0.9, 1.4);
+    const bush = texturedMesh(new THREE.IcosahedronGeometry(r, 1), {
+      dark: 0x2f6b28, light: 0x6fae4b, seed: seedFrom(r), amp: r * 0.18, freq: 2.2,
+    });
+    bush.position.y = r * 0.55;
+    bush.scale.y = 0.75;
+    const g = new THREE.Group();
+    g.add(bush);
+    return { mesh: g, radius: r, height: r * 1.2 };
+  }
+  return makeRock(rng, 0x6a6f6a, 0xa9b0a5, 1.0, 1.8); // granite boulder
+}
+
+// Faceted spire, palette per biome (ice pillar, obsidian crag): a tapered
+// six-sided column with a faint inner glow.
+function makeSpire(rng, { hMin, hMax, topMin, topMax, dark, light, emissive, amp }) {
+  const h = rng.range(hMin, hMax);
+  const spire = texturedMesh(
+    new THREE.CylinderGeometry(rng.range(topMin, topMax), rng.range(1.0, 1.6), h, 6, 4),
+    { dark, light, seed: seedFrom(h), amp, freq: 2, emissive },
   );
-  pillar.position.y = h / 2;
+  spire.position.y = h / 2;
   const g = new THREE.Group();
-  g.add(pillar);
+  g.add(spire);
   return { mesh: g, radius: 1.4, height: h };
 }
 
+function makeIcePillar(rng) {
+  return makeSpire(rng, {
+    hMin: 2.5, hMax: 4.5, topMin: 0.6, topMax: 1.0,
+    dark: 0x9cc8e4, light: 0xf4fbff, emissive: 0x224455, amp: 0.14,
+  });
+}
+
+function makeVolcanoObstacle(rng) {
+  // Obsidian crag: dark glass, ember glow seeping from the facets.
+  return makeSpire(rng, {
+    hMin: 2.2, hMax: 4.2, topMin: 0.4, topMax: 0.8,
+    dark: 0x17121a, light: 0x3d3242, emissive: 0x551d05, amp: 0.16,
+  });
+}
+
 const THEMES = {
+  meadow: {
+    sky: 0x9fd4ef, fog: [0x9fd4ef, 45, 140],
+    groundColors: [0x3f8a33, 0x86c455],
+    terrain: { seed: 44, freq: 0.045, colorFreq: 0.07, hillHeight: 4 },
+    sun: 0xfff4e0, sunIntensity: 1.5, ambient: 0x7d8b95,
+    obstacleCount: 12, obstacle: makeMeadowObstacle, perch: 0x7a7f70,
+  },
   forest: {
     sky: 0x87b5d4, fog: [0x87b5d4, 40, 130],
     groundColors: [0x2e5c28, 0x579a48],
@@ -153,6 +195,15 @@ const THEMES = {
     terrain: { seed: 33, freq: 0.06, colorFreq: 0.07, hillHeight: 6 },
     sun: 0xe8f4ff, sunIntensity: 1.5, ambient: 0x8899aa,
     obstacleCount: 18, obstacle: makeIcePillar, perch: 0x9dbfd1,
+  },
+  volcano: {
+    // Ember dusk: the fog band glows redder than the sky, so the horizon
+    // reads as a lava glow line.
+    sky: 0x3a201c, fog: [0x4a2419, 30, 110],
+    groundColors: [0x241d1b, 0x54402f],
+    terrain: { seed: 55, freq: 0.05, colorFreq: 0.06, hillHeight: 7 },
+    sun: 0xff9a52, sunIntensity: 1.2, ambient: 0x553333,
+    obstacleCount: 16, obstacle: makeVolcanoObstacle, perch: 0x3a3236,
   },
 };
 
