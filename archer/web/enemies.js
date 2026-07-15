@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
-import { segClosest, obstacleHit } from './geom.js';
+import { segClosest, obstacleHit, pushOutOfObstacles } from './geom.js';
 import { setShadows } from './relief.js';
 
 function lambert(color) { return new THREE.MeshLambertMaterial({ color }); }
@@ -180,6 +180,9 @@ export class EnemySystem {
         if (e.type === 'skeleton') this.updateArcher(e, dt, playerPos);
         else this.updateMelee(e, dt, playerPos);
         if (!this.list.includes(e)) continue; // spent itself on a melee hit
+        // Walkers cannot clip through obstacles; the footprint is the
+        // body circle (not the fatter bodyRadius() arrow hit-sphere).
+        pushOutOfObstacles(e.mesh.position, e.c.bodyRadius, this.game.obstacles);
       }
       e.mesh.position.y = Math.abs(Math.sin(e.bobT)) * 0.07; // visual bob only
     }
