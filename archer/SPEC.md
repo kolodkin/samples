@@ -111,7 +111,7 @@ store.
   visibly; like player arrows they use segment-vs-sphere collision, so
   they cannot tunnel through the player even at low frame rates.
 - Walkers collide with obstacles: after each AI step,
-  `resolveObstacles()` in `web/enemies.js` pushes the enemy's body circle
+  `pushOutOfObstacles()` in `web/geom.js` pushes the enemy's body circle
   (`bodyRadius`) out of any obstacle cylinder it overlaps. Only the
   radial part of the step is cancelled, so enemies slide around trees
   toward the player instead of clipping through (or sticking to) them.

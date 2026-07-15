@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
-import { segClosest, obstacleHit } from './geom.js';
+import { segClosest, obstacleHit, pushOutOfObstacles } from './geom.js';
 import { setShadows } from './relief.js';
 
 function lambert(color) { return new THREE.MeshLambertMaterial({ color }); }
@@ -180,28 +180,13 @@ export class EnemySystem {
         if (e.type === 'skeleton') this.updateArcher(e, dt, playerPos);
         else this.updateMelee(e, dt, playerPos);
         if (!this.list.includes(e)) continue; // spent itself on a melee hit
-        this.resolveObstacles(e);
+        // Walkers cannot clip through obstacles; the footprint is the
+        // body circle (not the fatter bodyRadius() arrow hit-sphere).
+        pushOutOfObstacles(e.mesh.position, e.c.bodyRadius, this.game.obstacles);
       }
       e.mesh.position.y = Math.abs(Math.sin(e.bobT)) * 0.07; // visual bob only
     }
     this.updateProjectiles(dt, playerPos);
-  }
-
-  // Walkers cannot pass through obstacles: push the body circle out of any
-  // obstacle cylinder it overlaps. Only the radial part of the step is
-  // cancelled, so enemies slide around trees instead of clipping through.
-  // (Arrows and skeleton shots do their own segment test — see obstacleHit.)
-  resolveObstacles(e) {
-    const pos = e.mesh.position;
-    for (const o of this.game.obstacles) {
-      const minD = o.radius + e.c.bodyRadius;
-      let dx = pos.x - o.x, dz = pos.z - o.z;
-      let d = Math.hypot(dx, dz);
-      if (d >= minD) continue;
-      if (d < 1e-6) { dx = 1; dz = 0; d = 1; } // dead center: pick a side
-      pos.x = o.x + (dx / d) * minD;
-      pos.z = o.z + (dz / d) * minD;
-    }
   }
 
   spreadBurn(e, dt) {
