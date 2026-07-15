@@ -346,6 +346,42 @@ def test_obstacle_blocks_player_arrow(server_url, page):
     assert state["enemies"][0]["hp"] == 40
 
 
+def test_goblin_walks_around_obstacle_not_through(server_url, page):
+    # Walkers must collide with obstacles: a goblin heading for the player
+    # slides around a trunk on its path instead of clipping through it.
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
+    # One fat trunk dead on the line from the spawn to the player (0, 3.2, 34).
+    # The goblin's zigzag weave (~±0.8 m) cannot sidestep a 1.5 m radius, so
+    # any interior frame means it walked through. Track the deepest
+    # penetration every frame: our rAF callback registers after the game
+    # loop, so it samples post-tick positions.
+    page.evaluate(
+        """() => {
+          window.__ARCHER.setObstacles([{ x: 0, z: 22, radius: 1.5, height: 6 }]);
+          window.__ARCHER.spawnEnemy('goblin', 0, 10);
+          window.__minGap = Infinity;
+          const track = () => {
+            const e = window.__ARCHER.state.enemies[0];
+            if (e) {
+              window.__minGap = Math.min(
+                window.__minGap, Math.hypot(e.x, e.z - 22) - 1.5);
+            }
+            requestAnimationFrame(track);
+          };
+          track();
+        }"""
+    )
+    # Collision must not strand it either: it still reaches the player,
+    # lands its one strike, and despawns.
+    page.wait_for_function("() => window.__ARCHER.state.enemyCount === 0", timeout=45000)
+    assert page.evaluate("() => window.__ARCHER.state.hp") == 10000 - 10
+    # Its 0.55 m body circle never entered the trunk (slack for spawn-frame
+    # sampling and float noise).
+    assert page.evaluate("() => window.__minGap") > 0.2
+
+
 def test_player_death_shows_game_over(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)

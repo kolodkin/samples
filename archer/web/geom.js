@@ -36,6 +36,28 @@ function segCylinderT(a, b, cx, cz, r, h) {
   return null;
 }
 
+// Push a body circle of radius r at pos out of every obstacle cylinder it
+// overlaps (in place, XZ only). Only the radial part of the offending step
+// is cancelled, so movers slide around obstacles instead of sticking.
+// Obstacles may overlap each other and a push can land inside a neighbor,
+// so sweep again until a pass pushes nothing (bounded).
+export function pushOutOfObstacles(pos, r, obstacles) {
+  for (let pass = 0; pass < 3; pass++) {
+    let pushed = false;
+    for (const o of obstacles) {
+      const minD = o.radius + r;
+      let dx = pos.x - o.x, dz = pos.z - o.z;
+      let d = Math.hypot(dx, dz);
+      if (d >= minD) continue;
+      if (d < 1e-6) { dx = 1; dz = 0; d = 1; } // dead center: pick a side
+      pos.x = o.x + (dx / d) * minD;
+      pos.z = o.z + (dz / d) * minD;
+      pushed = true;
+    }
+    if (!pushed) return;
+  }
+}
+
 // First impact along [a,b] against obstacles ({x, z, radius, height}
 // cylinders based at y=0), padded by the projectile radius; null if the
 // path is clear.
