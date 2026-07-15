@@ -492,11 +492,9 @@ def test_burning_arrow_ticks_and_spreads(server_url, page):
     _shot(page, "burning-spread")  # both ogres alight
 
 
-# The burning arrow's mid-air split: a lob that arcs above the split height
-# fans into a volley of burning arrows on the way down (flat shots never
-# cross it — test_burning_arrow_ticks_and_spreads above is the no-split
-# guard: its direct hit still ignites). The split shot stays ONE shot for
-# auto ammo: the volley reports a single aggregated verdict.
+# The burning arrow's mid-air split (see SPEC.md). The no-split guard is
+# test_burning_arrow_ticks_and_spreads above: its close-range flat shot
+# stays below the split height and still ignites on a direct hit.
 
 
 def test_burning_lob_splits_into_a_volley(server_url, page):

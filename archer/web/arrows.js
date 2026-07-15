@@ -176,12 +176,10 @@ export class ArrowSystem {
       const blocked = obstacleHit(prev, a.pos, this.game.obstacles, R);
       const pos = blocked ?? a.pos;
 
-      // A burning lob that dives back down through the split height fans
-      // into an incendiary volley. The crossing test is what makes the
-      // split meaningful: it guarantees split.height of open air below
-      // for the fan to spread, and flat shots (loosed from below it)
-      // never split. Fragments never split again, and an obstacle strike
-      // this frame wins — the arrow was dead before the crossing.
+      // A lob diving back down through its type's split height fans into
+      // a volley (see SPEC.md): the crossing guarantees open air below
+      // for the fan to spread. Fragments never split again, and an
+      // obstacle strike this frame wins — the arrow died before crossing.
       const split = CONFIG.arrow.types[a.type].split;
       if (split && !a.volley && !blocked
           && prev.y > split.height && pos.y <= split.height) {
@@ -198,7 +196,9 @@ export class ArrowSystem {
           if (segClosest(prev, pos, p.mesh.position).distanceTo(p.mesh.position)
               < CONFIG.drops.radius + R) {
             this.game.waves.collect(p);
-            this.resolve(a, null); // still settles a fragment's volley share
+            // Neutral for the shot verdict — but a fragment still settles
+            // its volley share (a false share never flips a volley to hit).
+            if (a.volley) this.resolve(a, false);
             this.remove(a);
             consumed = true;
             break;
@@ -241,43 +241,33 @@ export class ArrowSystem {
     }
   }
 
-  // Every spent arrow funnels its outcome here (null is neutral — a pickup
-  // collection, which reports nothing). A lone arrow reports immediately.
-  // A volley fragment instead settles its share of the split shot, which
-  // reports once — a hit if ANY fragment damaged someone — when its last
-  // fragment is spent, so the split shot stays a single shot for auto ammo.
-  resolve(a, outcome) {
-    if (!a.volley) {
-      if (outcome !== null) this.game.onShotResolved?.(outcome);
-    } else {
-      a.volley.hit ||= outcome === true;
-      if (--a.volley.left === 0) this.game.onShotResolved?.(a.volley.hit);
-    }
+  // Every spent arrow funnels its verdict here. A lone arrow reports
+  // immediately; a volley fragment instead settles its share of the split
+  // shot, which reports once — a hit if ANY fragment damaged someone —
+  // when its last fragment is spent, so a split stays a single shot.
+  resolve(a, hit) {
+    if (!a.volley) { this.game.onShotResolved?.(hit); return; }
+    a.volley.hit ||= hit;
+    if (--a.volley.left === 0) this.game.onShotResolved?.(a.volley.hit);
   }
 
   // Replace `a` with split.count fragments at the exact height crossing:
   // fragment 0 holds the parent's flight line (a lob aimed at a single
-  // target still connects), the rest tilt off it by split.angle around a
-  // ring, landing in a circle about a burn-spread wide.
+  // target still connects), the rest tilt off it around a ring.
   split(a, prev, split) {
     const at = prev.clone().lerp(a.pos, (prev.y - split.height) / (prev.y - a.pos.y));
     const speed = a.vel.length();
     const axis = a.vel.clone().normalize();
-    // Ring basis around the flight line; a near-vertical dive degenerates
-    // the horizontal cross product, any horizontal axis serves then.
+    // Tilt axis for the ring; a near-vertical dive degenerates the
+    // horizontal cross product, and any horizontal direction serves then.
     const u = new THREE.Vector3().crossVectors(axis, new THREE.Vector3(0, 1, 0));
     if (u.lengthSq() < 1e-6) u.set(1, 0, 0);
     u.normalize();
-    const w = new THREE.Vector3().crossVectors(axis, u);
     const volley = { left: split.count, hit: false };
     for (let i = 0; i < split.count; i++) {
-      const dir = axis.clone();
-      if (i > 0) {
-        const phi = (2 * Math.PI * (i - 1)) / (split.count - 1);
-        dir.multiplyScalar(Math.cos(split.angle))
-          .addScaledVector(u, Math.sin(split.angle) * Math.cos(phi))
-          .addScaledVector(w, Math.sin(split.angle) * Math.sin(phi));
-      }
+      const dir = i === 0 ? axis.clone()
+        : axis.clone().applyAxisAngle(u, split.angle)
+          .applyAxisAngle(axis, (2 * Math.PI * (i - 1)) / (split.count - 1));
       this.spawn(at, dir.multiplyScalar(speed), a.type, null, volley);
     }
     this.game.effects?.burst(at, CONFIG.arrow.types[a.type].color, 14, 5);

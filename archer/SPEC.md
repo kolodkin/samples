@@ -89,7 +89,8 @@ store.
   `CONFIG.arrow.types.burning.split.height` into a volley of burning
   arrows: one fragment holds the flight line (a lob at a single target
   still connects), the rest tilt off it by `split.angle`, landing in a
-  ring about a burn-spread wide. The height sits above eye level, so the
+  ring of roughly `height·tan(angle)` radius — tuned to about a
+  burn-spread, so the fires chain. The height sits above eye level, so the
   split only happens when there is room for the fan to matter — flat
   shots never cross it and stay precise single ignites. The volley stays
   ONE shot for auto ammo: fragments share a verdict that reports through
