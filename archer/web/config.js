@@ -21,7 +21,8 @@ export const CONFIG = {
     headshotMult: 2,
     types: {
       // Specials are declared strongest-first: that order is the auto-fire
-      // priority (main.js spends the first type in stock on every shot).
+      // priority (after a hit, autoType in main.js spends the first type
+      // in stock).
       normal:    { damage: 34, color: 0xd8c9a3 },
       exploding: { damage: 20, color: 0xff7733, radius: 5, aoeDamage: 55 },
       freezing:  { damage: 18, color: 0x66ddff, freezeTime: 3, shatterMult: 2 },

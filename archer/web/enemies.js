@@ -194,43 +194,12 @@ export class EnemySystem {
   }
 
   // Neighbors the fire can still catch: inside the spread radius, not
-  // already burning, not frozen (ice quenches fire). The one definition of
-  // "will burning pay off?" — the actual spread above and smart auto's
-  // pick (main.js autoType) must never disagree.
+  // already burning, not frozen (ice quenches fire).
   ignitable(e) {
     const r = CONFIG.arrow.types.burning.spreadRadius;
     return this.list.filter((other) => other !== e && other.burn <= 0
       && other.frozen <= 0
       && other.mesh.position.distanceTo(e.mesh.position) < r);
-  }
-
-  // Enemies within r of e, e itself included (smart auto's cluster check).
-  packSize(e, r) {
-    return this.list.filter(
-      (other) => other.mesh.position.distanceTo(e.mesh.position) < r,
-    ).length;
-  }
-
-  // The enemy under the crosshair: nearest along the aim ray, matched in
-  // the XZ plane only — pitch is arc compensation on long shots, so it
-  // must never unselect a target. The slack is a generous targeting cone
-  // for smart auto, not a hitbox.
-  aimedFrom(origin, dir, slack = 1.5) {
-    const flat = Math.hypot(dir.x, dir.z);
-    if (flat < 1e-6) return null; // aiming straight up or down
-    const dx = dir.x / flat, dz = dir.z / flat;
-    let best = null;
-    let bestT = Infinity;
-    for (const e of this.list) {
-      const ex = e.mesh.position.x - origin.x, ez = e.mesh.position.z - origin.z;
-      const t = ex * dx + ez * dz;
-      if (t <= 0 || t >= bestT) continue;
-      if (Math.abs(ex * dz - ez * dx) < e.c.bodyRadius + slack) {
-        best = e;
-        bestT = t;
-      }
-    }
-    return best;
   }
 
   updateMelee(e, dt, playerPos) {

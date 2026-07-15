@@ -171,21 +171,25 @@ export class ArrowSystem {
       const blocked = obstacleHit(prev, a.pos, this.game.obstacles, R);
       const pos = blocked ?? a.pos;
 
-      // Pickups are collected by shooting them (segment check: arrows are fast).
+      // Pickups are collected by shooting them (segment check: arrows are
+      // fast). Collection is neutral for auto ammo: the arrow is spent
+      // without resolving as a hit or a miss.
       let consumed = false;
       if (this.game.waves) {
         for (const p of [...this.game.waves.pickups]) {
           if (segClosest(prev, pos, p.mesh.position).distanceTo(p.mesh.position)
               < CONFIG.drops.radius + R) {
             this.game.waves.collect(p);
+            this.remove(a);
             consumed = true;
             break;
           }
         }
       }
+      if (consumed) continue;
 
       // Enemies: head sphere first (headshots win ties), then body sphere.
-      if (!consumed && this.game.enemies) {
+      if (this.game.enemies) {
         for (const e of this.game.enemies.list) {
           const head = this.game.enemies.headCenter(e);
           if (segClosest(prev, pos, head).distanceTo(head) < e.c.headRadius + R) {
@@ -203,12 +207,16 @@ export class ArrowSystem {
         }
       }
 
-      if (consumed) { this.remove(a); continue; }
+      // A spent arrow reports hit (damaged someone) or miss to the game so
+      // auto ammo can react; a direct strike always damaged its target.
+      if (consumed) { this.game.onShotResolved?.(true); this.remove(a); continue; }
       if (blocked || pos.y <= 0.05 || a.age > CONFIG.arrow.lifetime) {
         // Exploding arrows detonate on whatever stopped them — on cover,
-        // splash is the designed counter to enemies hiding behind it.
-        if (a.type === 'exploding') this.explode(pos);
-        else if (blocked) this.game.effects?.burst(pos, 0x8a7a66, 8, 3);
+        // splash is the designed counter to enemies hiding behind it, and
+        // a splash that damaged anyone still counts as a hit.
+        const damaged = a.type === 'exploding' && this.explode(pos);
+        if (blocked && a.type !== 'exploding') this.game.effects?.burst(pos, 0x8a7a66, 8, 3);
+        this.game.onShotResolved?.(damaged);
         this.remove(a);
       }
     }
@@ -226,13 +234,19 @@ export class ArrowSystem {
 
   // AoE with linear falloff. Deliberately no line-of-sight check: splash
   // reaches enemies hiding behind cover (the counter to skeleton archers).
+  // Returns whether anyone was damaged (a splash hit for auto ammo).
   explode(pos) {
     this.game.effects?.burst(pos, 0xffaa33, 40, 12);
     const t = CONFIG.arrow.types.exploding;
+    let damaged = false;
     for (const e of [...this.game.enemies.list]) {
       const d = this.game.enemies.bodyCenter(e).distanceTo(pos);
-      if (d < t.radius) this.game.enemies.damage(e, t.aoeDamage * (1 - d / t.radius));
+      if (d < t.radius) {
+        this.game.enemies.damage(e, t.aoeDamage * (1 - d / t.radius));
+        damaged = true;
+      }
     }
+    return damaged;
   }
 }
 

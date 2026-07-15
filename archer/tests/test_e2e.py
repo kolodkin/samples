@@ -38,9 +38,12 @@ def _shot(page, name):
     page.screenshot(path=str(SHOTS / f"{name}.png"))
 
 
-def _drop_and_shoot_pickup(page, shot_name=None):
-    """Kill an inert goblin, shoot the pickup it drops, return the pickup."""
-    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32, true)")
+def _drop_and_shoot_pickup(page, shot_name=None, spawn=True):
+    """Kill everything on the field (spawning an inert goblin first unless
+    the test already parked exactly one enemy), shoot the pickup that
+    drops, and return it."""
+    if spawn:
+        page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32, true)")
     page.evaluate("() => window.__ARCHER.killAll()")
     page.wait_for_function("() => window.__ARCHER.state.pickupCount === 1", timeout=2000)
     pickup = page.evaluate("() => window.__ARCHER.state.pickups[0]")
@@ -51,11 +54,21 @@ def _drop_and_shoot_pickup(page, shot_name=None):
     return pickup
 
 
-def _spawn_cluster(page):
-    """Three inert goblins bunched inside the exploding blast radius, on the
-    boot aim line (the player looks dead ahead along -z)."""
-    for x, z in ((0, 20), (1.5, 19), (-1.5, 21)):
-        page.evaluate(f"() => window.__ARCHER.spawnEnemy('goblin', {x}, {z}, true)")
+def _arm_auto(page, shot="0, 0.65, 26"):
+    """Land a shot that damages an inert goblin at (0, 26) so Auto arms
+    (last shot hit). Obstacles are cleared first so the shot line is
+    guaranteed. The goblin (40 hp) survives the hit and stays on the
+    field. `shot` is the fireAt argument list — the default is a free
+    arrow into the body; pass e.g. "3, 0, 26, 'exploding'" for a ground
+    burst beside it."""
+    page.evaluate("() => window.__ARCHER.setObstacles([])")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 26, true)")
+    page.evaluate(f"() => window.__ARCHER.fireAt({shot})")
+    page.wait_for_function(
+        "() => window.__ARCHER.state.arrowCount === 0"
+        " && window.__ARCHER.state.enemies[0].hp < 40",
+        timeout=5000,
+    )
 
 
 def test_boot_renders(server_url, page):
@@ -479,81 +492,111 @@ def test_burning_arrow_ticks_and_spreads(server_url, page):
     _shot(page, "burning-spread")  # both ogres alight
 
 
-# Smart auto: the ✨ mode reads the battlefield per shot — a special is
-# spent only where it pays for itself (cluster, ogre, spreadable pair);
-# stragglers and empty skies get the free normal arrow. The player at
-# (0, 3.2, 34) boots aiming dead ahead along -z, so enemies spawned near
-# x=0 sit on the aim line.
+# Hit/miss auto: the ✨ mode rides the player's accuracy. A shot that
+# damaged at least one enemy arms it — the next auto shot spends the best
+# special in stock, strongest-first in CONFIG declaration order (exploding
+# → freezing → burning). A shot that hurt nobody disarms it back to the
+# free normal arrow, so cold streaks never drain the quiver. Shooting a
+# pickup is neutral. The player at (0, 3.2, 34) boots aiming dead ahead
+# along -z, so enemies spawned near x=0 sit on the aim line.
 
 
-def test_auto_conserves_specials_on_a_lone_target(server_url, page):
+def test_auto_starts_on_the_basic_arrow(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
     page.evaluate("() => window.__ARCHER.giveAmmo('exploding', 5)")
     page.evaluate("() => window.__ARCHER.giveAmmo('freezing', 5)")
     page.evaluate("() => window.__ARCHER.giveAmmo('burning', 5)")
-    # A full quiver but nothing aimed at: the free arrow is up.
-    assert page.evaluate("() => window.__ARCHER.state.selected") == "normal"
-    # A lone goblin is not worth a special either.
-    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 20, true)")
-    assert page.evaluate("() => window.__ARCHER.state.selected") == "normal"
-
-
-def test_auto_picks_exploding_for_a_cluster(server_url, page):
-    page.goto(server_url + BOOT)
-    _wait_ready(page)
-    page.evaluate("() => window.__ARCHER.giveAmmo('exploding', 1)")
-    _spawn_cluster(page)
-    assert page.evaluate("() => window.__ARCHER.state.selected") == "exploding"
-    _shot(page, "auto-picks-exploding-for-cluster")
-
-
-def test_auto_picks_freezing_for_an_ogre(server_url, page):
-    page.goto(server_url + BOOT)
-    _wait_ready(page)
-    page.evaluate("() => window.__ARCHER.giveAmmo('exploding', 5)")
-    page.evaluate("() => window.__ARCHER.giveAmmo('freezing', 5)")
-    # A lone ogre: freezing (shatter setup), not exploding — no cluster.
+    # A full quiver and even a target in the sights: no hit landed yet, so
+    # the free arrow is up.
     page.evaluate("() => window.__ARCHER.spawnEnemy('ogre', 0, 20, true)")
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "normal"
+
+
+def test_auto_arms_best_special_after_a_hit(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.giveAmmo('freezing', 5)")
+    page.evaluate("() => window.__ARCHER.giveAmmo('burning', 5)")
+    _arm_auto(page)
+    # The hit armed auto: the strongest special in stock is up next.
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "freezing"
+    _shot(page, "auto-armed-after-hit")
+    # A stronger special entering stock outranks it immediately.
+    page.evaluate("() => window.__ARCHER.giveAmmo('exploding', 1)")
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "exploding"
+
+
+def test_auto_disarms_to_basic_after_a_miss(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.giveAmmo('freezing', 5)")
+    _arm_auto(page)
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "freezing"
+    # An arrow into bare ground hurts nobody: back to the free arrow.
+    page.evaluate("() => window.__ARCHER.fireAt(12, 0, 20)")
+    page.wait_for_function("() => window.__ARCHER.state.arrowCount === 0", timeout=5000)
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "normal"
+
+
+def test_auto_counts_exploding_splash_as_a_hit(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.giveAmmo('freezing', 5)")
+    # Ground burst beside the goblin: no direct strike, but the splash
+    # reaches it — that counts as a hit and arms auto.
+    _arm_auto(page, shot="3, 0, 26, 'exploding'")
     assert page.evaluate("() => window.__ARCHER.state.selected") == "freezing"
 
 
-def test_auto_picks_burning_for_a_spreadable_pair(server_url, page):
+def test_auto_treats_an_empty_splash_as_a_miss(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
-    page.evaluate("() => window.__ARCHER.giveAmmo('burning', 5)")
-    # Two goblins within the burn spread radius of each other.
-    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0.8, 20, true)")
-    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', -0.8, 20, true)")
-    assert page.evaluate("() => window.__ARCHER.state.selected") == "burning"
-
-
-def test_auto_skips_burning_when_fire_cannot_spread(server_url, page):
-    page.goto(server_url + BOOT)
-    _wait_ready(page)
-    page.evaluate("() => window.__ARCHER.giveAmmo('burning', 5)")
-    # Nearer goblin on the aim line; its only neighbor is about to freeze.
-    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0.8, 22, true)")
-    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', -0.8, 20.5, true)")
-    assert page.evaluate("() => window.__ARCHER.state.selected") == "burning"
-    # Ice quenches fire: a frozen neighbor can't catch, so burning no
-    # longer pays and auto falls back to the free arrow.
-    page.evaluate("() => window.__ARCHER.fireAt(-0.8, 0.65, 20.5, 'freezing')")
-    page.wait_for_function(
-        "() => window.__ARCHER.state.enemies.some(e => e.frozen)", timeout=3000
-    )
+    page.evaluate("() => window.__ARCHER.giveAmmo('freezing', 5)")
+    _arm_auto(page)
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "freezing"
+    # An exploding arrow bursting far from everyone damages nobody: a miss.
+    page.evaluate("() => window.__ARCHER.fireAt(-15, 0, 15, 'exploding')")
+    page.wait_for_function("() => window.__ARCHER.state.arrowCount === 0", timeout=5000)
     assert page.evaluate("() => window.__ARCHER.state.selected") == "normal"
 
 
-def test_auto_spends_the_picked_special_and_falls_back(server_url, page):
+def test_auto_ignores_pickup_shots(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setDropChance(1)")
+    page.evaluate("() => window.__ARCHER.setHealChance(1)")  # potion: stock untouched
+    page.evaluate("() => window.__ARCHER.giveAmmo('freezing', 5)")
+    _arm_auto(page)
+    # Shoot down the drop the armed goblin leaves behind: collecting a
+    # pickup is neutral — it neither arms nor disarms auto.
+    _drop_and_shoot_pickup(page, spawn=False)
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "freezing"
+
+
+def test_auto_resets_to_basic_on_stage_start(server_url, page):
+    # Iceberg grants exploding+freezing at stage start; auto still opens cold.
+    page.goto(server_url + "/?autostart=1&seed=42&waves=0&stage=iceberg")
+    _wait_ready(page)
+    assert page.evaluate("() => window.__ARCHER.state.ammo.exploding") == 15
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "normal"
+    _arm_auto(page)
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "exploding"
+    # Retry restores the stage-start snapshot AND the cold start.
+    page.evaluate("() => window.__ARCHER.retryStage()")
+    assert page.evaluate("() => window.__ARCHER.state.ammo.exploding") == 15
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "normal"
+
+
+def test_auto_falls_back_when_the_special_runs_dry(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
     _lock_pointer(page)
     page.evaluate("() => window.__ARCHER.giveAmmo('exploding', 1)")
-    _spawn_cluster(page)
+    _arm_auto(page)
     assert page.evaluate("() => window.__ARCHER.state.selected") == "exploding"
-    # The shot spends the exploding arrow; the stock is dry, so the next
-    # pick is the free normal arrow even though the cluster still stands.
+    # The shot spends the last exploding arrow; auto is still armed but the
+    # quiver is dry, so the next pick is the free normal arrow.
     page.mouse.click(640, 360)
     page.wait_for_function("() => window.__ARCHER.state.ammo.exploding === 0", timeout=2000)
     assert page.evaluate("() => window.__ARCHER.state.selected") == "normal"
@@ -571,7 +614,8 @@ def test_manual_selection_pins_type_until_dry(server_url, page):
     assert page.evaluate("() => window.__ARCHER.state.selected") == "burning"
     page.mouse.click(640, 360)
     page.wait_for_function("() => window.__ARCHER.state.ammo.burning === 0", timeout=2000)
-    # The pinned type ran dry: unpinned back to auto's battlefield pick.
+    # The pinned type ran dry: unpinned back to auto (disarmed: the miss
+    # is still in flight, so the free arrow is up).
     state = page.evaluate("() => window.__ARCHER.state")
     assert state["mode"] == "auto"
     assert state["selected"] == "normal"
@@ -880,10 +924,10 @@ def test_quiver_highlights_the_auto_selected_arrow(server_url, page):
     # Auto mode: the ✨ slot and the arrow it picked highlight together.
     expect(page.get_by_test_id("slot-auto")).to_have_class(re.compile(r"\bactive\b"))
     expect(page.get_by_test_id("slot-normal")).to_have_class(re.compile(r"\bactive\b"))
-    # A stocked special lights up once the battlefield calls for it — the
-    # HUD follows the smart pick as enemies appear, not just on shots.
+    # A stocked special lights up the moment a hit arms auto — the HUD
+    # follows the armed pick, not just slot clicks.
     page.evaluate("() => window.__ARCHER.giveAmmo('exploding', 1)")
-    _spawn_cluster(page)
+    _arm_auto(page)
     expect(page.get_by_test_id("slot-exploding")).to_have_class(re.compile(r"\bactive\b"))
 
 
@@ -896,8 +940,8 @@ def test_quiver_slot_click_pins_ammo(server_url, page):
     assert page.evaluate("() => window.__ARCHER.state.mode") == "burning"
     expect(page.get_by_test_id("slot-burning")).to_have_class(re.compile(r"\bactive\b"))
     expect(page.get_by_test_id("slot-auto")).not_to_have_class(re.compile(r"\bactive\b"))
-    # Clicking ✨ hands the choice back to auto's battlefield pick (an empty
-    # field: the free normal arrow).
+    # Clicking ✨ hands the choice back to auto (no hit landed yet: the
+    # free normal arrow).
     page.get_by_test_id("slot-auto").dispatch_event("pointerdown")
     assert page.evaluate("() => window.__ARCHER.state.mode") == "auto"
     expect(page.get_by_test_id("slot-auto")).to_have_class(re.compile(r"\bactive\b"))
@@ -969,8 +1013,8 @@ def test_hud_reflects_score_ammo_and_selection(server_url, page):
     expect(page.get_by_test_id("score")).to_have_text("150")
     page.evaluate("() => window.__ARCHER.giveAmmo('freezing', 4)")
     expect(page.get_by_test_id("ammo-freezing")).to_have_text("4")
-    # An ogre in the sights makes freezing the auto pick, and the HUD shows it.
-    page.evaluate("() => window.__ARCHER.spawnEnemy('ogre', 0, 20, true)")
+    # The headshot kill above armed auto: with freezing now in stock it is
+    # the pick, and the HUD shows it.
     expect(page.get_by_test_id("slot-freezing")).to_have_class(re.compile(r"\bactive\b"))
     _shot(page, "hud-auto-freezing-pick")
     # Wave counter shows the current stage's own wave count (forest: 4).
