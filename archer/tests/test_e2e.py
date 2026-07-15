@@ -492,6 +492,55 @@ def test_burning_arrow_ticks_and_spreads(server_url, page):
     _shot(page, "burning-spread")  # both ogres alight
 
 
+# The burning arrow's mid-air split: a lob that arcs above the split height
+# fans into a volley of burning arrows on the way down (flat shots never
+# cross it — test_burning_arrow_ticks_and_spreads above is the no-split
+# guard: its direct hit still ignites). The split shot stays ONE shot for
+# auto ammo: the volley reports a single aggregated verdict.
+
+
+def test_burning_lob_splits_into_a_volley(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    # Arm auto with freezing in stock, so the volley's aggregated verdict
+    # is observable on state.selected afterwards.
+    page.evaluate("() => window.__ARCHER.giveAmmo('freezing', 5)")
+    _arm_auto(page)
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "freezing"
+    # A minimum-power lob at far bare ground arcs above the split height.
+    page.evaluate("() => window.__ARCHER.fireAt(0, 0, -20, 'burning', 0.2)")
+    page.wait_for_function("() => window.__ARCHER.state.arrowCount > 1", timeout=5000)
+    state = page.evaluate("() => window.__ARCHER.state")
+    assert state["arrowCount"] == 5  # CONFIG.arrow.types.burning.split.count
+    assert all(a["type"] == "burning" for a in state["arrows"])
+    _shot(page, "burning-volley")
+    # Five fragments into bare ground resolve as ONE missed shot: auto
+    # disarms back to the free arrow only once the whole volley is spent.
+    page.wait_for_function("() => window.__ARCHER.state.arrowCount === 0", timeout=5000)
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "normal"
+
+
+def test_burning_volley_rains_fire_on_a_cluster(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setObstacles([])")
+    page.evaluate("() => window.__ARCHER.giveAmmo('freezing', 5)")
+    # A pack of tanks straddling the landing zone (ogres soak the burn).
+    for x, z in ((0, -20), (1.8, -20), (-1.8, -20), (0, -17.5), (0, -22.5)):
+        page.evaluate(f"() => window.__ARCHER.spawnEnemy('ogre', {x}, {z}, true)")
+    page.evaluate("() => window.__ARCHER.fireAt(0, 0, -20, 'burning', 0.2)")
+    page.wait_for_function("() => window.__ARCHER.state.arrowCount > 1", timeout=5000)
+    # The center fragment holds the aim line into the pack; whoever it
+    # strikes ignites, and the burn chains between neighbors.
+    page.wait_for_function(
+        "() => window.__ARCHER.state.enemies.some((e) => e.burning)", timeout=5000
+    )
+    _shot(page, "burning-volley-cluster")
+    # One shot, one verdict: the volley damaged someone, so auto arms.
+    page.wait_for_function("() => window.__ARCHER.state.arrowCount === 0", timeout=5000)
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "freezing"
+
+
 # Hit/miss auto: the ✨ mode rides the player's accuracy. A shot that
 # damaged at least one enemy arms it — the next auto shot spends the best
 # special in stock, strongest-first in CONFIG declaration order (exploding

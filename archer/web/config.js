@@ -26,7 +26,12 @@ export const CONFIG = {
       normal:    { damage: 34, color: 0xd8c9a3 },
       exploding: { damage: 20, color: 0xff7733, radius: 5, aoeDamage: 55 },
       freezing:  { damage: 18, color: 0x66ddff, freezeTime: 3, shatterMult: 2 },
-      burning:   { damage: 15, color: 0xff4422, dps: 9, burnTime: 4, spreadRadius: 2.5 },
+      // split: a lobbed fire arrow that dives back through `height` fans
+      // into `count` arrows (one holds the line, the rest tilt outward by
+      // `angle` radians) — an incendiary volley. `height` sits above eye
+      // level, so flat shots never split and stay precise single ignites.
+      burning:   { damage: 15, color: 0xff4422, dps: 9, burnTime: 4, spreadRadius: 2.5,
+                   split: { height: 5, count: 5, angle: 0.16 } },
     },
   },
   touch: {

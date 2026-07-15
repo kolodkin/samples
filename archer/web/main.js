@@ -360,6 +360,7 @@ window.__ARCHER = {
       bowX: game.player.bow.group.position.x,
       arrowCount: game.arrows.count,
       arrows: game.arrows.list.map((a) => ({
+        type: a.type,
         x: a.pos.x, y: a.pos.y, z: a.pos.z, // physics (aim-line) position
         visX: a.mesh.position.x, visY: a.mesh.position.y, visZ: a.mesh.position.z,
         trailPoints: a.trail.geometry.drawRange.count,
