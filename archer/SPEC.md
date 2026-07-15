@@ -13,7 +13,7 @@ This spec covers behavior the numbers don't show.
 | Mouse move (pointer lock) | Aim |
 | Left click (pointer lock) | Shoot at the set power |
 | HUD +/− buttons (left middle), or +/− keys | Adjust shot power (`CONFIG.bow.power`: min/max/step) |
-| Quiver slot click/tap, or keys 1–5 | Select ammo: ✨ Auto or a specific arrow type |
+| Quiver slot click/tap, or keys 1–6 | Select ammo: ✨ Auto or a specific arrow type |
 | Esc (exits pointer lock) | Pause |
 | Touch: drag on the canvas | Aim (no pointer lock; one finger owns the camera) |
 | Touch: 🏹 button | Shoot at the set power |
@@ -84,7 +84,10 @@ store.
   (`dropMult`/`healMult` on the stage entry, over the global
   `CONFIG.drops` values) — the late arc drops more, and more of it heals.
 - Exploding splash ignores cover (no LOS check); freezing doubles the
-  next hit (shatter); burning spreads to nearby enemies.
+  next hit (shatter); burning spreads to nearby enemies; lightning chains
+  from the struck enemy through a seeded-random number of jolts
+  (`CONFIG.arrow.types.lightning.jolts`), each jumping to the nearest
+  not-yet-struck enemy within the jolt radius.
 - Arrow collision is segment-vs-sphere per frame (no tunneling at 70 m/s).
 - Obstacles (trees, cacti, rocks, ice pillars) block arrows in flight —
   the player's and skeleton projectiles alike. Each obstacle is a

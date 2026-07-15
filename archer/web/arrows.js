@@ -228,8 +228,36 @@ export class ArrowSystem {
     const alive = e.hp > 0;
     if (arrow.type === 'freezing' && alive) this.game.enemies.freeze(e);
     if (arrow.type === 'burning' && alive) this.game.enemies.ignite(e);
+    if (arrow.type === 'lightning') this.chainLightning(e);
     if (arrow.type === 'exploding') this.explode(arrow.pos);
     else this.game.effects?.burst(arrow.pos, 0xaa3333, 10, 4);
+  }
+
+  // Lightning arcs on from the struck enemy through a random number of
+  // extra targets: the jolt count is rolled on the seeded rng (so a run
+  // replays exactly), then each jolt jumps to the nearest not-yet-struck
+  // enemy within `radius` of the previous target for flat chainDamage.
+  // Chains happily continue from a corpse — the bolt already reached it.
+  chainLightning(first) {
+    const t = CONFIG.arrow.types.lightning;
+    const struck = new Set([first]);
+    const points = [this.game.enemies.bodyCenter(first)];
+    const jolts = this.game.rng.int(t.jolts.min, t.jolts.max);
+    for (let i = 0; i < jolts; i++) {
+      let next = null;
+      let nextD = t.radius;
+      for (const e of this.game.enemies.list) {
+        if (struck.has(e)) continue;
+        const d = this.game.enemies.bodyCenter(e).distanceTo(points[points.length - 1]);
+        if (d < nextD) { next = e; nextD = d; }
+      }
+      if (!next) break;
+      struck.add(next);
+      points.push(this.game.enemies.bodyCenter(next));
+      this.game.effects?.burst(points[points.length - 1], t.color, 8, 3);
+      this.game.enemies.damage(next, t.chainDamage);
+    }
+    if (points.length > 1) this.game.effects?.bolt(points, t.color);
   }
 
   // AoE with linear falloff. Deliberately no line-of-sight check: splash
