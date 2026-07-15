@@ -469,6 +469,81 @@ def test_freezing_arrow_halts_advance_then_thaws(server_url, page):
     )
 
 
+# Snowburst: a freezing arrow rolls CONFIG.arrow.types.freezing.burst.chance
+# on any impact; success freezes every enemy in burst.radius with zero
+# damage. Tests pin the roll via setFreezeBurstChance (config is read at
+# use time).
+
+
+def test_snowburst_ground_shot_freezes_the_pack(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setObstacles([])")
+    page.evaluate("() => window.__ARCHER.setFreezeBurstChance(1)")
+    # Two dummies inside the burst radius (4) of the ground impact, one
+    # far outside it.
+    page.evaluate("() => window.__ARCHER.spawnEnemy('ogre', -2, 26, true)")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 2, 26, true)")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 12, 26, true)")
+    page.evaluate("() => window.__ARCHER.fireAt(0, 0, 26, 'freezing')")
+    page.wait_for_function(
+        "() => window.__ARCHER.state.enemies.filter((e) => e.frozen).length === 2",
+        timeout=5000,
+    )
+    _shot(page, "snowburst-pack")  # while the powder hangs and tints are on
+    state = page.evaluate("() => window.__ARCHER.state")
+    by_x = {round(e["x"]): e for e in state["enemies"]}
+    assert by_x[-2]["frozen"] and by_x[2]["frozen"]
+    assert not by_x[12]["frozen"]
+    # Pure control: the burst damaged nobody.
+    assert by_x[-2]["hp"] == 220 and by_x[2]["hp"] == 40 and by_x[12]["hp"] == 40
+
+
+def test_snowburst_zero_chance_ground_shot_is_a_dud(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setObstacles([])")
+    page.evaluate("() => window.__ARCHER.setFreezeBurstChance(0)")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 2, 26, true)")
+    page.evaluate("() => window.__ARCHER.fireAt(0, 0, 26, 'freezing')")
+    page.wait_for_function("() => window.__ARCHER.state.arrowCount === 0", timeout=5000)
+    enemy = page.evaluate("() => window.__ARCHER.state.enemies[0]")
+    assert not enemy["frozen"] and enemy["hp"] == 40
+
+
+def test_snowburst_direct_hit_freezes_without_shatter(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setObstacles([])")
+    page.evaluate("() => window.__ARCHER.setFreezeBurstChance(1)")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('ogre', 0, 26, true)")
+    page.evaluate("() => window.__ARCHER.fireAt(0, 1.25, 26, 'freezing')")
+    page.wait_for_function(
+        "() => window.__ARCHER.state.enemies[0] && window.__ARCHER.state.enemies[0].frozen",
+        timeout=5000,
+    )
+    # Exactly the direct body hit landed (220 - 18): the burst's freeze
+    # never shattered — damage precedes freeze, and the burst itself
+    # deals none.
+    assert page.evaluate("() => window.__ARCHER.state.enemies[0].hp") == 220 - 18
+
+
+def test_snowburst_ground_freeze_arms_auto(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.giveAmmo('freezing', 5)")
+    page.evaluate("() => window.__ARCHER.setObstacles([])")
+    page.evaluate("() => window.__ARCHER.setFreezeBurstChance(1)")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 2, 26, true)")
+    # Ground burst beside the goblin: zero damage, but the freeze counts
+    # as a hit — the shot materially affected an enemy, so Auto arms.
+    page.evaluate("() => window.__ARCHER.fireAt(0, 0, 26, 'freezing')")
+    page.wait_for_function(
+        "() => window.__ARCHER.state.enemies[0].frozen", timeout=5000
+    )
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "freezing"
+
+
 def test_burning_arrow_ticks_and_spreads(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)

@@ -25,7 +25,10 @@ export const CONFIG = {
       // in stock).
       normal:    { damage: 34, color: 0xd8c9a3 },
       exploding: { damage: 20, color: 0xff7733, radius: 5, aoeDamage: 55 },
-      freezing:  { damage: 18, color: 0x66ddff, freezeTime: 3, shatterMult: 2 },
+      freezing:  { damage: 18, color: 0x66ddff, freezeTime: 3, shatterMult: 2,
+                   // Random snow-powder detonation on impact: AoE freeze,
+                   // no damage (so it can never shatter its own freeze).
+                   burst: { chance: 0.25, radius: 4 } },
       burning:   { damage: 15, color: 0xff4422, dps: 9, burnTime: 4, spreadRadius: 2.5 },
     },
   },
