@@ -1,0 +1,616 @@
+"""End-to-end test of the PCL viewer using Playwright (Chromium)."""
+import os
+import time
+
+from playwright.sync_api import expect
+
+# The default scene is the KITTI movie, which streams Draco frames from a remote
+# dataset; point it at the committed offline fixtures so tests need no network.
+DEFAULT = "/?movieBase=/fixtures/movie/&movieCount=4"
+
+
+def _wait_ready(page):
+    page.wait_for_function("() => window.__PCL && window.__PCL.ready === true",
+                           timeout=60000)
+
+
+def _open_filters(page):
+    """The controls are split into View / Filters tabs; range filters, the
+    seg boxes toggle, and the class legend live under Filters. The menu must
+    already be open."""
+    page.get_by_test_id("tab-filters").click()
+
+
+def test_point_cloud_loads_and_renders(server_url, page):
+    page.goto(server_url + DEFAULT)
+    _wait_ready(page)
+
+    # The movie scene loads by default and its first frame is on screen.
+    assert page.evaluate("() => window.__PCL.scene") == "movie"
+    point_count = page.evaluate("() => window.__PCL.pointCount")
+    assert point_count > 500
+
+    # Stats overlay reflects the loaded cloud.
+    expect(page.get_by_test_id("point-count")).to_have_text(f"{point_count:,}")
+
+    # The canvas actually drew the cloud (non-background pixels present).
+    visible = page.evaluate("() => window.__PCL.handle.visiblePixelCount()")
+    assert visible > 500
+
+
+def test_boot_loader_shows_until_first_render(server_url, page):
+    # Until the first frame renders, the canvas is just background colour. With no
+    # feedback that reads as a broken/black screen, so a boot loader must cover the
+    # gap from page open to first render — for the static initial scene too, which
+    # otherwise reports no loading state at all.
+    def _delay_model(route):
+        time.sleep(1.0)  # hold movie frame 0 so the not-ready window is observable
+        route.continue_()
+
+    page.route("**/fixtures/movie/000000.drc", _delay_model)
+    page.goto(server_url + DEFAULT)
+    # Before the cloud is ready, the boot loader is on screen.
+    expect(page.get_by_test_id("boot-loading")).to_be_visible()
+    _wait_ready(page)
+    # Once the first render has happened, it clears.
+    expect(page.get_by_test_id("boot-loading")).to_have_count(0)
+
+
+def test_point_size_control(server_url, page):
+    page.goto(server_url + DEFAULT)
+    _wait_ready(page)
+    page.get_by_test_id("menu-toggle").click()  # controls live in a modal
+    slider = page.get_by_test_id("point-size")
+    slider.evaluate(
+        "el => { el.value = '0.05'; el.dispatchEvent(new Event('input', {bubbles:true})); }")
+    page.wait_for_function("() => Math.abs(window.__PCL.settings.pointSize - 0.05) < 1e-6")
+
+
+def test_color_mode_toggle(server_url, page):
+    page.goto(server_url + DEFAULT)
+    _wait_ready(page)
+    # Default mode is the distance ramp; toggling to flat must take effect.
+    assert page.evaluate("() => window.__PCL.settings.colorMode") == "distance"
+    page.get_by_test_id("menu-toggle").click()  # controls live in a modal
+    page.get_by_test_id("color-mode").select_option("flat")
+    page.wait_for_function("() => window.__PCL.settings.colorMode === 'flat'")
+    # Each scalar ramp mode the movie supplies applies and keeps the cloud
+    # rendering; the Draco frames carry height, distance, and intensity (packed in
+    # a color channel), so a fall-back to flat would leave colorMode == 'flat'
+    # and fail this loop.
+    for mode in ("distance", "intensity", "height"):
+        page.get_by_test_id("color-mode").select_option(mode)
+        page.wait_for_function(
+            f"() => window.__PCL.settings.colorMode === '{mode}'")
+        assert page.evaluate("() => window.__PCL.handle.visiblePixelCount()") > 500
+
+
+def _color_mode_options(page):
+    return page.get_by_test_id("color-mode").evaluate(
+        "el => Array.from(el.options).map(o => o.value)")
+
+
+def test_color_modes_match_scene(server_url, page):
+    # The color-mode dropdown must offer only the modes the live scene can supply,
+    # not a fixed five: the movie frames carry height/distance/intensity but no
+    # per-point class, so "class" is not offered.
+    page.goto(
+        server_url
+        + DEFAULT
+        + "&segMovieBase=/fixtures/seg/&segMovieCount=4&segBoxesUrl=/fixtures/seg/boxes.json"
+    )
+    _wait_ready(page)
+    page.get_by_test_id("menu-toggle").click()
+    assert _color_mode_options(page) == ["flat", "height", "distance", "intensity"]
+
+    # The seg Draco frames carry per-point classes AND intensity, so both "class"
+    # and "intensity" join the scalar ramps.
+    page.get_by_test_id("scene").select_option("seg")
+    page.wait_for_function(
+        "() => window.__PCL.scene === 'seg' && window.__PCL.ready === true"
+        " && window.__PCL.frameCount === 4",
+        timeout=60000,
+    )
+    page.wait_for_function(
+        "() => JSON.stringify(window.__PCL.handle.getStats().colorModes)"
+        " === JSON.stringify(['flat','class','height','distance','intensity'])")
+    assert _color_mode_options(page) == ["flat", "class", "height", "distance", "intensity"]
+    # Seg defaults to by-class, and the dropdown reflects that applied mode.
+    expect(page.get_by_test_id("color-mode")).to_have_value("class")
+
+    # Switching back to a scene without "class" drops the stranded mode to flat in
+    # both the viewer and the dropdown (the movie carries intensity but no class).
+    page.get_by_test_id("scene").select_option("movie")
+    page.wait_for_function(
+        "() => window.__PCL.scene === 'movie' && window.__PCL.ready === true",
+        timeout=60000)
+    page.wait_for_function("() => window.__PCL.settings.colorMode === 'flat'")
+    assert _color_mode_options(page) == ["flat", "height", "distance", "intensity"]
+    expect(page.get_by_test_id("color-mode")).to_have_value("flat")
+
+
+def test_color_legend_follows_mode(server_url, page):
+    # The top-right color legend explains the active color mode: a colormap
+    # gradient bar for the scalar ramps, class swatches for "by class", and
+    # nothing for flat. It is always on (outside the controls modal).
+    page.goto(
+        server_url
+        + DEFAULT
+        + "&segMovieBase=/fixtures/seg/&segMovieCount=4&segBoxesUrl=/fixtures/seg/boxes.json"
+    )
+    _wait_ready(page)
+    # The movie defaults to the distance ramp, so the gradient bar is shown.
+    legend = page.get_by_test_id("color-legend")
+    expect(legend).to_be_visible()
+    expect(page.get_by_test_id("legend-ramp")).to_be_visible()
+
+    page.get_by_test_id("menu-toggle").click()  # color-mode picker lives in the modal
+    # Flat shading has no mapping to explain — the legend disappears entirely.
+    page.get_by_test_id("color-mode").select_option("flat")
+    page.wait_for_function("() => window.__PCL.settings.colorMode === 'flat'")
+    expect(page.get_by_test_id("color-legend")).to_have_count(0)
+    # Every scalar ramp brings the gradient bar back.
+    for mode in ("height", "intensity", "distance"):
+        page.get_by_test_id("color-mode").select_option(mode)
+        page.wait_for_function(f"() => window.__PCL.settings.colorMode === '{mode}'")
+        expect(page.get_by_test_id("legend-ramp")).to_be_visible()
+
+    # The seg scene colors by class, so the legend shows swatches, not a ramp.
+    page.get_by_test_id("scene").select_option("seg")
+    page.wait_for_function(
+        "() => window.__PCL.scene === 'seg' && window.__PCL.ready === true"
+        " && window.__PCL.settings.colorMode === 'class'",
+        timeout=60000,
+    )
+    expect(page.get_by_test_id("color-legend")).to_be_visible()
+    expect(page.get_by_test_id("legend-ramp")).to_have_count(0)
+    assert page.get_by_test_id("color-legend").get_by_text("car").is_visible()
+
+
+def test_point_shape_toggle(server_url, page):
+    page.goto(server_url + DEFAULT)
+    _wait_ready(page)
+    # Points render as 3D balls by default.
+    assert page.evaluate("() => window.__PCL.settings.pointShape") == "ball"
+    page.get_by_test_id("menu-toggle").click()  # controls live in a modal
+    # Switching to the older square sprite takes effect and keeps rendering.
+    page.get_by_test_id("point-shape").select_option("square")
+    page.wait_for_function("() => window.__PCL.settings.pointShape === 'square'")
+    assert page.evaluate("() => window.__PCL.handle.visiblePixelCount()") > 500
+    # And back to balls.
+    page.get_by_test_id("point-shape").select_option("ball")
+    page.wait_for_function("() => window.__PCL.settings.pointShape === 'ball'")
+    assert page.evaluate("() => window.__PCL.handle.visiblePixelCount()") > 500
+
+
+def test_reset_camera(server_url, page):
+    page.goto(server_url + DEFAULT)
+    _wait_ready(page)
+    # Orbit far away via wheel, then reset and confirm still ready & rendering.
+    page.get_by_test_id("menu-toggle").click()  # reset button lives in a modal
+    before = page.evaluate("() => window.__PCL.framesRendered")
+    page.get_by_test_id("reset").click()
+    page.wait_for_function(f"() => window.__PCL.framesRendered > {before}")
+    assert page.evaluate("() => window.__PCL.ready") is True
+
+
+def test_menu_toggle(server_url, page):
+    page.goto(server_url + DEFAULT)
+    _wait_ready(page)
+    # Controls modal is closed by default for a clean view.
+    expect(page.get_by_test_id("controls")).to_have_count(0)
+    page.get_by_test_id("menu-toggle").click()
+    expect(page.get_by_test_id("controls")).to_be_visible()
+    # Tapping the backdrop closes it again.
+    page.get_by_test_id("backdrop").click()
+    expect(page.get_by_test_id("controls")).to_have_count(0)
+
+
+def test_menu_tabs_switch(server_url, page):
+    page.goto(server_url + DEFAULT)
+    _wait_ready(page)
+    page.get_by_test_id("menu-toggle").click()
+    # The View tab is shown by default: its controls are present, the Filters
+    # tab's are not.
+    expect(page.get_by_test_id("scene")).to_be_visible()
+    expect(page.get_by_test_id("filter-height")).to_have_count(0)
+    # Switching to Filters swaps the bodies: range filters appear, View controls go.
+    page.get_by_test_id("tab-filters").click()
+    expect(page.get_by_test_id("filter-height")).to_be_visible()
+    expect(page.get_by_test_id("scene")).to_have_count(0)
+    # And back to View.
+    page.get_by_test_id("tab-view").click()
+    expect(page.get_by_test_id("scene")).to_be_visible()
+    expect(page.get_by_test_id("filter-height")).to_have_count(0)
+
+
+def test_camera_readout(server_url, page):
+    page.goto(server_url + DEFAULT)
+    _wait_ready(page)
+    page.wait_for_timeout(600)  # let the 500ms stats cadence tick at least once
+    for tid in ("cam-eye", "cam-target"):
+        parts = page.get_by_test_id(tid).inner_text().split()
+        assert len(parts) == 3, f"{tid} should show x y z, got {parts!r}"
+        for p in parts:
+            float(p)  # each component parses as a number
+
+
+def test_screenshot_capture(server_url, page, tmp_path):
+    page.goto(server_url + DEFAULT)
+    _wait_ready(page)
+    page.wait_for_timeout(300)  # let a few frames render
+    out = tmp_path / "pcl-viewer.png"
+    page.screenshot(path=str(out))
+    assert out.stat().st_size > 5000
+
+
+def test_lucy_scene_loads_from_ply(server_url, page):
+    # Exercise the PLY loader + "object" normalization/framing path offline by
+    # pointing the Lucy scene at a local PLY fixture (same loadStatic code path as
+    # the real Stanford Lucy, which is hot-linked and so not fetched in tests).
+    page.goto(server_url + DEFAULT + "&lucyUrl=/fixtures/lucy/lucy_fixture.ply")
+    _wait_ready(page)
+    page.get_by_test_id("menu-toggle").click()
+    page.get_by_test_id("scene").select_option("lucy")
+    page.wait_for_function("() => window.__PCL.scene === 'lucy' && window.__PCL.ready === true",
+                           timeout=20000)
+    # The fixture's 4000 unique vertices render (index stripped, not per-face).
+    assert page.evaluate("() => window.__PCL.pointCount") == 4000
+    assert page.evaluate("() => window.__PCL.handle.visiblePixelCount()") > 1000
+
+
+def test_movie_scene_plays_and_pauses(server_url, page):
+    page.goto(server_url + "/?movieBase=/fixtures/movie/&movieCount=4")
+    _wait_ready(page)
+    page.get_by_test_id("menu-toggle").click()
+    page.get_by_test_id("scene").select_option("movie")
+    # Generous timeout: the first Draco decode pays a one-time WASM-compile cost
+    # that can be slow on cold CI runners / chrome-headless-shell.
+    page.wait_for_function(
+        "() => window.__PCL.scene === 'movie' && window.__PCL.ready === true && window.__PCL.frameCount === 4",
+        timeout=60000)
+    # It auto-plays: the frame index advances.
+    page.wait_for_function("() => window.__PCL.playing === true")
+    start = page.evaluate("() => window.__PCL.frameIndex")
+    page.wait_for_function(f"() => window.__PCL.frameIndex !== {start}", timeout=5000)
+    # The cloud renders.
+    assert page.evaluate("() => window.__PCL.handle.visiblePixelCount()") > 500
+    # Pause stops advancement.
+    page.get_by_test_id("play-pause").click()
+    page.wait_for_function("() => window.__PCL.playing === false")
+    frozen = page.evaluate("() => window.__PCL.frameIndex")
+    page.wait_for_timeout(700)
+    assert page.evaluate("() => window.__PCL.frameIndex") == frozen
+
+
+def test_movie_step_and_seek(server_url, page):
+    page.goto(server_url + "/?movieBase=/fixtures/movie/&movieCount=4")
+    _wait_ready(page)
+    page.get_by_test_id("menu-toggle").click()
+    page.get_by_test_id("scene").select_option("movie")
+    # Wait for every frame to decode so stepping/seeking has real frames to land on.
+    page.wait_for_function(
+        "() => window.__PCL.scene === 'movie' && window.__PCL.frameCount === 4"
+        " && window.__PCL.loadProgress.loaded === 4",
+        timeout=60000)
+
+    # Seek to a known frame first so stepping starts from a deterministic spot
+    # (the movie auto-plays, so the playhead could otherwise be anywhere).
+    page.get_by_test_id("frame-select").evaluate(
+        "el => { el.value = '1'; el.dispatchEvent(new Event('input', {bubbles:true})); }")
+    # Seeking pauses playback and lands on the chosen frame.
+    page.wait_for_function("() => window.__PCL.frameIndex === 1 && window.__PCL.playing === false")
+
+    # Stepping forward advances exactly one frame (still paused).
+    page.get_by_test_id("step-forward").click()
+    page.wait_for_function("() => window.__PCL.frameIndex === 2 && window.__PCL.playing === false")
+
+    # Stepping back retreats exactly one frame.
+    page.get_by_test_id("step-back").click()
+    page.wait_for_function("() => window.__PCL.frameIndex === 1")
+
+    # The slider can jump straight to the last frame, and the cloud still renders.
+    page.get_by_test_id("frame-select").evaluate(
+        "el => { el.value = '3'; el.dispatchEvent(new Event('input', {bubbles:true})); }")
+    page.wait_for_function("() => window.__PCL.frameIndex === 3")
+    assert page.evaluate("() => window.__PCL.handle.visiblePixelCount()") > 500
+
+    # Typing a (1-based) frame number into the editable field jumps to it.
+    page.get_by_test_id("frame-input").evaluate(
+        "el => { el.value = '2'; el.dispatchEvent(new Event('input', {bubbles:true})); }")
+    page.wait_for_function("() => window.__PCL.frameIndex === 1 && window.__PCL.playing === false")
+    # Out-of-range entries clamp instead of breaking.
+    page.get_by_test_id("frame-input").evaluate(
+        "el => { el.value = '99'; el.dispatchEvent(new Event('input', {bubbles:true})); }")
+    page.wait_for_function("() => window.__PCL.frameIndex === 3")
+
+
+def test_scene_switch_back_stops_movie(server_url, page):
+    page.goto(server_url + DEFAULT + "&lucyUrl=/fixtures/lucy/lucy_fixture.ply")
+    # The movie loads by default and auto-plays.
+    page.wait_for_function("() => window.__PCL.scene === 'movie' && window.__PCL.ready === true",
+                           timeout=60000)  # cold Draco WASM compile can be slow
+    page.get_by_test_id("menu-toggle").click()
+    # Switching to a static scene tears the movie down.
+    page.get_by_test_id("scene").select_option("lucy")
+    page.wait_for_function("() => window.__PCL.scene === 'lucy' && window.__PCL.ready === true",
+                           timeout=20000)
+    # Movie timer torn down: not playing, frameCount reset.
+    assert page.evaluate("() => window.__PCL.playing") is False
+    assert page.evaluate("() => window.__PCL.frameCount") == 0
+    assert page.evaluate("() => window.__PCL.pointCount") == 4000
+
+
+def test_scene_switch_mid_load_clears_loading_indicator(server_url, page):
+    # Switching scenes while the movie is still streaming must not leave the
+    # "Loading X / Y…" indicator stuck on the now-superseded load: the static
+    # scene that supersedes it never managed `loading`, so a stale movie load
+    # used to freeze the HUD spinner forever even though the new scene is ready.
+    page.goto(server_url + DEFAULT + "&lucyUrl=/fixtures/lucy/lucy_fixture.ply")
+    _wait_ready(page)  # movie ready (the default scene)
+    page.get_by_test_id("menu-toggle").click()
+    # Settle on the static Lucy scene first so the movie load below is the one
+    # left in flight when it is superseded.
+    page.get_by_test_id("scene").select_option("lucy")
+    page.wait_for_function(
+        "() => window.__PCL.scene === 'lucy' && window.__PCL.ready === true",
+        timeout=20000)
+    # Kick off the movie load, then immediately switch back before it finishes
+    # streaming all frames — this leaves a movie load in flight (loading == true).
+    page.get_by_test_id("scene").select_option("movie")
+    page.get_by_test_id("scene").select_option("lucy")
+    page.wait_for_function(
+        "() => window.__PCL.scene === 'lucy' && window.__PCL.ready === true",
+        timeout=20000)
+    # The superseded movie load's loading flag must be cleared, and the HUD must
+    # not show a leftover "Loading…" line.
+    assert page.evaluate("() => window.__PCL.loading") is False
+    expect(page.get_by_test_id("loading")).to_have_count(0)
+
+
+def test_seg_scene_classes_and_boxes(server_url, page):
+    page.goto(
+        server_url
+        + DEFAULT
+        + "&segMovieBase=/fixtures/seg/&segMovieCount=4&segBoxesUrl=/fixtures/seg/boxes.json"
+    )
+    _wait_ready(page)
+    page.get_by_test_id("menu-toggle").click()
+    page.get_by_test_id("scene").select_option("seg")
+    page.wait_for_function(
+        "() => window.__PCL.scene === 'seg' && window.__PCL.ready === true"
+        " && window.__PCL.frameCount === 4",
+        timeout=60000,
+    )
+    # By-class coloring is selected automatically and renders pixels.
+    page.wait_for_function("() => window.__PCL.settings.colorMode === 'class'")
+    assert page.evaluate("() => window.__PCL.handle.visiblePixelCount()") > 500
+    # ...and those pixels are actually the vivid class palette, not the near-grey
+    # fallback — guards the Draco color-channel class-id decode (regression: the
+    # sRGB→linear pass + a stray *255 collapsed every point to palette[0]).
+    assert page.evaluate("() => window.__PCL.handle.colorfulPixelCount()") > 100
+    # Boxes render (the fixture has one car box per frame).
+    page.wait_for_function("() => window.__PCL.handle.getStats().boxCount >= 1", timeout=5000)
+    # Boxes toggle + legend live under the Filters tab.
+    _open_filters(page)
+    # The toggle hides them...
+    page.get_by_test_id("show-boxes").click()
+    page.wait_for_function("() => window.__PCL.settings.showBoxes === false")
+    # ...and brings them back (also leaves boxes visible in the captured frame).
+    page.get_by_test_id("show-boxes").click()
+    page.wait_for_function("() => window.__PCL.settings.showBoxes === true")
+    # Legend is shown for the seg scene.
+    assert page.get_by_test_id("legend").is_visible()
+
+
+def _set_range(page, tid, value):
+    page.get_by_test_id(tid).evaluate(
+        "(el, v) => { el.value = v; el.dispatchEvent(new Event('input', {bubbles:true})); }",
+        str(value),
+    )
+
+
+def _shot(page, output_path, name):
+    """Save a screenshot into this test's Playwright artifact folder so the
+    e2e-screenshots-report bundles it. Names sort within the folder, so a
+    `1-before` / `2-after` pair renders adjacent in the report."""
+    page.screenshot(path=os.path.join(output_path, f"{name}.png"))
+
+
+def _visible_pixels(page):
+    return page.evaluate("() => window.__PCL.handle.visiblePixelCount()")
+
+
+def _wait_pixels_below(page, baseline):
+    """Wait until the GPU frame reflects a just-applied range filter. applyFilter
+    updates visibleCount (CPU state) synchronously, but the `aHide` discard only
+    shows up in the framebuffer on the next rAF paint — so reading pixels right
+    after the filter can catch the pre-filter frame (a render-timing flake seen on
+    slower CI GPUs). Poll the painted pixel count until it drops below the
+    unfiltered baseline (and is non-blank)."""
+    page.wait_for_function(
+        "(b) => { const px = window.__PCL.handle.visiblePixelCount();"
+        " return px > 0 && px < b; }",
+        arg=baseline,
+    )
+
+
+def test_point_range_filter_on_static_scene(server_url, page, output_path):
+    # Range filters clip points by a scalar field. Exercise on the static Lucy
+    # scene so the cloud is fixed (no per-frame churn) and the visible count is
+    # deterministic. Height and distance are available on every scene. Capture a
+    # before/after pair showing a clear — but partial — change.
+    page.goto(server_url + DEFAULT + "&lucyUrl=/fixtures/lucy/lucy_fixture.ply")
+    _wait_ready(page)
+    page.get_by_test_id("menu-toggle").click()
+    page.get_by_test_id("scene").select_option("lucy")
+    page.wait_for_function(
+        "() => window.__PCL.scene === 'lucy' && window.__PCL.ready === true",
+        timeout=20000)
+    _open_filters(page)
+    total = page.evaluate("() => window.__PCL.pointCount")
+    # Nothing filtered by default: every point is visible.
+    assert page.evaluate("() => window.__PCL.visibleCount") == total
+    before_px = _visible_pixels(page)
+    _shot(page, output_path, "1-before-height-filter")
+
+    # Clip the top half off by height: cap the max at the middle of the data range.
+    rng = page.evaluate("() => window.__PCL.scalarRanges.height")
+    mid = (rng["min"] + rng["max"]) / 2
+    _set_range(page, "filter-height-max", mid)
+    page.wait_for_function("() => window.__PCL.visibleCount < window.__PCL.pointCount")
+    clipped = page.evaluate("() => window.__PCL.visibleCount")
+    # Some points are clipped, but never all of them — the cloud stays on screen.
+    assert 0 < clipped < total
+    _wait_pixels_below(page, before_px)  # let the filtered frame paint first
+    after_px = _visible_pixels(page)
+    assert 0 < after_px < before_px  # visibly fewer points drawn, not a blank frame
+    _shot(page, output_path, "2-after-height-filter")
+
+    # Reset clears every range and brings all points back.
+    page.get_by_test_id("reset-filters").click()
+    page.wait_for_function("() => window.__PCL.visibleCount === window.__PCL.pointCount")
+    assert page.get_by_test_id("filter-height-max").input_value() == ""
+
+
+def test_distance_filter_is_absolute(server_url, page):
+    # "By distance" coloring and the distance range filter must operate on the
+    # *absolute* radial distance from the sensor origin (the cloud's own metric
+    # units), not the post-normalization distance-from-bbox-center that the
+    # recenter+scale would otherwise leave behind. The viewer normalizes every
+    # cloud to sceneRadius 0.5, so a normalized distance would top out around 0.5;
+    # the KITTI scan spans tens of metres, so an absolute distance reaches well
+    # past that. Height, by contrast, stays in the normalized frame.
+    page.goto(server_url + DEFAULT)
+    _wait_ready(page)
+    page.get_by_test_id("menu-toggle").click()  # filter inputs live in the modal
+    _open_filters(page)  # range filters live under the Filters tab
+    dist = page.evaluate("() => window.__PCL.scalarRanges.distance")
+    height = page.evaluate("() => window.__PCL.scalarRanges.height")
+    # Distance is metric: far returns are many metres out, far beyond the 0.5
+    # normalized scene radius the old distance-from-center would have produced.
+    assert dist["max"] > 10, dist
+    # Height is still normalized: its span sits inside the unit cube.
+    assert abs(height["max"]) < 1 and abs(height["min"]) < 1, height
+
+    # The filter cores on those same metric units: clip everything past a metre
+    # threshold inside the data range and the near points survive.
+    total = page.evaluate("() => window.__PCL.pointCount")
+    _set_range(page, "filter-distance-max", dist["max"] / 2)
+    page.wait_for_function("() => window.__PCL.visibleCount < window.__PCL.pointCount")
+    assert 0 < page.evaluate("() => window.__PCL.visibleCount") < total
+
+
+def test_intensity_filter_on_movie(server_url, page, output_path):
+    # Intensity is only offered where the cloud supplies it (the movie packs it in
+    # a Draco color channel). Pause first so the visible count is stable, then
+    # capture a before/after pair across the intensity clip.
+    page.goto(server_url + DEFAULT)
+    _wait_ready(page)
+    page.get_by_test_id("menu-toggle").click()
+    page.wait_for_function("() => window.__PCL.playing === true")
+    page.get_by_test_id("play-pause").click()
+    page.wait_for_function("() => window.__PCL.playing === false")
+    _open_filters(page)
+    total = page.evaluate("() => window.__PCL.pointCount")
+    before_px = _visible_pixels(page)
+    _shot(page, output_path, "1-before-intensity-filter")
+
+    # Drop the low-intensity returns: clip the min to the middle of the data range.
+    rng = page.evaluate("() => window.__PCL.scalarRanges.intensity")
+    mid = (rng["min"] + rng["max"]) / 2
+    _set_range(page, "filter-intensity-min", mid)
+    page.wait_for_function("() => window.__PCL.visibleCount < window.__PCL.pointCount")
+    clipped = page.evaluate("() => window.__PCL.visibleCount")
+    # Some points clipped, but the cloud never empties.
+    assert 0 < clipped < total
+    _wait_pixels_below(page, before_px)  # let the filtered frame paint first
+    after_px = _visible_pixels(page)
+    assert 0 < after_px < before_px
+    _shot(page, output_path, "2-after-intensity-filter")
+
+
+def test_class_toggle_filters_points(server_url, page, output_path):
+    # Each legend class is a toggle: clicking it filters that class out of the
+    # cloud, clicking again brings it back. Vegetation (id 15) is the densest class
+    # in every fixture frame, so toggling it visibly drops the point count — but
+    # the other classes stay on screen, so the cloud is never fully filtered.
+    page.goto(
+        server_url
+        + DEFAULT
+        + "&segMovieBase=/fixtures/seg/&segMovieCount=4&segBoxesUrl=/fixtures/seg/boxes.json"
+    )
+    _wait_ready(page)
+    page.get_by_test_id("menu-toggle").click()
+    page.get_by_test_id("scene").select_option("seg")
+    page.wait_for_function(
+        "() => window.__PCL.scene === 'seg' && window.__PCL.ready === true"
+        " && window.__PCL.frameCount === 4",
+        timeout=60000,
+    )
+    # Pause so the frame (and its class mix) is fixed under us.
+    page.get_by_test_id("play-pause").click()
+    page.wait_for_function("() => window.__PCL.playing === false")
+    # The class legend lives under the Filters tab.
+    _open_filters(page)
+    before = page.evaluate("() => window.__PCL.visibleCount")
+    before_px = _visible_pixels(page)
+    _shot(page, output_path, "1-before-class-toggle")
+
+    page.get_by_test_id("class-toggle-vegetation").click()
+    page.wait_for_function(
+        "() => window.__PCL.settings.hiddenClasses.includes(15)")
+    page.wait_for_function(
+        f"() => window.__PCL.visibleCount < {before}")
+    # The toggled class is gone, but the rest of the cloud remains.
+    assert page.evaluate("() => window.__PCL.visibleCount") > 0
+    after_px = _visible_pixels(page)
+    assert 0 < after_px < before_px
+    _shot(page, output_path, "2-after-class-toggle")
+
+    # Toggling again restores the hidden class.
+    page.get_by_test_id("class-toggle-vegetation").click()
+    page.wait_for_function(
+        "() => !window.__PCL.settings.hiddenClasses.includes(15)")
+    page.wait_for_function(
+        f"() => window.__PCL.visibleCount === {before}")
+
+
+def test_filter_stepper_buttons(server_url, page):
+    # Each filter bound has −/+ buttons. From an empty (unbounded) bound the first
+    # click materializes a full-range handle, and further clicks step it inward
+    # until points are clipped; the opposite button steps back out to all-visible.
+    page.goto(server_url + DEFAULT + "&lucyUrl=/fixtures/lucy/lucy_fixture.ply")
+    _wait_ready(page)
+    page.get_by_test_id("menu-toggle").click()
+    page.get_by_test_id("scene").select_option("lucy")
+    page.wait_for_function(
+        "() => window.__PCL.scene === 'lucy' && window.__PCL.ready === true",
+        timeout=20000)
+    _open_filters(page)
+    total = page.evaluate("() => window.__PCL.pointCount")
+    assert page.evaluate("() => window.__PCL.visibleCount") == total
+
+    # Stepping the max bound down: first click fills the input with a number.
+    dec = page.get_by_test_id("filter-height-max-dec")
+    dec.click()
+    # The click materializes the bound via an async Preact re-render, so read the
+    # input through an auto-waiting expect rather than synchronously (else the
+    # value can still be empty the instant after the click — a timing flake).
+    expect(page.get_by_test_id("filter-height-max")).not_to_have_value("")
+    page.wait_for_function(
+        "() => window.__PCL.handle.getStats().filters.height.max !== null")
+    # Keep stepping inward until some points are clipped (never all).
+    for _ in range(15):
+        if page.evaluate("() => window.__PCL.visibleCount") < total:
+            break
+        dec.click()
+    assert 0 < page.evaluate("() => window.__PCL.visibleCount") < total
+
+    # The + button steps the max back out until every point is visible again.
+    inc = page.get_by_test_id("filter-height-max-inc")
+    for _ in range(15):
+        if page.evaluate("() => window.__PCL.visibleCount") == total:
+            break
+        inc.click()
+    assert page.evaluate("() => window.__PCL.visibleCount") == total

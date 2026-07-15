@@ -1,0 +1,121 @@
+name: imdb-dataset-builder
+
+# Manual-only: regenerate (and optionally publish) the curated IMDb dataset.
+# Databases are provided as service containers, so the runner script is invoked
+# WITHOUT --local-setup (no apt provisioning).
+on:
+  workflow_dispatch:
+    inputs:
+      sample:
+        description: 'Run on a 500k-row sample (off = full ~12.6M-row dataset)'
+        type: boolean
+        default: true
+      year_from:
+        description: 'Earliest startYear to keep in the curated output'
+        type: string
+        default: '1950'
+      publish_hf:
+        description: 'Publish curated dataset to Hugging Face (requires HF_TOKEN)'
+        type: boolean
+        default: false
+      hf_repo_id:
+        description: 'Target Hugging Face dataset repo (owner/name); the HF_TOKEN must have write access to this namespace. Leave blank to use the pipeline default.'
+        type: string
+      publish_airtable:
+        description: 'Publish showcase sample to Airtable (requires AIRTABLE_* secrets)'
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment: DEV
+    defaults:
+      run:
+        working-directory: imdb-dataset-builder
+
+    services:
+      clickhouse:
+        image: clickhouse/clickhouse-server:latest
+        ports:
+          - 8123:8123
+          - 9000:9000
+        env:
+          CLICKHOUSE_USER: default
+          CLICKHOUSE_PASSWORD: benchmark
+          CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+        options: >-
+          --health-cmd "clickhouse-client --user default --password benchmark --query 'SELECT 1'"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+      postgres:
+        image: postgres:16
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: aaiclick
+          POSTGRES_PASSWORD: secret
+          POSTGRES_DB: aaiclick
+        options: >-
+          --health-cmd "pg_isready -U aaiclick"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run orchestration DB migrations
+        # The Postgres service container is empty; create the aaiclick
+        # orchestration schema (the part scripts/setup_postgres does that a bare
+        # container does not).
+        env:
+          AAICLICK_SQL_URL: postgresql+asyncpg://aaiclick:secret@localhost:5432/aaiclick
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: '5432'
+          POSTGRES_USER: aaiclick
+          POSTGRES_PASSWORD: secret
+          POSTGRES_DB: aaiclick
+        run: uv run python -m aaiclick migrate upgrade head
+
+      - name: Run pipeline
+        env:
+          SAMPLE: ${{ inputs.sample }}
+          YEAR_FROM: ${{ inputs.year_from }}
+          # Blank input is dropped below so the pipeline's own default applies.
+          HF_REPO_ID_INPUT: ${{ inputs.hf_repo_id }}
+          PUBLISH_HF: ${{ inputs.publish_hf }}
+          PUBLISH_AIRTABLE: ${{ inputs.publish_airtable }}
+          # Secrets only flow when the matching publish toggle is on.
+          HF_TOKEN: ${{ inputs.publish_hf && secrets.HF_TOKEN || '' }}
+          AIRTABLE_API_KEY: ${{ inputs.publish_airtable && secrets.AIRTABLE_API_KEY || '' }}
+          AIRTABLE_BASE_ID: ${{ inputs.publish_airtable && secrets.AIRTABLE_BASE_ID || '' }}
+        run: |
+          # Only export HF_REPO_ID when the input was given; an empty value
+          # would override the pipeline's built-in default with "".
+          if [ -n "$HF_REPO_ID_INPUT" ]; then export HF_REPO_ID="$HF_REPO_ID_INPUT"; fi
+          FLAGS=()
+          if [ "$SAMPLE" = "true" ]; then FLAGS+=(--sample); fi
+          FLAGS+=(--year-from "$YEAR_FROM")
+          if [ "$PUBLISH_HF" = "true" ]; then FLAGS+=(--publish); fi
+          if [ "$PUBLISH_AIRTABLE" = "true" ]; then FLAGS+=(--airtable); fi
+          ./imdb-dataset-builder.sh "${FLAGS[@]}"
+
+      - name: Publish report to job summary
+        if: always()
+        run: |
+          {
+            echo '## IMDb Dataset Builder Report'
+            echo
+            if [ -f tmp/imdb_report.md ]; then
+              cat tmp/imdb_report.md
+            else
+              echo '_No report was generated (pipeline did not reach the report stage)._'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

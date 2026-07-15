@@ -1,0 +1,21 @@
+[project]
+name = "pcl-viewer"
+version = "0.1.0"
+description = "No-build ESM point cloud viewer (three.js + Preact) with Playwright e2e."
+requires-python = ">=3.10"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-playwright>=0.5",
+]
+# Generator / fixtures only (download + decimate + Draco-encode + HF upload).
+gen = [
+    "numpy>=1.26",
+    "DracoPy>=1.4.0",
+    "huggingface_hub>=0.23",
+    "requests>=2.31",
+    "zstandard>=0.22",
+    "pyarrow>=15",  # write the .parquet "Load PCL" fixture
+]

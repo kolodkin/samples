@@ -1,0 +1,122 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: #101418; color: #e6edf3;
+  font: 14px/1.4 system-ui, sans-serif; }
+#app { position: relative; height: 100vh; }
+#scene { display: block; width: 100%; height: 100%; }
+.panel { position: absolute; background: rgba(20, 26, 33, 0.82);
+  border: 1px solid #2a3340; border-radius: 8px; padding: 12px 14px; }
+/* Single toggle button: minimal footprint, always visible top-left. */
+.menu-toggle { position: absolute; top: 12px; left: 12px; z-index: 30;
+  width: 40px; height: 40px; cursor: pointer; font-size: 18px; line-height: 1;
+  background: rgba(20, 26, 33, 0.82); color: #e6edf3;
+  border: 1px solid #2a3340; border-radius: 8px; }
+
+/* Tap-anywhere-to-close scrim behind the modal. */
+.backdrop { position: absolute; inset: 0; z-index: 20; background: rgba(0, 0, 0, 0.4); }
+
+/* Controls modal: opened by the toggle, sits above the backdrop. */
+.controls { top: 60px; left: 12px; width: 220px; z-index: 25; }
+.controls h1 { font-size: 14px; margin: 0 0 10px; }
+.controls label { display: block; margin: 10px 0 4px; font-size: 12px; color: #9fb0c0; }
+.controls input[type=range], .controls select { width: 100%; }
+.controls .row { display: flex; gap: 8px; margin-top: 12px; }
+/* Editable current-frame field + "/ N" total. */
+.controls .frame-jump { display: flex; align-items: center; gap: 8px; }
+.controls .frame-jump input { width: 4rem; background: #0d1117; color: #e6edf3;
+  border: 1px solid #2a3340; border-radius: 6px; padding: 5px 6px; }
+.controls .frame-jump span { color: #9fb0c0; font-size: 12px; }
+.controls button { flex: 1; cursor: pointer; background: #1f6feb; color: #fff;
+  border: 0; border-radius: 6px; padding: 7px; }
+
+/* Tab bar: two segmented buttons splitting the menu into View / Filters. Active
+   tab keeps the blue accent; inactive is muted. Overrides the generic blue
+   full-width .controls button look above. */
+.controls .tabs { display: flex; gap: 0; margin: 0 0 4px; }
+.controls .tabs .tab { flex: 1; padding: 7px; cursor: pointer; font: inherit;
+  background: #21262d; color: #9fb0c0; border: 1px solid #2a3340; border-radius: 0; }
+.controls .tabs .tab:first-child { border-radius: 6px 0 0 6px; }
+.controls .tabs .tab:last-child { border-radius: 0 6px 6px 0; border-left: 0; }
+.controls .tabs .tab:hover { background: #2a3340; color: #e6edf3; }
+.controls .tabs .tab.active { background: #1f6feb; color: #fff; border-color: #1f6feb; }
+
+/* "Load PCL" entry point: a full-width outlined-accent button with an upload
+   glyph, set apart from the solid scene/transport buttons. Fills on hover/focus. */
+.controls .load-pcl { display: flex; align-items: center; justify-content: center;
+  gap: 7px; width: 100%; margin-top: 8px; padding: 9px 12px;
+  background: rgba(31, 111, 235, 0.12); color: #58a6ff;
+  border: 1px solid #1f6feb; border-radius: 7px; cursor: pointer;
+  font: 600 13px/1 system-ui, sans-serif;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease; }
+.controls .load-pcl:hover { background: #1f6feb; color: #fff; }
+.controls .load-pcl:focus-visible { outline: none; box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.5); }
+.controls .load-pcl .load-pcl-icon { flex: 0 0 auto; }
+
+/* Top-right corner column: the always-on stats HUD stacked above the color
+   legend. Holds the absolute position so its panels can flow normally. */
+.corner { position: absolute; top: 12px; right: 12px; z-index: 10;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
+  max-width: calc(100% - 24px); }
+.corner .panel { position: static; }
+
+/* Compact always-on HUD: live point/fps/camera readout. */
+.hud { padding: 8px 10px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.hud div { margin: 2px 0; }
+.hud .vec { color: #9fb0c0; white-space: pre; }
+.hud b { color: #58a6ff; }
+
+.hud .err { color: #ff8080; max-width: 18rem; }
+
+/* Color legend: shows what the active color mode encodes — a colormap gradient
+   bar with the field's min/max for the scalar ramps, or class swatches for
+   "by class". Read-only (the tickable class filter lives in the Filters tab). */
+.color-legend { padding: 8px 10px; font-size: 11px; min-width: 150px; }
+.color-legend .legend-title { color: #9fb0c0; margin-bottom: 6px; }
+.color-legend .legend-ramp { height: 10px; border-radius: 3px;
+  border: 1px solid #2a3340; }
+.color-legend .legend-scale { display: flex; justify-content: space-between;
+  margin-top: 3px; color: #e6edf3; font-variant-numeric: tabular-nums; }
+.color-legend .legend-classes { display: flex; flex-direction: column; gap: 4px; }
+.color-legend .legend-class { flex: 0 0 auto; display: inline-flex;
+  align-items: center; gap: 4px; }
+
+/* Boot loader: centered over the blank canvas until the first frame renders. */
+.boot { position: absolute; inset: 0; z-index: 15; display: flex;
+  flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px; color: #9fb0c0; font-size: 13px; pointer-events: none; }
+.boot .spinner { width: 36px; height: 36px; border-radius: 50%;
+  border: 3px solid #2a3340; border-top-color: #58a6ff;
+  animation: boot-spin 0.8s linear infinite; }
+@keyframes boot-spin { to { transform: rotate(360deg); } }
+
+/* Range-filter row: a field label above its min/max steppers (each a number
+   input flanked by −/+ buttons). */
+.controls .filter-row { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.controls .filter-row .filter-name { font-size: 12px; color: #9fb0c0; }
+.controls .filter-bounds { display: flex; gap: 8px; }
+.controls .stepper { display: flex; flex: 1; min-width: 0; }
+/* Override the generic blue/full-width .controls button look for the tight
+   stepper buttons. */
+.controls .stepper .step-btn { flex: 0 0 20px; padding: 0; font-size: 15px; line-height: 1;
+  background: #21262d; color: #e6edf3; border: 1px solid #2a3340; border-radius: 0; cursor: pointer; }
+.controls .stepper .step-btn:first-child { border-radius: 6px 0 0 6px; }
+.controls .stepper .step-btn:last-child { border-radius: 0 6px 6px 0; }
+.controls .stepper .step-btn:hover { background: #2a3340; }
+.controls .stepper input { flex: 1; min-width: 0; width: 100%; text-align: center;
+  background: #0d1117; color: #e6edf3; border: 1px solid #2a3340; border-left: 0; border-right: 0;
+  border-radius: 0; padding: 5px 2px; }
+/* The −/+ buttons replace the native number spinners. */
+.controls .stepper input::-webkit-outer-spin-button,
+.controls .stepper input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.controls .stepper input[type=number] { -moz-appearance: textfield; appearance: textfield; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 6px; font-size: 11px; }
+/* Each legend swatch doubles as a class on/off toggle, so it's a <button>. Override
+   the generic blue/full-width .controls button styling for these compact chips. */
+.legend .legend-item { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px;
+  background: transparent; color: #e6edf3; border: 1px solid transparent; border-radius: 4px;
+  padding: 1px 4px; cursor: pointer; font: inherit; }
+.legend .legend-item:hover { border-color: #2a3340; }
+.legend .legend-item.off { opacity: 0.4; text-decoration: line-through; }
+/* Shared swatch chip — the Filters-tab class legend and the corner color legend
+   both use it. */
+.swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
