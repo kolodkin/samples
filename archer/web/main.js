@@ -38,7 +38,7 @@ const game = {
   rng: createRng(seedFromQuery(params)),
   stats: {
     score: 0,
-    ammo: { exploding: 0, lightning: 0, freezing: 0, burning: 0 },
+    ammo: { exploding: 0, lightning: 0, split: 0, freezing: 0, burning: 0 },
   },
   screen: 'title',
   obstacles: [],

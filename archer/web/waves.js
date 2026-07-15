@@ -2,9 +2,9 @@ import * as THREE from 'three';
 import { CONFIG } from './config.js';
 import { setShadows } from './relief.js';
 
-const DROP_TYPES = ['exploding', 'lightning', 'freezing', 'burning'];
+const DROP_TYPES = ['exploding', 'lightning', 'split', 'freezing', 'burning'];
 const DROP_COLORS = {
-  exploding: 0xff7733, lightning: 0xffe14d, freezing: 0x66ddff,
+  exploding: 0xff7733, lightning: 0xffe14d, split: 0xcc66ff, freezing: 0x66ddff,
   burning: 0xff4422, heal: 0xff3366,
 };
 

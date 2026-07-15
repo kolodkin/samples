@@ -27,6 +27,9 @@ export const CONFIG = {
       exploding: { damage: 20, color: 0xff7733, radius: 5, aoeDamage: 55 },
       lightning: { damage: 22, color: 0xffe14d, chainDamage: 16, radius: 8,
                    jolts: { min: 2, max: 5 } },
+      // splitTime seconds into flight the arrow fans out into count
+      // splinters spread across ±spread radians (see ArrowSystem.split).
+      split:     { damage: 20, color: 0xcc66ff, count: 5, splitTime: 0.25, spread: 0.12 },
       freezing:  { damage: 18, color: 0x66ddff, freezeTime: 3, shatterMult: 2 },
       burning:   { damage: 15, color: 0xff4422, dps: 9, burnTime: 4, spreadRadius: 2.5 },
     },
@@ -90,7 +93,7 @@ export const CONFIG = {
       { goblin: 7, skeleton: 3, ogre: 2 },
     ] },
     volcano: { speedMult: 1.15, dropMult: 1.25, healMult: 1.4,
-               grant: { exploding: 20, freezing: 10 }, waves: [
+               grant: { exploding: 20, split: 12, freezing: 10 }, waves: [
       { goblin: 6, skeleton: 2 },
       { goblin: 8, skeleton: 2 },
       { goblin: 8, skeleton: 3, ogre: 1 },

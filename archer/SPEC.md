@@ -13,7 +13,7 @@ This spec covers behavior the numbers don't show.
 | Mouse move (pointer lock) | Aim |
 | Left click (pointer lock) | Shoot at the set power |
 | HUD +/− buttons (left middle), or +/− keys | Adjust shot power (`CONFIG.bow.power`: min/max/step) |
-| Quiver slot click/tap, or keys 1–6 | Select ammo: ✨ Auto or a specific arrow type |
+| Quiver slot click/tap, or keys 1–7 | Select ammo: ✨ Auto or a specific arrow type |
 | Esc (exits pointer lock) | Pause |
 | Touch: drag on the canvas | Aim (no pointer lock; one finger owns the camera) |
 | Touch: 🏹 button | Shoot at the set power |
@@ -41,11 +41,12 @@ inputs shoot: a click while pointer-locked on desktop, the 🏹 button on
 touch. Stray clicks or taps elsewhere on the screen never loose an arrow.
 
 Ammo selection is a mode picked on the HUD quiver (click/tap a slot, or
-keys 1–6 in slot order under pointer lock). The default ✨ Auto slot rides
+keys 1–7 in slot order under pointer lock). The default ✨ Auto slot rides
 the player's accuracy: a shot that damaged at least one enemy — a direct
-strike, or an exploding arrow's splash — arms it, and the next shot spends
+strike, an exploding arrow's splash, or any splinter of a split fan — arms
+it, and the next shot spends
 the best special in stock, strongest-first in the `CONFIG.arrow.types`
-declaration order (exploding → lightning → freezing → burning); a shot that hurt
+declaration order (exploding → lightning → split → freezing → burning); a shot that hurt
 nobody (ground, cover, timeout, or a splash that reached no one) disarms
 it back to the free normal arrow, so cold streaks never drain the quiver.
 Each spent arrow reports its outcome through `game.onShotResolved` (from
@@ -88,6 +89,18 @@ store.
   from the struck enemy through a seeded-random number of jolts
   (`CONFIG.arrow.types.lightning.jolts`), each jumping to the nearest
   not-yet-struck enemy within the jolt radius.
+- The split arrow (`CONFIG.arrow.types.split`) flies `splitTime` seconds,
+  then fans out into `count` splinters at the same speed — yaw offsets
+  evenly spaced across ±`spread` radians about world up, the middle
+  splinter keeping the original line (deterministic: no rng draw). Each
+  splinter is an ordinary arrow (per-splinter damage, headshots apply, no
+  status effect) that never re-splits; a split arrow spent before its fuse
+  (enemy, obstacle, ground) resolves like a normal arrow and never fans
+  out. The whole fan is one shot to auto ammo: splinters share a group in
+  `ArrowSystem.resolve()`, reporting a single hit/miss — hit if any
+  splinter damaged anyone — when the last splinter is spent (splinters
+  collecting pickups stay neutral, and a fully-neutral fan reports
+  nothing).
 - Arrow collision is segment-vs-sphere per frame (no tunneling at 70 m/s).
 - Obstacles (trees, cacti, rocks, ice pillars) block arrows in flight —
   the player's and skeleton projectiles alike. Each obstacle is a
@@ -138,7 +151,8 @@ HUD counter and the stage-clear check both read it. HP refills between
 stages; special ammo carries over, and stages with a `grant` entry
 top the quiver up to a floor at stage start (`max(current, grant)`,
 before the retry snapshot, so retries keep it) — freezing arrives with
-the first ogres, exploding from iceberg on. Death → retry the same stage
+the first ogres, exploding from iceberg on, and the split fan debuts on
+the volcano finale. Death → retry the same stage
 with the ammo held at its start. Best score/stage persist in
 `localStorage['archer.best']`.
 

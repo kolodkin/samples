@@ -37,6 +37,7 @@ export const SLOTS = [
   ['normal', 'Normal', '🏹'],
   ['exploding', 'Explode', '💥'],
   ['lightning', 'Lightning', '⚡'],
+  ['split', 'Split', '🔱'],
   ['freezing', 'Freeze', '❄️'],
   ['burning', 'Burn', '🔥'],
 ];

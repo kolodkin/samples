@@ -549,10 +549,97 @@ def test_lightning_arrow_chains_within_radius(server_url, page):
     _shot(page, "lightning-chain")
 
 
+# Split arrow: flies for splitTime seconds, then fans out horizontally into
+# count splinters spread across ±spread radians (deterministic — no rng
+# draw). At power 1 (speed 70) the split lands 17.5 m out, so targets are
+# parked on the z=0 plane, 34 m from the player at z=34: the outermost
+# splinters cross that plane ~2 m off the aim line.
+
+
+def test_split_arrow_fans_out_into_splinters(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setObstacles([])")
+    # One arrow leaves the bow; after splitTime the fan replaces it.
+    page.evaluate("() => window.__ARCHER.fireAt(0, 0.65, -30, 'split')")
+    assert page.evaluate("() => window.__ARCHER.state.arrowCount") == 1
+    page.wait_for_function("() => window.__ARCHER.state.arrowCount === 5", timeout=5000)
+    _shot(page, "split-fan")
+    page.wait_for_function("() => window.__ARCHER.state.arrowCount === 0", timeout=5000)
+
+
+def test_split_arrow_hits_multiple_spread_targets(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setObstacles([])")
+    page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
+    page.evaluate("() => window.__ARCHER.setDropChance(0)")
+    # Three goblins on the split plane: center on the aim line, the others
+    # where the outermost splinters cross. One shot damages all three; the
+    # in-between fan angles pass wide of everyone.
+    for x in (-2, 0, 2):
+        page.evaluate(f"() => window.__ARCHER.spawnEnemy('goblin', {x}, 0, true)")
+    page.evaluate("() => window.__ARCHER.fireAt(0, 0.65, 0, 'split')")
+    page.wait_for_function("() => window.__ARCHER.state.arrowCount === 0", timeout=5000)
+    enemies = page.evaluate("() => window.__ARCHER.state.enemies")
+    by_x = {round(e["x"]): e["hp"] for e in enemies}
+    assert by_x[0] == 40 - 20    # one splinter each, per-splinter damage
+    assert by_x[-2] == 40 - 20
+    assert by_x[2] == 40 - 20
+
+
+def test_split_arrow_before_split_resolves_like_a_normal_arrow(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
+    # Point-blank: the goblin at z=32 is 2 m out, hit long before splitTime.
+    # The arrow is spent on the direct strike and never fans out.
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32, true)")
+    page.evaluate("() => window.__ARCHER.fireAt(0, 0.65, 32, 'split')")
+    page.wait_for_function("() => window.__ARCHER.state.arrowCount === 0", timeout=5000)
+    assert page.evaluate("() => window.__ARCHER.state.enemies[0].hp") == 40 - 20
+    assert page.evaluate("() => window.__ARCHER.state.arrowCount") == 0
+
+
+def test_split_fan_reports_one_auto_outcome(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setObstacles([])")
+    page.evaluate("() => window.__ARCHER.setDropChance(0)")
+    page.evaluate("() => window.__ARCHER.giveAmmo('freezing', 5)")
+    # Center splinter strikes the goblin; the four outer splinters miss
+    # into the ground afterwards. The whole fan is ONE shot: it resolved as
+    # a hit, so the late misses must not disarm auto.
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 0, true)")
+    page.evaluate("() => window.__ARCHER.fireAt(0, 0.65, 0, 'split')")
+    page.wait_for_function(
+        "() => window.__ARCHER.state.arrowCount === 0"
+        " && window.__ARCHER.state.enemies[0].hp < 40",
+        timeout=5000,
+    )
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "freezing"
+
+
+def test_split_slot_pins_and_shifts_digit_keys(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.giveAmmo('split', 2)")
+    page.evaluate("() => window.__ARCHER.giveAmmo('freezing', 1)")
+    # The 🔱 slot sits between ⚡ and ❄️ and pins like any special.
+    page.get_by_test_id("slot-split").dispatch_event("pointerdown")
+    assert page.evaluate("() => window.__ARCHER.state.mode") == "split"
+    expect(page.get_by_test_id("ammo-split")).to_have_text("2")
+    # Digit keys follow the new slot order: 5 split, 6 freezing.
+    page.keyboard.press("Digit6")
+    assert page.evaluate("() => window.__ARCHER.state.mode") == "freezing"
+    page.keyboard.press("Digit5")
+    assert page.evaluate("() => window.__ARCHER.state.mode") == "split"
+
+
 # Hit/miss auto: the ✨ mode rides the player's accuracy. A shot that
 # damaged at least one enemy arms it — the next auto shot spends the best
 # special in stock, strongest-first in CONFIG declaration order (exploding
-# → freezing → burning). A shot that hurt nobody disarms it back to the
+# → lightning → split → freezing → burning). A shot that hurt nobody disarms it back to the
 # free normal arrow, so cold streaks never drain the quiver. Shooting a
 # pickup is neutral. The player at (0, 3.2, 34) boots aiming dead ahead
 # along -z, so enemies spawned near x=0 sit on the aim line.
@@ -870,6 +957,7 @@ def test_stage_grant_tops_up_a_dry_quiver(server_url, page):
     ammo = page.evaluate("() => window.__ARCHER.state.ammo")
     assert ammo["exploding"] == 20
     assert ammo["freezing"] == 10
+    assert ammo["split"] == 12  # the split fan debuts on the finale
 
 
 def test_stage_grant_is_a_floor_not_a_bonus(server_url, page):

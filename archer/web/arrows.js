@@ -119,15 +119,53 @@ export class ArrowSystem {
   // crosshair as a dot.
   fire(origin, dir, power, type, visualOrigin = null) {
     const speed = CONFIG.bow.minSpeed + (CONFIG.bow.maxSpeed - CONFIG.bow.minSpeed) * power;
+    this.spawn(origin, dir.clone().multiplyScalar(speed), type, visualOrigin);
+  }
+
+  // `group` marks a splinter from a split fan: the splinters of one shot
+  // share it to report a single outcome (see resolve), and a grouped
+  // split arrow never splits again.
+  spawn(origin, vel, type, visualOrigin = null, group = null) {
     const mesh = buildArrowMesh(type);
     mesh.position.copy(visualOrigin ?? origin); // oriented by the first update()
     const trail = buildTrail(CONFIG.arrow.types[type].color);
     this.game.scene.add(mesh, trail);
     this.list.push({
-      mesh, trail, pos: origin.clone(),
-      vel: dir.clone().multiplyScalar(speed), type, age: 0,
+      mesh, trail, pos: origin.clone(), vel, type, age: 0, group,
       visualOffset: (visualOrigin ?? origin).clone().sub(origin), // zero without a bow
     });
+  }
+
+  // A split arrow fans out once splitTime of flight has elapsed: count
+  // splinters at the parent's speed, yaw offsets evenly spaced across
+  // ±spread radians about world up (the middle one keeps the parent's
+  // line). Deliberately no rng draw — the fan is the same every run.
+  split(a) {
+    const t = CONFIG.arrow.types.split;
+    this.game.effects?.burst(a.pos, t.color, 14, 4);
+    const group = { left: t.count, hit: false, any: false };
+    const up = new THREE.Vector3(0, 1, 0);
+    for (let i = 0; i < t.count; i++) {
+      const angle = t.spread * ((2 * i) / (t.count - 1) - 1);
+      this.spawn(a.pos, a.vel.clone().applyAxisAngle(up, angle), 'split', null, group);
+    }
+    this.remove(a);
+  }
+
+  // One trigger pull = one report to auto ammo. A lone arrow reports its
+  // own outcome; splinters aggregate through their shot group — damage
+  // anywhere in the fan is a hit, reported once when the last splinter is
+  // spent. Neutral resolutions (pickup collection) never report, and a
+  // fully-neutral fan stays as silent as a lone pickup shot.
+  resolve(a, hit, neutral = false) {
+    const g = a.group;
+    if (!g) {
+      if (!neutral) this.game.onShotResolved?.(hit);
+      return;
+    }
+    g.left -= 1;
+    if (!neutral) { g.any = true; g.hit ||= hit; }
+    if (g.left === 0 && g.any) this.game.onShotResolved?.(g.hit);
   }
 
   clear() {
@@ -155,6 +193,12 @@ export class ArrowSystem {
   update(dt) {
     const R = CONFIG.arrow.radius;
     for (const a of [...this.list]) {
+      // An ungrouped split arrow past its fuse fans out; splinters
+      // (grouped) fly on as ordinary arrows and never re-split.
+      if (a.type === 'split' && !a.group && a.age >= CONFIG.arrow.types.split.splitTime) {
+        this.split(a);
+        continue;
+      }
       const prev = a.pos.clone();
       a.vel.y += CONFIG.arrow.gravity * dt;
       a.pos.addScaledVector(a.vel, dt);
@@ -180,6 +224,7 @@ export class ArrowSystem {
           if (segClosest(prev, pos, p.mesh.position).distanceTo(p.mesh.position)
               < CONFIG.drops.radius + R) {
             this.game.waves.collect(p);
+            this.resolve(a, false, true); // neutral: only settles a fan's group
             this.remove(a);
             consumed = true;
             break;
@@ -209,14 +254,14 @@ export class ArrowSystem {
 
       // A spent arrow reports hit (damaged someone) or miss to the game so
       // auto ammo can react; a direct strike always damaged its target.
-      if (consumed) { this.game.onShotResolved?.(true); this.remove(a); continue; }
+      if (consumed) { this.resolve(a, true); this.remove(a); continue; }
       if (blocked || pos.y <= 0.05 || a.age > CONFIG.arrow.lifetime) {
         // Exploding arrows detonate on whatever stopped them — on cover,
         // splash is the designed counter to enemies hiding behind it, and
         // a splash that damaged anyone still counts as a hit.
         const damaged = a.type === 'exploding' && this.explode(pos);
         if (blocked && a.type !== 'exploding') this.game.effects?.burst(pos, 0x8a7a66, 8, 3);
-        this.game.onShotResolved?.(damaged);
+        this.resolve(a, damaged);
         this.remove(a);
       }
     }
