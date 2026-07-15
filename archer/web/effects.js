@@ -51,8 +51,9 @@ export class Effects {
     for (const b of [...this.bursts]) {
       b.age += dt;
       const attr = b.points.geometry.attributes.position;
+      const fall = b.gravity * dt;
       for (let i = 0; i < b.vels.length; i++) {
-        b.vels[i].y -= b.gravity * dt;
+        b.vels[i].y -= fall;
         attr.setXYZ(
           i,
           attr.getX(i) + b.vels[i].x * dt,

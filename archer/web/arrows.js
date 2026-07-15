@@ -216,7 +216,7 @@ export class ArrowSystem {
         // behind it, and one that affected anyone still counts as a hit.
         let affected = false;
         if (a.type === 'exploding') affected = this.explode(pos);
-        else if (a.type === 'freezing' && this.rollBurst()) affected = this.snowburst(pos);
+        else if (this.rollBurst(a.type)) affected = this.snowburst(pos);
         else if (blocked) this.game.effects?.burst(pos, 0x8a7a66, 8, 3);
         this.game.onShotResolved?.(affected);
         this.remove(a);
@@ -228,23 +228,26 @@ export class ArrowSystem {
     const t = CONFIG.arrow.types[arrow.type];
     this.game.enemies.damage(e, t.damage * (isHead ? CONFIG.arrow.headshotMult : 1), isHead);
     const alive = e.hp > 0;
-    // A burst subsumes the single-target freeze: the target sits at the
-    // burst's center, so it is frozen with everyone else in the radius.
-    // Damage landed above, before any freeze — no self-shatter.
-    if (arrow.type === 'freezing') {
-      if (this.rollBurst()) this.snowburst(arrow.pos);
-      else if (alive) this.game.enemies.freeze(e);
-    }
     if (arrow.type === 'burning' && alive) this.game.enemies.ignite(e);
-    if (arrow.type === 'exploding') this.explode(arrow.pos);
-    else this.game.effects?.burst(arrow.pos, 0xaa3333, 10, 4);
+    // One impact effect per hit: splash, snowburst, or the plain strike.
+    // A snowburst subsumes the single-target freeze — the target sits at
+    // the burst's center, and damage landed above, so no self-shatter.
+    if (arrow.type === 'exploding') {
+      this.explode(arrow.pos);
+    } else if (this.rollBurst(arrow.type)) {
+      this.snowburst(arrow.pos);
+    } else {
+      if (arrow.type === 'freezing' && alive) this.game.enemies.freeze(e);
+      this.game.effects?.burst(arrow.pos, 0xaa3333, 10, 4);
+    }
   }
 
-  // The freezing arrow's random snowburst roll. Seeded rng, never
-  // Math.random(): the outcome is gameplay-affecting and must replay
-  // identically per seed.
-  rollBurst() {
-    return this.game.rng.random() < CONFIG.arrow.types.freezing.burst.chance;
+  // Random detonation roll for types with a `burst` config entry (today:
+  // freezing's snowburst). Seeded rng, never Math.random(): the outcome
+  // is gameplay-affecting and must replay identically per seed.
+  rollBurst(type) {
+    const b = CONFIG.arrow.types[type].burst;
+    return !!b && this.game.rng.random() < b.chance;
   }
 
   // AoE freeze, no damage — the control counterpart of explode(), with the

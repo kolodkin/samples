@@ -514,7 +514,6 @@ def test_snowburst_zero_chance_ground_shot_is_a_dud(server_url, page):
 def test_snowburst_direct_hit_freezes_without_shatter(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
-    page.evaluate("() => window.__ARCHER.setObstacles([])")
     page.evaluate("() => window.__ARCHER.setFreezeBurstChance(1)")
     page.evaluate("() => window.__ARCHER.spawnEnemy('ogre', 0, 26, true)")
     page.evaluate("() => window.__ARCHER.fireAt(0, 1.25, 26, 'freezing')")
