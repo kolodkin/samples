@@ -36,6 +36,7 @@ export const SLOTS = [
   ['auto', 'Auto', '✨'],
   ['normal', 'Normal', '🏹'],
   ['exploding', 'Explode', '💥'],
+  ['lightning', 'Lightning', '⚡'],
   ['freezing', 'Freeze', '❄️'],
   ['burning', 'Burn', '🔥'],
 ];
@@ -123,7 +124,7 @@ function Screens({ s, actions }) {
   if (s.screen === 'title') {
     return html`
       <${Screen} testid="title-screen" title="ARCHER">
-        <p>Click to take aim, then click to shoot. Set power with the +/− buttons (or +/− keys). The ✨ Auto slot rides your aim — land a hit and the next shot spends your best special, miss and it drops back to the free arrow; click a quiver slot (or press 1–5) to choose the arrow yourself.</p>
+        <p>Click to take aim, then click to shoot. Set power with the +/− buttons (or +/− keys). The ✨ Auto slot rides your aim — land a hit and the next shot spends your best special, miss and it drops back to the free arrow; click a quiver slot (or press 1–${SLOTS.length}) to choose the arrow yourself.</p>
         <p>On touch: drag to aim, the 🏹 button shoots.</p>
         <p data-testid="best">Best: ${s.best.score} pts, stage ${s.best.stage}/${s.totalStages}</p>
         <button data-testid="start-btn" onClick=${actions.start}>Start</button>

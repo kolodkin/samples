@@ -13,7 +13,7 @@ This spec covers behavior the numbers don't show.
 | Mouse move (pointer lock) | Aim |
 | Left click (pointer lock) | Shoot at the set power |
 | HUD +/− buttons (left middle), or +/− keys | Adjust shot power (`CONFIG.bow.power`: min/max/step) |
-| Quiver slot click/tap, or keys 1–5 | Select ammo: ✨ Auto or a specific arrow type |
+| Quiver slot click/tap, or keys 1–6 | Select ammo: ✨ Auto or a specific arrow type |
 | Esc (exits pointer lock) | Pause |
 | Touch: drag on the canvas | Aim (no pointer lock; one finger owns the camera) |
 | Touch: 🏹 button | Shoot at the set power |
@@ -41,11 +41,11 @@ inputs shoot: a click while pointer-locked on desktop, the 🏹 button on
 touch. Stray clicks or taps elsewhere on the screen never loose an arrow.
 
 Ammo selection is a mode picked on the HUD quiver (click/tap a slot, or
-keys 1–5 in slot order under pointer lock). The default ✨ Auto slot rides
+keys 1–6 in slot order under pointer lock). The default ✨ Auto slot rides
 the player's accuracy: a shot that damaged at least one enemy — a direct
 strike, or an exploding arrow's splash — arms it, and the next shot spends
 the best special in stock, strongest-first in the `CONFIG.arrow.types`
-declaration order (exploding → freezing → burning); a shot that hurt
+declaration order (exploding → lightning → freezing → burning); a shot that hurt
 nobody (ground, cover, timeout, or a splash that reached no one) disarms
 it back to the free normal arrow, so cold streaks never drain the quiver.
 Each spent arrow reports its outcome through `game.onShotResolved` (from
@@ -84,7 +84,10 @@ store.
   (`dropMult`/`healMult` on the stage entry, over the global
   `CONFIG.drops` values) — the late arc drops more, and more of it heals.
 - Exploding splash ignores cover (no LOS check); freezing doubles the
-  next hit (shatter); burning spreads to nearby enemies.
+  next hit (shatter); burning spreads to nearby enemies; lightning chains
+  from the struck enemy through a seeded-random number of jolts
+  (`CONFIG.arrow.types.lightning.jolts`), each jumping to the nearest
+  not-yet-struck enemy within the jolt radius.
 - A burning arrow lobbed high splits as it dives back down through
   `CONFIG.arrow.types.burning.split.height` into a volley of burning
   arrows: one fragment holds the flight line (a lob at a single target
@@ -122,6 +125,13 @@ store.
   Projectiles drop at 4 m/s² with compensated aim, so long shots arc
   visibly; like player arrows they use segment-vs-sphere collision, so
   they cannot tunnel through the player even at low frame rates.
+- Walkers collide with obstacles: after each AI step,
+  `pushOutOfObstacles()` in `web/geom.js` pushes the enemy's body circle
+  (`bodyRadius`) out of any obstacle cylinder it overlaps. Only the
+  radial part of the step is cancelled, so enemies slide around trees
+  toward the player instead of clipping through (or sticking to) them.
+  Skeleton cover points sit 0.7 m off the obstacle edge — outside every
+  body radius — so cover-hugging is unaffected.
 - Melee ignores the perch elevation: attacks reach the player from the
   perch base by design.
 - A melee attacker is spent on contact: it lands one hit and disappears
