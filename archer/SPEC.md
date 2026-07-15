@@ -13,7 +13,7 @@ This spec covers behavior the numbers don't show.
 | Mouse move (pointer lock) | Aim |
 | Left click (pointer lock) | Shoot at the set power |
 | HUD +/− buttons (left middle), or +/− keys | Adjust shot power (`CONFIG.bow.power`: min/max/step) |
-| Quiver slot click/tap, or keys 1–5 | Select ammo: ✨ Auto or a specific arrow type |
+| Quiver slot click/tap, or keys 1–6 | Select ammo: ✨ Auto or a specific arrow type |
 | Esc (exits pointer lock) | Pause |
 | Touch: drag on the canvas | Aim (no pointer lock; one finger owns the camera) |
 | Touch: 🏹 button | Shoot at the set power |
@@ -41,11 +41,11 @@ inputs shoot: a click while pointer-locked on desktop, the 🏹 button on
 touch. Stray clicks or taps elsewhere on the screen never loose an arrow.
 
 Ammo selection is a mode picked on the HUD quiver (click/tap a slot, or
-keys 1–5 in slot order under pointer lock). The default ✨ Auto slot rides
+keys 1–6 in slot order under pointer lock). The default ✨ Auto slot rides
 the player's accuracy: a shot that damaged at least one enemy — a direct
 strike, or an exploding arrow's splash — arms it, and the next shot spends
 the best special in stock, strongest-first in the `CONFIG.arrow.types`
-declaration order (exploding → freezing → burning); a shot that hurt
+declaration order (exploding → lightning → freezing → burning); a shot that hurt
 nobody (ground, cover, timeout, or a splash that reached no one) disarms
 it back to the free normal arrow, so cold streaks never drain the quiver.
 Each spent arrow reports its outcome through `game.onShotResolved` (from
@@ -84,7 +84,10 @@ store.
   (`dropMult`/`healMult` on the stage entry, over the global
   `CONFIG.drops` values) — the late arc drops more, and more of it heals.
 - Exploding splash ignores cover (no LOS check); freezing doubles the
-  next hit (shatter); burning spreads to nearby enemies.
+  next hit (shatter); burning spreads to nearby enemies; lightning chains
+  from the struck enemy through a seeded-random number of jolts
+  (`CONFIG.arrow.types.lightning.jolts`), each jumping to the nearest
+  not-yet-struck enemy within the jolt radius.
 - Arrow collision is segment-vs-sphere per frame (no tunneling at 70 m/s).
 - Obstacles (trees, cacti, rocks, ice pillars) block arrows in flight —
   the player's and skeleton projectiles alike. Each obstacle is a

@@ -6,7 +6,35 @@ export class Effects {
   constructor(scene) {
     this.scene = scene;
     this.bursts = [];
+    this.bolts = [];
     this.snow = null;
+  }
+
+  // Jagged lightning flash through the chain's strike points: each hop is
+  // subdivided and jittered so it reads as an arc, not a laser. Additive
+  // and short-lived; the fade runs in update().
+  bolt(points, color) {
+    const SEGS = 6;
+    const verts = [];
+    const p = new THREE.Vector3();
+    for (let i = 0; i < points.length - 1; i++) {
+      for (let k = i === 0 ? 0 : 1; k <= SEGS; k++) {
+        p.copy(points[i]).lerp(points[i + 1], k / SEGS);
+        if (k > 0 && k < SEGS) {
+          p.x += (Math.random() - 0.5) * 0.6;
+          p.y += (Math.random() - 0.5) * 0.6;
+          p.z += (Math.random() - 0.5) * 0.6;
+        }
+        verts.push(p.x, p.y, p.z);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(verts), 3));
+    const line = new THREE.Line(geo, new THREE.LineBasicMaterial({
+      color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
+    }));
+    this.scene.add(line);
+    this.bolts.push({ line, age: 0, life: 0.25 });
   }
 
   burst(pos, color, count = 20, speed = 8) {
@@ -46,6 +74,16 @@ export class Effects {
   }
 
   update(dt) {
+    for (const b of [...this.bolts]) {
+      b.age += dt;
+      b.line.material.opacity = 1 - b.age / b.life;
+      if (b.age >= b.life) {
+        this.scene.remove(b.line);
+        b.line.geometry.dispose();
+        b.line.material.dispose();
+        this.bolts.splice(this.bolts.indexOf(b), 1);
+      }
+    }
     for (const b of [...this.bursts]) {
       b.age += dt;
       const attr = b.points.geometry.attributes.position;
