@@ -11,7 +11,7 @@ from cover, and kills drop exploding, lightning, freezing, and burning
 arrow pickups —
 the quiver's default ✨ Auto slot rewards accuracy (land a hit and the next
 shot spends your best special; miss and it falls back to the free arrow),
-or pick a slot (click/tap, or keys 1–5) to choose the arrow yourself. Runs
+or pick a slot (click/tap, or keys 1–6) to choose the arrow yourself. Runs
 entirely from vendored ESM builds of three.js and Preact served by a small
 Python `http.server`; every run is reproducible via a seeded RNG
 (`?seed=N`) and verified end-to-end with Python Playwright.

@@ -41,11 +41,11 @@ inputs shoot: a click while pointer-locked on desktop, the 🏹 button on
 touch. Stray clicks or taps elsewhere on the screen never loose an arrow.
 
 Ammo selection is a mode picked on the HUD quiver (click/tap a slot, or
-keys 1–5 in slot order under pointer lock). The default ✨ Auto slot rides
+keys 1–6 in slot order under pointer lock). The default ✨ Auto slot rides
 the player's accuracy: a shot that damaged at least one enemy — a direct
 strike, or an exploding arrow's splash — arms it, and the next shot spends
 the best special in stock, strongest-first in the `CONFIG.arrow.types`
-declaration order (exploding → freezing → burning); a shot that hurt
+declaration order (exploding → lightning → freezing → burning); a shot that hurt
 nobody (ground, cover, timeout, or a splash that reached no one) disarms
 it back to the free normal arrow, so cold streaks never drain the quiver.
 Each spent arrow reports its outcome through `game.onShotResolved` (from
