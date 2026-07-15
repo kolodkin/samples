@@ -229,6 +229,7 @@ export class ArrowSystem {
     this.game.enemies.damage(e, t.damage * (isHead ? CONFIG.arrow.headshotMult : 1), isHead);
     const alive = e.hp > 0;
     if (arrow.type === 'burning' && alive) this.game.enemies.ignite(e);
+    if (arrow.type === 'lightning') this.chainLightning(e);
     // One impact effect per hit: splash, snowburst, or the plain strike.
     // A snowburst subsumes the single-target freeze — the target sits at
     // the burst's center, and damage landed above, so no self-shatter.
@@ -265,6 +266,33 @@ export class ArrowSystem {
       }
     }
     return froze;
+  }
+
+  // Lightning arcs on from the struck enemy through a random number of
+  // extra targets: the jolt count is rolled on the seeded rng (so a run
+  // replays exactly), then each jolt jumps to the nearest not-yet-struck
+  // enemy within `radius` of the previous target for flat chainDamage.
+  // Chains happily continue from a corpse — the bolt already reached it.
+  chainLightning(first) {
+    const t = CONFIG.arrow.types.lightning;
+    const struck = new Set([first]);
+    const points = [this.game.enemies.bodyCenter(first)];
+    const jolts = this.game.rng.int(t.jolts.min, t.jolts.max);
+    for (let i = 0; i < jolts; i++) {
+      let next = null;
+      let nextD = t.radius;
+      for (const e of this.game.enemies.list) {
+        if (struck.has(e)) continue;
+        const d = this.game.enemies.bodyCenter(e).distanceTo(points[points.length - 1]);
+        if (d < nextD) { next = e; nextD = d; }
+      }
+      if (!next) break;
+      struck.add(next);
+      points.push(this.game.enemies.bodyCenter(next));
+      this.game.effects?.burst(points[points.length - 1], t.color, 8, 3);
+      this.game.enemies.damage(next, t.chainDamage);
+    }
+    if (points.length > 1) this.game.effects?.bolt(points, t.color);
   }
 
   // AoE with linear falloff. Deliberately no line-of-sight check: splash

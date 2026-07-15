@@ -2,8 +2,11 @@ import * as THREE from 'three';
 import { CONFIG } from './config.js';
 import { setShadows } from './relief.js';
 
-const DROP_TYPES = ['exploding', 'freezing', 'burning'];
-const DROP_COLORS = { exploding: 0xff7733, freezing: 0x66ddff, burning: 0xff4422, heal: 0xff3366 };
+const DROP_TYPES = ['exploding', 'lightning', 'freezing', 'burning'];
+const DROP_COLORS = {
+  exploding: 0xff7733, lightning: 0xffe14d, freezing: 0x66ddff,
+  burning: 0xff4422, heal: 0xff3366,
+};
 
 const glowMaterial = (color) => new THREE.MeshLambertMaterial({
   color, emissive: color, emissiveIntensity: 0.5,

@@ -346,6 +346,42 @@ def test_obstacle_blocks_player_arrow(server_url, page):
     assert state["enemies"][0]["hp"] == 40
 
 
+def test_goblin_walks_around_obstacle_not_through(server_url, page):
+    # Walkers must collide with obstacles: a goblin heading for the player
+    # slides around a trunk on its path instead of clipping through it.
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
+    # One fat trunk dead on the line from the spawn to the player (0, 3.2, 34).
+    # The goblin's zigzag weave (~±0.8 m) cannot sidestep a 1.5 m radius, so
+    # any interior frame means it walked through. Track the deepest
+    # penetration every frame: our rAF callback registers after the game
+    # loop, so it samples post-tick positions.
+    page.evaluate(
+        """() => {
+          window.__ARCHER.setObstacles([{ x: 0, z: 22, radius: 1.5, height: 6 }]);
+          window.__ARCHER.spawnEnemy('goblin', 0, 10);
+          window.__minGap = Infinity;
+          const track = () => {
+            const e = window.__ARCHER.state.enemies[0];
+            if (e) {
+              window.__minGap = Math.min(
+                window.__minGap, Math.hypot(e.x, e.z - 22) - 1.5);
+            }
+            requestAnimationFrame(track);
+          };
+          track();
+        }"""
+    )
+    # Collision must not strand it either: it still reaches the player,
+    # lands its one strike, and despawns.
+    page.wait_for_function("() => window.__ARCHER.state.enemyCount === 0", timeout=45000)
+    assert page.evaluate("() => window.__ARCHER.state.hp") == 10000 - 10
+    # Its 0.55 m body circle never entered the trunk (slack for spawn-frame
+    # sampling and float noise).
+    assert page.evaluate("() => window.__minGap") > 0.2
+
+
 def test_player_death_shows_game_over(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
@@ -566,6 +602,27 @@ def test_burning_arrow_ticks_and_spreads(server_url, page):
     _shot(page, "burning-spread")  # both ogres alight
 
 
+def test_lightning_arrow_chains_within_radius(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
+    # A cluster inside the jolt radius (8 m) and one goblin parked far
+    # beyond every possible hop. The jolt count is a seeded-random roll,
+    # but its floor is 2, so with exactly two candidates in reach the
+    # outcome is the same for every roll.
+    for x, z in ((0, 32), (3, 32), (-3, 30), (12, 20)):
+        page.evaluate(f"() => window.__ARCHER.spawnEnemy('goblin', {x}, {z}, true)")
+    page.evaluate("() => window.__ARCHER.fireAt(0, 0.65, 32, 'lightning')")
+    page.wait_for_function("() => window.__ARCHER.state.arrowCount === 0", timeout=5000)
+    enemies = page.evaluate("() => window.__ARCHER.state.enemies")
+    by_x = {round(e["x"]): e["hp"] for e in enemies}
+    assert by_x[0] == 40 - 22    # direct body strike
+    assert by_x[3] == 40 - 16    # first jolt: nearest neighbor
+    assert by_x[-3] == 40 - 16   # second jolt: chain floor covers it too
+    assert by_x[12] == 40        # out of every jolt's reach: untouched
+    _shot(page, "lightning-chain")
+
+
 # Hit/miss auto: the ✨ mode rides the player's accuracy. A shot that
 # damaged at least one enemy arms it — the next auto shot spends the best
 # special in stock, strongest-first in CONFIG declaration order (exploding
@@ -596,7 +653,10 @@ def test_auto_arms_best_special_after_a_hit(server_url, page):
     # The hit armed auto: the strongest special in stock is up next.
     assert page.evaluate("() => window.__ARCHER.state.selected") == "freezing"
     _shot(page, "auto-armed-after-hit")
-    # A stronger special entering stock outranks it immediately.
+    # Stronger specials entering stock outrank it immediately, in CONFIG
+    # declaration order: lightning over freezing, exploding over lightning.
+    page.evaluate("() => window.__ARCHER.giveAmmo('lightning', 1)")
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "lightning"
     page.evaluate("() => window.__ARCHER.giveAmmo('exploding', 1)")
     assert page.evaluate("() => window.__ARCHER.state.selected") == "exploding"
 
@@ -726,6 +786,9 @@ def test_digit_keys_select_ammo(server_url, page):
     assert page.evaluate("() => window.__ARCHER.state.mode") == "normal"
     page.keyboard.press("Digit3")
     assert page.evaluate("() => window.__ARCHER.state.mode") == "exploding"
+    page.evaluate("() => window.__ARCHER.giveAmmo('lightning', 1)")
+    page.keyboard.press("Digit4")
+    assert page.evaluate("() => window.__ARCHER.state.mode") == "lightning"
     page.keyboard.press("Digit1")
     assert page.evaluate("() => window.__ARCHER.state.mode") == "auto"
 
