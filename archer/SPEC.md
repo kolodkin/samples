@@ -48,10 +48,10 @@ the best special in stock, strongest-first in the `CONFIG.arrow.types`
 declaration order (exploding → freezing → burning); a shot that hurt
 nobody (ground, cover, timeout, or a splash that reached no one) disarms
 it back to the free normal arrow, so cold streaks never drain the quiver.
-Each arrow reports its outcome as it resolves (`ArrowSystem.resolve()`,
-which drives `game.onShotResolved`); shooting down a pickup is neutral —
-collecting a drop neither arms nor disarms. Stage start and retry reset
-Auto to the free arrow. Picking an ammo slot instead pins every shot to that type:
+Each spent arrow reports its outcome through `game.onShotResolved` (from
+`ArrowSystem.update()`; `explode()` returns whether the splash damaged
+anyone); shooting down a pickup is neutral — collecting a drop neither
+arms nor disarms. Stage start and retry reset Auto to the free arrow. Picking an ammo slot instead pins every shot to that type:
 normal shots then conserve specials, and a pinned special unpins back to
 Auto when its last arrow is spent (or when a stage starts without it in
 stock — retry restores the stage-start snapshot). An empty special slot

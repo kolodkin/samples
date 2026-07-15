@@ -79,21 +79,19 @@ const stocked = (m) => m === 'auto' || m === 'normal' || game.stats.ammo[m] > 0;
 // Hit/miss auto: the mode rides the player's accuracy. A shot that damaged
 // at least one enemy (direct strike or exploding splash) arms it — the next
 // auto shot spends the best special in stock, strongest-first in CONFIG
-// declaration order. A shot that hurt nobody disarms it back to the free
-// normal arrow, so cold streaks never drain the quiver. Arrows report
-// their outcome as they resolve (ArrowSystem.resolve); shooting a pickup
-// is neutral and reports nothing.
-game.lastShotHit = false;
+// declaration order (SPECIALS). A shot that hurt nobody disarms it back to
+// the free normal arrow, so cold streaks never drain the quiver. Spent
+// arrows report their outcome here from ArrowSystem.update; shooting a
+// pickup is neutral and reports nothing.
+let lastShotHit = false;
 game.onShotResolved = (hit) => {
-  if (game.lastShotHit === hit) return;
-  game.lastShotHit = hit;
+  lastShotHit = hit;
   game.syncUI();
 };
+const SPECIALS = Object.keys(CONFIG.arrow.types).filter((t) => t !== 'normal');
 function autoType() {
-  if (!game.lastShotHit) return 'normal';
-  const armed = Object.keys(CONFIG.arrow.types)
-    .find((t) => t !== 'normal' && game.stats.ammo[t] > 0);
-  return armed ?? 'normal';
+  if (!lastShotHit) return 'normal';
+  return SPECIALS.find(stocked) ?? 'normal';
 }
 function selectedType() {
   if (game.ammoMode !== 'auto') return game.ammoMode;
@@ -192,7 +190,7 @@ function startGame(stageIndex) {
     game.stats.ammo[type] = Math.max(game.stats.ammo[type], n);
   }
   game.stageInventory = { ...game.stats.ammo }; // retry restores this snapshot
-  game.lastShotHit = false; // auto opens cold: nothing hit yet this stage
+  lastShotHit = false; // auto opens cold: nothing hit yet this stage
   game.screen = 'playing';
   if (params.get('waves') !== '0') game.waves.startWave(1);
   game.syncUI();

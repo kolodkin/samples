@@ -38,9 +38,12 @@ def _shot(page, name):
     page.screenshot(path=str(SHOTS / f"{name}.png"))
 
 
-def _drop_and_shoot_pickup(page, shot_name=None):
-    """Kill an inert goblin, shoot the pickup it drops, return the pickup."""
-    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32, true)")
+def _drop_and_shoot_pickup(page, shot_name=None, spawn=True):
+    """Kill everything on the field (spawning an inert goblin first unless
+    the test already parked exactly one enemy), shoot the pickup that
+    drops, and return it."""
+    if spawn:
+        page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 32, true)")
     page.evaluate("() => window.__ARCHER.killAll()")
     page.wait_for_function("() => window.__ARCHER.state.pickupCount === 1", timeout=2000)
     pickup = page.evaluate("() => window.__ARCHER.state.pickups[0]")
@@ -51,13 +54,16 @@ def _drop_and_shoot_pickup(page, shot_name=None):
     return pickup
 
 
-def _arm_auto(page, z=26):
-    """Land a free arrow on an inert goblin so Auto arms (last shot hit).
-    Obstacles are cleared first so the shot line is guaranteed. The goblin
-    (40 hp) survives the 34-damage body hit and stays on the field."""
+def _arm_auto(page, shot="0, 0.65, 26"):
+    """Land a shot that damages an inert goblin at (0, 26) so Auto arms
+    (last shot hit). Obstacles are cleared first so the shot line is
+    guaranteed. The goblin (40 hp) survives the hit and stays on the
+    field. `shot` is the fireAt argument list — the default is a free
+    arrow into the body; pass e.g. "3, 0, 26, 'exploding'" for a ground
+    burst beside it."""
     page.evaluate("() => window.__ARCHER.setObstacles([])")
-    page.evaluate(f"() => window.__ARCHER.spawnEnemy('goblin', 0, {z}, true)")
-    page.evaluate(f"() => window.__ARCHER.fireAt(0, 0.65, {z})")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 26, true)")
+    page.evaluate(f"() => window.__ARCHER.fireAt({shot})")
     page.wait_for_function(
         "() => window.__ARCHER.state.arrowCount === 0"
         " && window.__ARCHER.state.enemies[0].hp < 40",
@@ -536,17 +542,10 @@ def test_auto_disarms_to_basic_after_a_miss(server_url, page):
 def test_auto_counts_exploding_splash_as_a_hit(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
-    page.evaluate("() => window.__ARCHER.setObstacles([])")
     page.evaluate("() => window.__ARCHER.giveAmmo('freezing', 5)")
-    # Ground burst beside a lone goblin: no direct strike, but the splash
+    # Ground burst beside the goblin: no direct strike, but the splash
     # reaches it — that counts as a hit and arms auto.
-    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 26, true)")
-    page.evaluate("() => window.__ARCHER.fireAt(3, 0, 26, 'exploding')")
-    page.wait_for_function(
-        "() => window.__ARCHER.state.arrowCount === 0"
-        " && window.__ARCHER.state.enemies[0].hp < 40",
-        timeout=5000,
-    )
+    _arm_auto(page, shot="3, 0, 26, 'exploding'")
     assert page.evaluate("() => window.__ARCHER.state.selected") == "freezing"
 
 
@@ -571,11 +570,7 @@ def test_auto_ignores_pickup_shots(server_url, page):
     _arm_auto(page)
     # Shoot down the drop the armed goblin leaves behind: collecting a
     # pickup is neutral — it neither arms nor disarms auto.
-    page.evaluate("() => window.__ARCHER.killAll()")
-    page.wait_for_function("() => window.__ARCHER.state.pickupCount === 1", timeout=2000)
-    pickup = page.evaluate("() => window.__ARCHER.state.pickups[0]")
-    page.evaluate("(p) => window.__ARCHER.fireAt(p.x, p.y, p.z)", pickup)
-    page.wait_for_function("() => window.__ARCHER.state.pickupCount === 0", timeout=5000)
+    _drop_and_shoot_pickup(page, spawn=False)
     assert page.evaluate("() => window.__ARCHER.state.selected") == "freezing"
 
 
