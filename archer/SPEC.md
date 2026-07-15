@@ -110,6 +110,13 @@ store.
   Projectiles drop at 4 m/s² with compensated aim, so long shots arc
   visibly; like player arrows they use segment-vs-sphere collision, so
   they cannot tunnel through the player even at low frame rates.
+- Walkers collide with obstacles: after each AI step,
+  `resolveObstacles()` in `web/enemies.js` pushes the enemy's body circle
+  (`bodyRadius`) out of any obstacle cylinder it overlaps. Only the
+  radial part of the step is cancelled, so enemies slide around trees
+  toward the player instead of clipping through (or sticking to) them.
+  Skeleton cover points sit 0.7 m off the obstacle edge — outside every
+  body radius — so cover-hugging is unaffected.
 - Melee ignores the perch elevation: attacks reach the player from the
   perch base by design.
 - A melee attacker is spent on contact: it lands one hit and disappears
