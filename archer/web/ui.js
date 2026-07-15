@@ -30,8 +30,8 @@ function useStore(store) {
 }
 
 // Quiver slots in HUD order — also the digit-key order (main.js derives its
-// key map from this). 'auto' is a mode, not an ammo type: it picks per shot
-// from the battlefield (see autoType in main.js), so it has no count.
+// key map from this). 'auto' is a mode, not an ammo type: it follows the
+// player's accuracy (see autoType in main.js), so it has no count.
 export const SLOTS = [
   ['auto', 'Auto', '✨'],
   ['normal', 'Normal', '🏹'],
@@ -123,7 +123,7 @@ function Screens({ s, actions }) {
   if (s.screen === 'title') {
     return html`
       <${Screen} testid="title-screen" title="ARCHER">
-        <p>Click to take aim, then click to shoot. Set power with the +/− buttons (or +/− keys). The ✨ Auto slot picks the arrow the shot deserves — specials for packs and ogres, the free arrow for stragglers; click a quiver slot (or press 1–5) to choose the arrow yourself.</p>
+        <p>Click to take aim, then click to shoot. Set power with the +/− buttons (or +/− keys). The ✨ Auto slot rides your aim — land a hit and the next shot spends your best special, miss and it drops back to the free arrow; click a quiver slot (or press 1–5) to choose the arrow yourself.</p>
         <p>On touch: drag to aim, the 🏹 button shoots.</p>
         <p data-testid="best">Best: ${s.best.score} pts, stage ${s.best.stage}/${s.totalStages}</p>
         <button data-testid="start-btn" onClick=${actions.start}>Start</button>

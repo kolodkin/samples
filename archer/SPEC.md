@@ -41,26 +41,24 @@ inputs shoot: a click while pointer-locked on desktop, the 🏹 button on
 touch. Stray clicks or taps elsewhere on the screen never loose an arrow.
 
 Ammo selection is a mode picked on the HUD quiver (click/tap a slot, or
-keys 1–5 in slot order under pointer lock). The default ✨ Auto slot is
-target-aware: each shot reads the battlefield and spends a special only
-where it pays for itself — exploding when 3+ enemies bunch inside the
-blast radius of the aimed enemy, freezing against an unfrozen ogre,
-burning when the fire can still catch a neighbor (the same ignitability
-rule the actual spread uses — `EnemySystem.ignitable()` — so a frozen or
-already-burning neighbor doesn't count) — otherwise the free normal
-arrow, so stragglers never drain the quiver. The aimed enemy is the
-nearest along the aim ray, matched in the XZ plane only
-(`EnemySystem.aimedFrom()`): pitch is arc compensation on long shots and
-must never unselect a target. The main
-tick resyncs the HUD whenever the pick changes, so the highlighted slot
-tracks the crosshair. Picking an ammo slot instead pins every shot to that type:
+keys 1–5 in slot order under pointer lock). The default ✨ Auto slot rides
+the player's accuracy: a shot that damaged at least one enemy — a direct
+strike, or an exploding arrow's splash — arms it, and the next shot spends
+the best special in stock, strongest-first in the `CONFIG.arrow.types`
+declaration order (exploding → freezing → burning); a shot that hurt
+nobody (ground, cover, timeout, or a splash that reached no one) disarms
+it back to the free normal arrow, so cold streaks never drain the quiver.
+Each arrow reports its outcome as it resolves (`ArrowSystem.resolve()`,
+which drives `game.onShotResolved`); shooting down a pickup is neutral —
+collecting a drop neither arms nor disarms. Stage start and retry reset
+Auto to the free arrow. Picking an ammo slot instead pins every shot to that type:
 normal shots then conserve specials, and a pinned special unpins back to
 Auto when its last arrow is spent (or when a stage starts without it in
 stock — retry restores the stage-start snapshot). An empty special slot
 can't be pinned; the click is ignored. The highlighted ammo slot is always
 what the next shot will fire; in Auto mode the ✨ slot highlights alongside
-it, showing the choice is automatic (on an empty field that is the normal
-slot — a full quiver stays dark until something is worth it).
+it, showing the choice is automatic (before the first hit that is the
+normal slot — a full quiver stays dark until a hit arms it).
 
 Touch mode is detected via `(pointer: coarse)` or the first `touchstart`;
 hybrid devices keep both input paths live. Touch aim sensitivity is mouse

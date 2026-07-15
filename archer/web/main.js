@@ -66,30 +66,34 @@ loadStage(initialStage);
 game.player = new Player(camera);
 game.arrows = new ArrowSystem(game);
 const trajectoryHint = new TrajectoryHint(game);
-// Ammo selection. 'auto' (the default) reads the battlefield per shot and
-// spends a special only where it pays for itself (see autoType). A
-// specific type pins every shot to that type until it runs dry or the
-// player picks another slot.
+// Ammo selection. 'auto' (the default) follows the player's accuracy:
+// a hit arms the best special in stock, a miss falls back to the free
+// normal arrow (see autoType). A specific type pins every shot to that
+// type until it runs dry or the player picks another slot.
 game.ammoMode = 'auto';
 // Auto and the infinite normal arrow are always pinnable; a special only
 // while in stock. syncUI() re-checks this on every state change, so a
 // pinned special that runs dry (last shot spent, or a retry snapshot
 // without it) unpins back to auto — the mode never points at an empty slot.
 const stocked = (m) => m === 'auto' || m === 'normal' || game.stats.ammo[m] > 0;
-// Smart auto: exploding into a cluster, freezing at an unfrozen ogre,
-// burning where the fire can still catch a neighbor — otherwise the free
-// normal arrow. Stragglers never drain the quiver. The spatial queries
-// live on EnemySystem so the burn pick shares spreadBurn's ignitability
-// rule instead of drifting from it.
+// Hit/miss auto: the mode rides the player's accuracy. A shot that damaged
+// at least one enemy (direct strike or exploding splash) arms it — the next
+// auto shot spends the best special in stock, strongest-first in CONFIG
+// declaration order. A shot that hurt nobody disarms it back to the free
+// normal arrow, so cold streaks never drain the quiver. Arrows report
+// their outcome as they resolve (ArrowSystem.resolve); shooting a pickup
+// is neutral and reports nothing.
+game.lastShotHit = false;
+game.onShotResolved = (hit) => {
+  if (game.lastShotHit === hit) return;
+  game.lastShotHit = hit;
+  game.syncUI();
+};
 function autoType() {
-  const aimed = game.enemies.aimedFrom(game.player.aimOrigin(), game.player.aimDir());
-  if (!aimed) return 'normal';
-  const { ammo } = game.stats;
-  if (ammo.exploding > 0
-      && game.enemies.packSize(aimed, CONFIG.arrow.types.exploding.radius) >= 3) return 'exploding';
-  if (ammo.freezing > 0 && aimed.type === 'ogre' && aimed.frozen <= 0) return 'freezing';
-  if (ammo.burning > 0 && aimed.burn <= 0 && game.enemies.ignitable(aimed).length > 0) return 'burning';
-  return 'normal';
+  if (!game.lastShotHit) return 'normal';
+  const armed = Object.keys(CONFIG.arrow.types)
+    .find((t) => t !== 'normal' && game.stats.ammo[t] > 0);
+  return armed ?? 'normal';
 }
 function selectedType() {
   if (game.ammoMode !== 'auto') return game.ammoMode;
@@ -188,6 +192,7 @@ function startGame(stageIndex) {
     game.stats.ammo[type] = Math.max(game.stats.ammo[type], n);
   }
   game.stageInventory = { ...game.stats.ammo }; // retry restores this snapshot
+  game.lastShotHit = false; // auto opens cold: nothing hit yet this stage
   game.screen = 'playing';
   if (params.get('waves') !== '0') game.waves.startWave(1);
   game.syncUI();
@@ -312,7 +317,6 @@ for (const type of ['touchend', 'touchcancel']) {
 
 let last = performance.now();
 let framesRendered = 0;
-let lastAutoPick = null; // HUD follows the smart pick as aim/enemies move
 function tick(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
@@ -323,13 +327,6 @@ function tick(now) {
     game.enemies.update(dt);
     game.waves.update(dt);
     updateRadar(game);
-    // Smart auto re-picks continuously (aim moves, enemies move), but the
-    // UI store only hears about mutations — resync when the pick changes.
-    const pick = selectedType();
-    if (pick !== lastAutoPick) {
-      lastAutoPick = pick;
-      game.syncUI();
-    }
   }
   game.effects.update(dt);
   // Stage ambient motion (canopy sway), always on: the stage breathes even
