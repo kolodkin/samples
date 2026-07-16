@@ -180,9 +180,8 @@ export class ArrowSystem {
       // a volley (see SPEC.md): the crossing guarantees open air below
       // for the fan to spread. Fragments never split again, and an
       // obstacle strike this frame wins — the arrow died before crossing.
-      const split = CONFIG.arrow.types[a.type].split;
-      if (split && !a.volley && !blocked
-          && prev.y > split.height && pos.y <= split.height) {
+      const split = !a.volley && !blocked && CONFIG.arrow.types[a.type].split;
+      if (split && prev.y > split.height && pos.y <= split.height) {
         this.split(a, prev, split);
         continue;
       }
@@ -196,9 +195,7 @@ export class ArrowSystem {
           if (segClosest(prev, pos, p.mesh.position).distanceTo(p.mesh.position)
               < CONFIG.drops.radius + R) {
             this.game.waves.collect(p);
-            // Neutral for the shot verdict — but a fragment still settles
-            // its volley share (a false share never flips a volley to hit).
-            if (a.volley) this.resolve(a, false);
+            this.resolve(a, null); // neutral: neither a hit nor a miss
             this.remove(a);
             consumed = true;
             break;
@@ -243,13 +240,17 @@ export class ArrowSystem {
     }
   }
 
-  // Every spent arrow funnels its verdict here. A lone arrow reports
-  // immediately; a volley fragment instead settles its share of the split
-  // shot, which reports once — a hit if ANY fragment damaged someone —
-  // when its last fragment is spent, so a split stays a single shot.
+  // Every spent arrow funnels its verdict here: true/false, or null for a
+  // neutral spend (pickup collection). A lone arrow reports immediately —
+  // nothing when neutral. A volley fragment instead settles its share of
+  // the split shot, which reports once — a hit if ANY fragment damaged
+  // someone — when its last fragment is spent: a split stays one shot.
   resolve(a, hit) {
-    if (!a.volley) { this.game.onShotResolved?.(hit); return; }
-    a.volley.hit ||= hit;
+    if (!a.volley) {
+      if (hit != null) this.game.onShotResolved?.(hit);
+      return;
+    }
+    if (hit) a.volley.hit = true;
     if (--a.volley.left === 0) this.game.onShotResolved?.(a.volley.hit);
   }
 
@@ -266,10 +267,10 @@ export class ArrowSystem {
     if (u.lengthSq() < 1e-6) u.set(1, 0, 0);
     u.normalize();
     const volley = { left: split.count, hit: false };
-    for (let i = 0; i < split.count; i++) {
-      const dir = i === 0 ? axis.clone()
-        : axis.clone().applyAxisAngle(u, split.angle)
-          .applyAxisAngle(axis, (2 * Math.PI * (i - 1)) / (split.count - 1));
+    this.spawn(at, a.vel.clone(), a.type, null, volley); // fragment 0: the parent's line
+    const tilted = axis.clone().applyAxisAngle(u, split.angle);
+    for (let i = 0; i < split.count - 1; i++) {
+      const dir = tilted.clone().applyAxisAngle(axis, (2 * Math.PI * i) / (split.count - 1));
       this.spawn(at, dir.multiplyScalar(speed), a.type, null, volley);
     }
     this.game.effects?.burst(at, CONFIG.arrow.types[a.type].color, 14, 5);
