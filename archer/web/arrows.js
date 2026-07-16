@@ -211,12 +211,14 @@ export class ArrowSystem {
       // auto ammo can react; a direct strike always damaged its target.
       if (consumed) { this.game.onShotResolved?.(true); this.remove(a); continue; }
       if (blocked || pos.y <= 0.05 || a.age > CONFIG.arrow.lifetime) {
-        // Exploding arrows detonate on whatever stopped them — on cover,
-        // splash is the designed counter to enemies hiding behind it, and
-        // a splash that damaged anyone still counts as a hit.
-        const damaged = a.type === 'exploding' && this.explode(pos);
-        if (blocked && a.type !== 'exploding') this.game.effects?.burst(pos, 0x8a7a66, 8, 3);
-        this.game.onShotResolved?.(damaged);
+        // Specials detonate on whatever stopped them — on cover, the
+        // splash/snowburst is the designed counter to enemies hiding
+        // behind it, and one that affected anyone still counts as a hit.
+        let affected = false;
+        if (a.type === 'exploding') affected = this.explode(pos);
+        else if (this.rollBurst(a.type)) affected = this.snowburst(pos);
+        else if (blocked) this.game.effects?.burst(pos, 0x8a7a66, 8, 3);
+        this.game.onShotResolved?.(affected);
         this.remove(a);
       }
     }
@@ -226,11 +228,44 @@ export class ArrowSystem {
     const t = CONFIG.arrow.types[arrow.type];
     this.game.enemies.damage(e, t.damage * (isHead ? CONFIG.arrow.headshotMult : 1), isHead);
     const alive = e.hp > 0;
-    if (arrow.type === 'freezing' && alive) this.game.enemies.freeze(e);
     if (arrow.type === 'burning' && alive) this.game.enemies.ignite(e);
     if (arrow.type === 'lightning') this.chainLightning(e);
-    if (arrow.type === 'exploding') this.explode(arrow.pos);
-    else this.game.effects?.burst(arrow.pos, 0xaa3333, 10, 4);
+    // One impact effect per hit: splash, snowburst, or the plain strike.
+    // A snowburst subsumes the single-target freeze — the target sits at
+    // the burst's center, and damage landed above, so no self-shatter.
+    if (arrow.type === 'exploding') {
+      this.explode(arrow.pos);
+    } else if (this.rollBurst(arrow.type)) {
+      this.snowburst(arrow.pos);
+    } else {
+      if (arrow.type === 'freezing' && alive) this.game.enemies.freeze(e);
+      this.game.effects?.burst(arrow.pos, 0xaa3333, 10, 4);
+    }
+  }
+
+  // Random detonation roll for types with a `burst` config entry (today:
+  // freezing's snowburst). Seeded rng, never Math.random(): the outcome
+  // is gameplay-affecting and must replay identically per seed.
+  rollBurst(type) {
+    const b = CONFIG.arrow.types[type].burst;
+    return !!b && this.game.rng.random() < b.chance;
+  }
+
+  // AoE freeze, no damage — the control counterpart of explode(), with the
+  // same no-line-of-sight rule: the powder settles on enemies behind cover.
+  // Returns whether anyone was frozen (counts as a hit for auto ammo: the
+  // shot materially affected an enemy even though it damaged nobody).
+  snowburst(pos) {
+    this.game.effects?.burst(pos, 0xeaf6ff, 60, 4, { gravity: 1.2, size: 0.3, life: 1.2 });
+    const r = CONFIG.arrow.types.freezing.burst.radius;
+    let froze = false;
+    for (const e of this.game.enemies.list) {
+      if (this.game.enemies.bodyCenter(e).distanceTo(pos) < r) {
+        this.game.enemies.freeze(e);
+        froze = true;
+      }
+    }
+    return froze;
   }
 
   // Lightning arcs on from the struck enemy through a random number of

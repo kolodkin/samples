@@ -402,6 +402,7 @@ window.__ARCHER = {
   selectAmmo,
   setDropChance: (c) => { CONFIG.drops.chance = c; },
   setHealChance: (c) => { CONFIG.drops.heal.chance = c; },
+  setFreezeBurstChance: (c) => { CONFIG.arrow.types.freezing.burst.chance = c; },
   killAll: () => {
     for (const e of [...game.enemies.list]) game.enemies.damage(e, 1e9);
   },
