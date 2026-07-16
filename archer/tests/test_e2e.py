@@ -626,10 +626,18 @@ def test_lightning_arrow_chains_within_radius(server_url, page):
 # Hit/miss auto: the ✨ mode rides the player's accuracy. A shot that
 # damaged at least one enemy arms it — the next auto shot spends the best
 # special in stock, strongest-first in CONFIG declaration order (exploding
-# → freezing → burning). A shot that hurt nobody disarms it back to the
-# free normal arrow, so cold streaks never drain the quiver. Shooting a
-# pickup is neutral. The player at (0, 3.2, 34) boots aiming dead ahead
-# along -z, so enemies spawned near x=0 sit on the aim line.
+# → freezing → burning). Three consecutive shots that hurt nobody disarm
+# it back to the free normal arrow (a hit resets the streak), so a stray
+# shot doesn't bench a hot streak but a cold streak never drains the
+# quiver. Shooting a pickup is neutral. The player at (0, 3.2, 34) boots
+# aiming dead ahead along -z, so enemies spawned near x=0 sit on the aim
+# line.
+
+
+def _miss(page):
+    """Fire an arrow into bare ground away from everything — hurts nobody."""
+    page.evaluate("() => window.__ARCHER.fireAt(12, 0, 20)")
+    page.wait_for_function("() => window.__ARCHER.state.arrowCount === 0", timeout=5000)
 
 
 def test_auto_starts_on_the_basic_arrow(server_url, page):
@@ -661,15 +669,38 @@ def test_auto_arms_best_special_after_a_hit(server_url, page):
     assert page.evaluate("() => window.__ARCHER.state.selected") == "exploding"
 
 
-def test_auto_disarms_to_basic_after_a_miss(server_url, page):
+def test_auto_disarms_to_basic_after_three_consecutive_misses(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
     page.evaluate("() => window.__ARCHER.giveAmmo('freezing', 5)")
     _arm_auto(page)
     assert page.evaluate("() => window.__ARCHER.state.selected") == "freezing"
-    # An arrow into bare ground hurts nobody: back to the free arrow.
-    page.evaluate("() => window.__ARCHER.fireAt(12, 0, 20)")
+    # Two arrows into bare ground: still armed — misses only count in threes.
+    _miss(page)
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "freezing"
+    _miss(page)
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "freezing"
+    # The third consecutive miss disarms: back to the free arrow.
+    _miss(page)
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "normal"
+
+
+def test_auto_hit_resets_the_miss_streak(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.giveAmmo('freezing', 5)")
+    _arm_auto(page)
+    _miss(page)
+    _miss(page)
+    # A hit two misses into the streak wipes it clean...
+    page.evaluate("() => window.__ARCHER.fireAt(0, 0.65, 26)")
     page.wait_for_function("() => window.__ARCHER.state.arrowCount === 0", timeout=5000)
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "freezing"
+    # ...so the next two misses don't disarm; only a fresh three do.
+    _miss(page)
+    _miss(page)
+    assert page.evaluate("() => window.__ARCHER.state.selected") == "freezing"
+    _miss(page)
     assert page.evaluate("() => window.__ARCHER.state.selected") == "normal"
 
 
@@ -689,9 +720,11 @@ def test_auto_treats_an_empty_splash_as_a_miss(server_url, page):
     page.evaluate("() => window.__ARCHER.giveAmmo('freezing', 5)")
     _arm_auto(page)
     assert page.evaluate("() => window.__ARCHER.state.selected") == "freezing"
-    # An exploding arrow bursting far from everyone damages nobody: a miss.
-    page.evaluate("() => window.__ARCHER.fireAt(-15, 0, 15, 'exploding')")
-    page.wait_for_function("() => window.__ARCHER.state.arrowCount === 0", timeout=5000)
+    # An exploding arrow bursting far from everyone damages nobody: a miss —
+    # three of them in a row disarm auto.
+    for _ in range(3):
+        page.evaluate("() => window.__ARCHER.fireAt(-15, 0, 15, 'exploding')")
+        page.wait_for_function("() => window.__ARCHER.state.arrowCount === 0", timeout=5000)
     assert page.evaluate("() => window.__ARCHER.state.selected") == "normal"
 
 
@@ -748,8 +781,8 @@ def test_manual_selection_pins_type_until_dry(server_url, page):
     assert page.evaluate("() => window.__ARCHER.state.selected") == "burning"
     page.mouse.click(640, 360)
     page.wait_for_function("() => window.__ARCHER.state.ammo.burning === 0", timeout=2000)
-    # The pinned type ran dry: unpinned back to auto (disarmed: the miss
-    # is still in flight, so the free arrow is up).
+    # The pinned type ran dry: unpinned back to auto (never armed: no hit
+    # has landed, so the free arrow is up).
     state = page.evaluate("() => window.__ARCHER.state")
     assert state["mode"] == "auto"
     assert state["selected"] == "normal"

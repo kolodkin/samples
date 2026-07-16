@@ -79,18 +79,26 @@ const stocked = (m) => m === 'auto' || m === 'normal' || game.stats.ammo[m] > 0;
 // Hit/miss auto: the mode rides the player's accuracy. A shot that damaged
 // at least one enemy (direct strike or exploding splash) arms it — the next
 // auto shot spends the best special in stock, strongest-first in CONFIG
-// declaration order (SPECIALS). A shot that hurt nobody disarms it back to
-// the free normal arrow, so cold streaks never drain the quiver. Spent
-// arrows report their outcome here from ArrowSystem.update; shooting a
-// pickup is neutral and reports nothing.
-let lastShotHit = false;
+// declaration order (SPECIALS). Only CONFIG.arrow.autoMissLimit consecutive
+// shots that hurt nobody disarm it back to the free normal arrow (a hit
+// resets the streak): a stray shot doesn't bench a hot streak, but a cold
+// streak still never drains the quiver. Spent arrows report their outcome
+// here from ArrowSystem.update; shooting a pickup is neutral and reports
+// nothing.
+let autoArmed = false;
+let missStreak = 0;
 game.onShotResolved = (hit) => {
-  lastShotHit = hit;
+  if (hit) {
+    autoArmed = true;
+    missStreak = 0;
+  } else if (++missStreak >= CONFIG.arrow.autoMissLimit) {
+    autoArmed = false;
+  }
   game.syncUI();
 };
 const SPECIALS = Object.keys(CONFIG.arrow.types).filter((t) => t !== 'normal');
 function autoType() {
-  if (!lastShotHit) return 'normal';
+  if (!autoArmed) return 'normal';
   return SPECIALS.find(stocked) ?? 'normal';
 }
 function selectedType() {
@@ -190,7 +198,8 @@ function startGame(stageIndex) {
     game.stats.ammo[type] = Math.max(game.stats.ammo[type], n);
   }
   game.stageInventory = { ...game.stats.ammo }; // retry restores this snapshot
-  lastShotHit = false; // auto opens cold: nothing hit yet this stage
+  autoArmed = false; // auto opens cold: nothing hit yet this stage
+  missStreak = 0;
   game.screen = 'playing';
   if (params.get('waves') !== '0') game.waves.startWave(1);
   game.syncUI();
