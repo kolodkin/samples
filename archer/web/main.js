@@ -80,9 +80,10 @@ const stocked = (m) => m === 'auto' || m === 'normal' || game.stats.ammo[m] > 0;
 // at least one enemy (direct strike or exploding splash) arms it — the next
 // auto shot spends the best special in stock, strongest-first in CONFIG
 // declaration order (SPECIALS). A shot that hurt nobody disarms it back to
-// the free normal arrow, so cold streaks never drain the quiver. Spent
-// arrows report their outcome here from ArrowSystem.update; shooting a
-// pickup is neutral and reports nothing.
+// the free normal arrow, so cold streaks never drain the quiver. Each
+// shot reports its outcome here exactly once (ArrowSystem.resolve, which
+// aggregates split volleys); shooting a pickup is neutral and reports
+// nothing.
 let lastShotHit = false;
 game.onShotResolved = (hit) => {
   lastShotHit = hit;
@@ -360,6 +361,7 @@ window.__ARCHER = {
       bowX: game.player.bow.group.position.x,
       arrowCount: game.arrows.count,
       arrows: game.arrows.list.map((a) => ({
+        type: a.type,
         x: a.pos.x, y: a.pos.y, z: a.pos.z, // physics (aim-line) position
         visX: a.mesh.position.x, visY: a.mesh.position.y, visZ: a.mesh.position.z,
         trailPoints: a.trail.geometry.drawRange.count,
