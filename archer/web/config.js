@@ -19,6 +19,8 @@ export const CONFIG = {
     lifetime: 6,
     radius: 0.12,
     headshotMult: 2,
+    autoMissLimit: 3, // consecutive misses before auto drops back to the free arrow
+
     types: {
       // Specials are declared strongest-first: that order is the auto-fire
       // priority (after a hit, autoType in main.js spends the first type

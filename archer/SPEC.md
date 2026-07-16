@@ -45,9 +45,12 @@ keys 1–6 in slot order under pointer lock). The default ✨ Auto slot rides
 the player's accuracy: a shot that damaged at least one enemy — a direct
 strike, or an exploding arrow's splash — arms it, and the next shot spends
 the best special in stock, strongest-first in the `CONFIG.arrow.types`
-declaration order (exploding → lightning → freezing → burning); a shot that hurt
-nobody (ground, cover, timeout, or a splash that reached no one) disarms
-it back to the free normal arrow, so cold streaks never drain the quiver.
+declaration order (exploding → lightning → freezing → burning);
+`CONFIG.arrow.autoMissLimit` (3) consecutive shots that hurt nobody
+(ground, cover, timeout, or a splash that reached no one) disarm it back
+to the free normal arrow — a hit resets the streak — so a stray shot
+doesn't bench a hot streak, but a cold streak still never drains the
+quiver.
 Each shot resolves exactly once through `game.onShotResolved`
 (`ArrowSystem.resolve()`; a split volley aggregates its fragments — see
 the volley bullet under Combat); shooting down a pickup is neutral —
