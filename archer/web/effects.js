@@ -37,7 +37,9 @@ export class Effects {
     this.bolts.push({ line, age: 0, life: 0.25 });
   }
 
-  burst(pos, color, count = 20, speed = 8) {
+  // Options tune the burst's character: debris flies fast and drops hard
+  // (the defaults); snow powder is slow, big and near-buoyant.
+  burst(pos, color, count = 20, speed = 8, { gravity = 9.8, size = 0.22, life = 0.8 } = {}) {
     const positions = new Float32Array(count * 3);
     const vels = [];
     for (let i = 0; i < count; i++) {
@@ -49,10 +51,10 @@ export class Effects {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     const points = new THREE.Points(
-      geo, new THREE.PointsMaterial({ color, size: 0.22, transparent: true }),
+      geo, new THREE.PointsMaterial({ color, size, transparent: true }),
     );
     this.scene.add(points);
-    this.bursts.push({ points, vels, age: 0, life: 0.8 });
+    this.bursts.push({ points, vels, age: 0, life, gravity });
   }
 
   setSnow(on) {
@@ -87,8 +89,9 @@ export class Effects {
     for (const b of [...this.bursts]) {
       b.age += dt;
       const attr = b.points.geometry.attributes.position;
+      const fall = b.gravity * dt;
       for (let i = 0; i < b.vels.length; i++) {
-        b.vels[i].y -= 9.8 * dt;
+        b.vels[i].y -= fall;
         attr.setXYZ(
           i,
           attr.getX(i) + b.vels[i].x * dt,

@@ -27,7 +27,9 @@ export const CONFIG = {
       exploding: { damage: 20, color: 0xff7733, radius: 5, aoeDamage: 55 },
       lightning: { damage: 22, color: 0xffe14d, chainDamage: 16, radius: 8,
                    jolts: { min: 2, max: 5 } },
-      freezing:  { damage: 18, color: 0x66ddff, freezeTime: 3, shatterMult: 2 },
+      freezing:  { damage: 18, color: 0x66ddff, freezeTime: 3, shatterMult: 2,
+                   // random snow-powder detonation (ArrowSystem.snowburst)
+                   burst: { chance: 0.25, radius: 4 } },
       // split: diving back through `height` fans the arrow into `count`,
       // the outer ones tilted `angle` rad off the line (see SPEC.md).
       burning:   { damage: 15, color: 0xff4422, dps: 9, burnTime: 4, spreadRadius: 2.5,

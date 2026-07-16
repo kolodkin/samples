@@ -88,6 +88,12 @@ store.
   from the struck enemy through a seeded-random number of jolts
   (`CONFIG.arrow.types.lightning.jolts`), each jumping to the nearest
   not-yet-struck enemy within the jolt radius.
+- Freezing arrows roll a random chance on any impact — enemy, ground,
+  cover, or timeout (`CONFIG.arrow.types.freezing.burst`) — to detonate
+  into a snow-powder burst that freezes every enemy in the radius. No
+  damage (so it can never shatter a freeze) and no LOS check, like
+  splash. The roll draws from the seeded rng; a burst that froze anyone
+  counts as a hit for auto ammo.
 - A burning arrow lobbed high splits as it dives back down through
   `CONFIG.arrow.types.burning.split.height` into a volley of burning
   arrows: one fragment holds the flight line (a lob at a single target
@@ -199,6 +205,7 @@ physics vs visual positions and trail length), and test hooks: `fireAt()`
 (gravity-compensated),
 `spawnEnemy()` (optional `inert` flag disables the AI), `skipToWave()`,
 `killAll()`, `giveAmmo()`, `selectAmmo()`, `setDropChance()`, `setHealChance()`,
+`setFreezeBurstChance()`,
 `setObstacles()` (replace the collision-obstacle list to build exact cover
 layouts; stage meshes stay), `setPlayerHp()`, `start()`,
 `nextStage()`, `retryStage()`, `visiblePixelCount()`. Tests boot with
