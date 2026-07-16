@@ -51,10 +51,10 @@ declaration order (exploding → lightning → freezing → burning);
 to the free normal arrow — a hit resets the streak — so a stray shot
 doesn't bench a hot streak, but a cold streak still never drains the
 quiver.
-Each spent arrow reports its outcome through `game.onShotResolved` (from
-`ArrowSystem.update()`; `explode()` returns whether the splash damaged
-anyone); shooting down a pickup is neutral — collecting a drop neither
-arms nor disarms. Stage start and retry reset Auto to the free arrow. Picking an ammo slot instead pins every shot to that type:
+Each shot resolves exactly once through `game.onShotResolved`
+(`ArrowSystem.resolve()`; a split volley aggregates its fragments — see
+the volley bullet under Combat); shooting down a pickup is neutral —
+collecting a drop neither arms nor disarms. Stage start and retry reset Auto to the free arrow. Picking an ammo slot instead pins every shot to that type:
 normal shots then conserve specials, and a pinned special unpins back to
 Auto when its last arrow is spent (or when a stage starts without it in
 stock — retry restores the stage-start snapshot). An empty special slot
@@ -97,6 +97,18 @@ store.
   damage (so it can never shatter a freeze) and no LOS check, like
   splash. The roll draws from the seeded rng; a burst that froze anyone
   counts as a hit for auto ammo.
+- A burning arrow lobbed high splits as it dives back down through
+  `CONFIG.arrow.types.burning.split.height` into a volley of burning
+  arrows: one fragment holds the flight line (a lob at a single target
+  still connects), the rest tilt off it by `split.angle`, landing in a
+  ring of roughly `height·tan(angle)` radius — tuned to about a
+  burn-spread, so the fires chain. The height sits above eye level, so the
+  split only happens when there is room for the fan to matter — flat
+  shots never cross it and stay precise single ignites. The volley stays
+  ONE shot for auto ammo: fragments share a verdict that reports through
+  `game.onShotResolved` once, when the last fragment is spent — a hit if
+  any fragment damaged someone (`ArrowSystem.resolve()` in
+  `web/arrows.js`).
 - Arrow collision is segment-vs-sphere per frame (no tunneling at 70 m/s).
 - Obstacles (trees, cacti, rocks, ice pillars) block arrows in flight —
   the player's and skeleton projectiles alike. Each obstacle is a
@@ -191,8 +203,8 @@ All gameplay randomness flows through one seeded mulberry32 stream
 (`web/rng.js`, `?seed=N`); particles are visual-only and exempt.
 `window.__ARCHER` (defined in `web/main.js`) exposes `ready`, a `state`
 snapshot (screen, hp, score, wave, enemies, pickups, obstacles, best,
-yaw/pitch/touch/power, selected/mode, nocked/canShoot, arrows with physics
-vs visual positions and trail length), and test hooks: `fireAt()`
+yaw/pitch/touch/power, selected/mode, nocked/canShoot, arrows with type,
+physics vs visual positions and trail length), and test hooks: `fireAt()`
 (gravity-compensated),
 `spawnEnemy()` (optional `inert` flag disables the AI), `skipToWave()`,
 `killAll()`, `giveAmmo()`, `selectAmmo()`, `setDropChance()`, `setHealChance()`,

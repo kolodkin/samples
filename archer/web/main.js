@@ -82,9 +82,9 @@ const stocked = (m) => m === 'auto' || m === 'normal' || game.stats.ammo[m] > 0;
 // declaration order (SPECIALS). Only CONFIG.arrow.autoMissLimit consecutive
 // shots that hurt nobody disarm it back to the free normal arrow (a hit
 // resets the streak): a stray shot doesn't bench a hot streak, but a cold
-// streak still never drains the quiver. Spent arrows report their outcome
-// here from ArrowSystem.update; shooting a pickup is neutral and reports
-// nothing.
+// streak still never drains the quiver. Each shot reports its outcome here
+// exactly once (ArrowSystem.resolve, which aggregates split volleys);
+// shooting a pickup is neutral and reports nothing.
 let autoArmed = false;
 let missStreak = 0;
 game.onShotResolved = (hit) => {
@@ -369,6 +369,7 @@ window.__ARCHER = {
       bowX: game.player.bow.group.position.x,
       arrowCount: game.arrows.count,
       arrows: game.arrows.list.map((a) => ({
+        type: a.type,
         x: a.pos.x, y: a.pos.y, z: a.pos.z, // physics (aim-line) position
         visX: a.mesh.position.x, visY: a.mesh.position.y, visZ: a.mesh.position.z,
         trailPoints: a.trail.geometry.drawRange.count,

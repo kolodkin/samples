@@ -119,13 +119,18 @@ export class ArrowSystem {
   // crosshair as a dot.
   fire(origin, dir, power, type, visualOrigin = null) {
     const speed = CONFIG.bow.minSpeed + (CONFIG.bow.maxSpeed - CONFIG.bow.minSpeed) * power;
+    this.spawn(origin, dir.clone().multiplyScalar(speed), type, visualOrigin);
+  }
+
+  // `volley` marks a mid-air split fragment: the record its shot verdict
+  // aggregates through (see resolve()), and the no-resplit flag.
+  spawn(origin, vel, type, visualOrigin = null, volley = null) {
     const mesh = buildArrowMesh(type);
     mesh.position.copy(visualOrigin ?? origin); // oriented by the first update()
     const trail = buildTrail(CONFIG.arrow.types[type].color);
     this.game.scene.add(mesh, trail);
     this.list.push({
-      mesh, trail, pos: origin.clone(),
-      vel: dir.clone().multiplyScalar(speed), type, age: 0,
+      mesh, trail, pos: origin.clone(), vel, type, age: 0, volley,
       visualOffset: (visualOrigin ?? origin).clone().sub(origin), // zero without a bow
     });
   }
@@ -171,6 +176,16 @@ export class ArrowSystem {
       const blocked = obstacleHit(prev, a.pos, this.game.obstacles, R);
       const pos = blocked ?? a.pos;
 
+      // A lob diving back down through its type's split height fans into
+      // a volley (see SPEC.md): the crossing guarantees open air below
+      // for the fan to spread. Fragments never split again, and an
+      // obstacle strike this frame wins — the arrow died before crossing.
+      const split = !a.volley && !blocked && CONFIG.arrow.types[a.type].split;
+      if (split && prev.y > split.height && pos.y <= split.height) {
+        this.split(a, prev, split);
+        continue;
+      }
+
       // Pickups are collected by shooting them (segment check: arrows are
       // fast). Collection is neutral for auto ammo: the arrow is spent
       // without resolving as a hit or a miss.
@@ -180,6 +195,7 @@ export class ArrowSystem {
           if (segClosest(prev, pos, p.mesh.position).distanceTo(p.mesh.position)
               < CONFIG.drops.radius + R) {
             this.game.waves.collect(p);
+            this.resolve(a, null); // neutral: neither a hit nor a miss
             this.remove(a);
             consumed = true;
             break;
@@ -209,7 +225,7 @@ export class ArrowSystem {
 
       // A spent arrow reports hit (damaged someone) or miss to the game so
       // auto ammo can react; a direct strike always damaged its target.
-      if (consumed) { this.game.onShotResolved?.(true); this.remove(a); continue; }
+      if (consumed) { this.resolve(a, true); this.remove(a); continue; }
       if (blocked || pos.y <= 0.05 || a.age > CONFIG.arrow.lifetime) {
         // Specials detonate on whatever stopped them — on cover, the
         // splash/snowburst is the designed counter to enemies hiding
@@ -218,10 +234,47 @@ export class ArrowSystem {
         if (a.type === 'exploding') affected = this.explode(pos);
         else if (this.rollBurst(a.type)) affected = this.snowburst(pos);
         else if (blocked) this.game.effects?.burst(pos, 0x8a7a66, 8, 3);
-        this.game.onShotResolved?.(affected);
+        this.resolve(a, affected);
         this.remove(a);
       }
     }
+  }
+
+  // Every spent arrow funnels its verdict here: true/false, or null for a
+  // neutral spend (pickup collection). A lone arrow reports immediately —
+  // nothing when neutral. A volley fragment instead settles its share of
+  // the split shot, which reports once — a hit if ANY fragment damaged
+  // someone — when its last fragment is spent: a split stays one shot.
+  resolve(a, hit) {
+    if (!a.volley) {
+      if (hit != null) this.game.onShotResolved?.(hit);
+      return;
+    }
+    if (hit) a.volley.hit = true;
+    if (--a.volley.left === 0) this.game.onShotResolved?.(a.volley.hit);
+  }
+
+  // Replace `a` with split.count fragments at the exact height crossing:
+  // fragment 0 holds the parent's flight line (a lob aimed at a single
+  // target still connects), the rest tilt off it around a ring.
+  split(a, prev, split) {
+    const at = prev.clone().lerp(a.pos, (prev.y - split.height) / (prev.y - a.pos.y));
+    const speed = a.vel.length();
+    const axis = a.vel.clone().normalize();
+    // Tilt axis for the ring; a near-vertical dive degenerates the
+    // horizontal cross product, and any horizontal direction serves then.
+    const u = new THREE.Vector3().crossVectors(axis, new THREE.Vector3(0, 1, 0));
+    if (u.lengthSq() < 1e-6) u.set(1, 0, 0);
+    u.normalize();
+    const volley = { left: split.count, hit: false };
+    this.spawn(at, a.vel.clone(), a.type, null, volley); // fragment 0: the parent's line
+    const tilted = axis.clone().applyAxisAngle(u, split.angle);
+    for (let i = 0; i < split.count - 1; i++) {
+      const dir = tilted.clone().applyAxisAngle(axis, (2 * Math.PI * i) / (split.count - 1));
+      this.spawn(at, dir.multiplyScalar(speed), a.type, null, volley);
+    }
+    this.game.effects?.burst(at, CONFIG.arrow.types[a.type].color, 14, 5);
+    this.remove(a);
   }
 
   hit(e, isHead, arrow) {

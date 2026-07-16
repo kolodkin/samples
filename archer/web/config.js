@@ -32,7 +32,10 @@ export const CONFIG = {
       freezing:  { damage: 18, color: 0x66ddff, freezeTime: 3, shatterMult: 2,
                    // random snow-powder detonation (ArrowSystem.snowburst)
                    burst: { chance: 0.25, radius: 4 } },
-      burning:   { damage: 15, color: 0xff4422, dps: 9, burnTime: 4, spreadRadius: 2.5 },
+      // split: diving back through `height` fans the arrow into `count`,
+      // the outer ones tilted `angle` rad off the line (see SPEC.md).
+      burning:   { damage: 15, color: 0xff4422, dps: 9, burnTime: 4, spreadRadius: 2.5,
+                   split: { height: 5, count: 5, angle: 0.16 } },
     },
   },
   touch: {
