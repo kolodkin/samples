@@ -15,8 +15,8 @@ from .rules import SEVERITY_WEIGHT
 
 SUMMARY_FIELDS = [
     "org", "repos_scanned", "files_scanned", "total_findings", "critical",
-    "high", "medium", "low", "exposure_score", "risk_band", "top_secret_type",
-    "scan_errors",
+    "high", "medium", "low", "likely_test", "exposure_score", "risk_band",
+    "top_secret_type", "scan_errors",
 ]
 
 _SUMMARY_TYPES = {
@@ -27,6 +27,7 @@ _SUMMARY_TYPES = {
     "high": FieldSpec(type="Int64"),
     "medium": FieldSpec(type="Int64"),
     "low": FieldSpec(type="Int64"),
+    "likely_test": FieldSpec(type="Int64"),
     "exposure_score": FieldSpec(type="Int64"),
     "scan_errors": FieldSpec(type="Int64"),
 }
@@ -44,9 +45,14 @@ def risk_band(score: int) -> str:
     return "Critical"
 
 
-def compute_score(counts: dict[str, int], flagged_stars: int) -> int:
-    base = sum(SEVERITY_WEIGHT[sev] * counts.get(sev, 0) for sev in SEVERITY_WEIGHT)
-    return round(base * (1 + math.log10(1 + flagged_stars)))
+def compute_score(weighted_base: float, flagged_stars: int) -> int:
+    """Scale a confidence-weighted severity base by a star-based blast factor.
+
+    ``weighted_base`` is ``Σ severity_weight × confidence`` across an org's
+    findings — so a low-confidence (likely-test) finding contributes far less
+    than a full-confidence production leak of the same severity.
+    """
+    return round(weighted_base * (1 + math.log10(1 + flagged_stars)))
 
 
 async def score_exposure_impl(repos: Object, findings: Object, scope: str | None = "job") -> Object:
@@ -61,29 +67,30 @@ async def score_exposure_impl(repos: Object, findings: Object, scope: str | None
 
     finding_data = await findings.data(orient=ORIENT_DICT)
 
-    orgs = list(repo_data["org"])
-    per_org: dict[str, dict] = {
-        org: {
-            "repos_scanned": repo_data["repo"][idx],
-            "files_scanned": repo_data["files_to_scan"][idx],
-            "scan_errors": repo_data["is_error"][idx],
+    def _new_bucket(idx: int | None) -> dict:
+        return {
+            "repos_scanned": repo_data["repo"][idx] if idx is not None else 0,
+            "files_scanned": repo_data["files_to_scan"][idx] if idx is not None else 0,
+            "scan_errors": repo_data["is_error"][idx] if idx is not None else 0,
             "counts": {"Critical": 0, "High": 0, "Medium": 0, "Low": 0},
+            "weighted_base": 0.0,
+            "likely_test": 0,
             "types": {},
             "flagged_repos": set(),
         }
-        for idx, org in enumerate(orgs)
-    }
+
+    orgs = list(repo_data["org"])
+    per_org: dict[str, dict] = {org: _new_bucket(idx) for idx, org in enumerate(orgs)}
 
     for i in range(len(finding_data["org"])):
         org = finding_data["org"][i]
-        bucket = per_org.setdefault(
-            org,
-            {"repos_scanned": 0, "files_scanned": 0, "scan_errors": 0,
-             "counts": {"Critical": 0, "High": 0, "Medium": 0, "Low": 0},
-             "types": {}, "flagged_repos": set()},
-        )
+        bucket = per_org.setdefault(org, _new_bucket(None))
         sev = finding_data["severity"][i]
+        confidence = finding_data["confidence"][i]
         bucket["counts"][sev] = bucket["counts"].get(sev, 0) + 1
+        bucket["weighted_base"] += SEVERITY_WEIGHT[sev] * confidence
+        if confidence < 1.0:
+            bucket["likely_test"] += 1
         stype = finding_data["secret_type"][i]
         bucket["types"][stype] = bucket["types"].get(stype, 0) + 1
         bucket["flagged_repos"].add((finding_data["repo"][i], finding_data["repo_stars"][i]))
@@ -93,7 +100,7 @@ async def score_exposure_impl(repos: Object, findings: Object, scope: str | None
         counts = b["counts"]
         total = sum(counts.values())
         flagged_stars = sum(stars for _, stars in b["flagged_repos"])
-        score = compute_score(counts, flagged_stars)
+        score = compute_score(b["weighted_base"], flagged_stars)
         top_type = max(b["types"], key=b["types"].get) if b["types"] else ""
         cols["org"].append(org)
         cols["repos_scanned"].append(int(b["repos_scanned"]))
@@ -103,6 +110,7 @@ async def score_exposure_impl(repos: Object, findings: Object, scope: str | None
         cols["high"].append(counts["High"])
         cols["medium"].append(counts["Medium"])
         cols["low"].append(counts["Low"])
+        cols["likely_test"].append(int(b["likely_test"]))
         cols["exposure_score"].append(score)
         cols["risk_band"].append(risk_band(score))
         cols["top_secret_type"].append(top_type)

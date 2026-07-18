@@ -34,9 +34,9 @@ async def render_report(
     total_findings = await (await findings["org"].count()).data()
     if total_findings:
         findings_view = findings[
-            ["org", "repo", "path", "line", "secret_type", "severity", "masked_value", "permalink"]
-        ].view(order_by="repo_stars DESC", limit=100)
-        lines.append(await findings_view.markdown(truncate={"path": 40, "permalink": 60}))
+            ["org", "repo", "path", "line", "secret_type", "severity", "confidence", "context", "masked_value"]
+        ].view(order_by="confidence DESC, repo_stars DESC", limit=100)
+        lines.append(await findings_view.markdown(truncate={"path": 40, "context": 40}))
     else:
         lines.append("_No leaked secrets detected._")
     lines.append("")

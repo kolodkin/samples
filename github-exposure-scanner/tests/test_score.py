@@ -20,9 +20,31 @@ def test_risk_band_thresholds():
 
 
 def test_compute_score_weights_and_popularity():
-    counts = {"Critical": 1, "High": 0, "Medium": 0, "Low": 0}
-    assert compute_score(counts, flagged_stars=0) == 10
-    assert compute_score(counts, flagged_stars=1200) == round(10 * (1 + math.log10(1201)))
+    # weighted_base is Σ severity_weight × confidence (one full-confidence Critical = 10)
+    assert compute_score(10, flagged_stars=0) == 10
+    assert compute_score(10, flagged_stars=1200) == round(10 * (1 + math.log10(1201)))
+    # a likely-test Critical at confidence 0.05 barely moves the needle
+    assert compute_score(10 * 0.05, flagged_stars=1200) < compute_score(10, flagged_stars=0)
+
+
+async def test_context_downgrades_demo_key_end_to_end():
+    # proxytool commits a localhost private key next to make-cert.sh — the
+    # scanner should flag it (Critical rule) but score it as likely-test.
+    client = GitHubClient(fixture_dir=FIXTURES)
+    async with data_context():
+        repos = await list_repos_impl(["acme/proxytool"], 25, client, "2026-07-17", scope=None)
+        findings = await scan_repos_impl(repos, 512, client, scope=None)
+        fdata = await findings.data(orient=ORIENT_DICT)
+        idx = fdata["secret_type"].index("Private Key")
+        assert fdata["confidence"][idx] == 0.05
+        assert "cert-gen" in fdata["context"][idx]
+
+        summary = await score_exposure_impl(repos, findings, scope=None)
+        sdata = await summary.data(orient=ORIENT_DICT)
+        i = sdata["org"].index("acme")
+        assert sdata["critical"][i] == 1  # still counted as a critical-pattern hit
+        assert sdata["likely_test"][i] == 1
+        assert sdata["risk_band"][i] in {"Clean", "Low"}  # but downgraded by confidence
 
 
 async def test_score_exposure_summary():

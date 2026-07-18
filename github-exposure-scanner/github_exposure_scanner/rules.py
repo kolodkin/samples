@@ -62,6 +62,62 @@ class Finding:
     masked_value: str
 
 
+# --- Context heuristics: distinguish a throwaway/demo secret from a real leak ---
+
+# Secret types whose risk depends on context. Provider tokens (AWS/GitHub/
+# Slack/Google/Stripe) are live credentials — a real one is a leak wherever it
+# sits — so they are NOT demoted by path. Certs, generic high-entropy strings,
+# and JWTs are the ambiguous classes this applies to.
+CONTEXT_SENSITIVE_TYPES = {"Private Key", "High-entropy", "JWT"}
+
+# Tier 1 — path/name markers that signal test/example/dev material.
+_TEST_PATH_TOKENS = (
+    "localhost", "test", "tests", "__tests__", "spec", "e2e", "fixture",
+    "fixtures", "testdata", "example", "examples", "sample", "samples",
+    "demo", "mock", "dummy", "/dev/", "/docs/", "/doc/",
+)
+
+# Tier 2 — a sibling script whose job is to (re)generate certs/keys, which
+# means the committed key is disposable by design.
+_CERTGEN_RE = re.compile(r"(make[-_]?cert|gen[-_]?cert|create[-_]?cert|mkcert|gencert|cert.*\.sh$)", re.IGNORECASE)
+
+
+def _dirname(path: str) -> str:
+    return path.rsplit("/", 1)[0] if "/" in path else ""
+
+
+def _basename(path: str) -> str:
+    return path.rsplit("/", 1)[-1]
+
+
+def classify_context(secret_type: str, path: str, tree_paths: list[str]) -> tuple[str, float]:
+    """Classify a finding's likely realness → ``(context_label, confidence_real)``.
+
+    ``confidence_real`` in [0, 1] scales the finding's risk weight. Provider
+    tokens always score 1.0. For the ambiguous classes, a sibling cert-gen
+    script (Tier 2) is the strongest "disposable" signal, then a test/example
+    path marker (Tier 1); otherwise it is treated as production.
+    """
+    if secret_type not in CONTEXT_SENSITIVE_TYPES:
+        return ("production", 1.0)
+
+    # Tier 2: a cert-gen script in the key's directory or any ancestor of it
+    # (the common layout puts make-cert.sh one level above a certs/ subdir).
+    key_dir = _dirname(path)
+    for p in tree_paths:
+        if not _CERTGEN_RE.search(_basename(p)):
+            continue
+        script_dir = _dirname(p)
+        if key_dir == script_dir or key_dir.startswith(script_dir + "/") or script_dir == "":
+            return ("likely-test: cert-gen script nearby", 0.05)
+
+    lowered = path.lower()
+    if any(tok in lowered for tok in _TEST_PATH_TOKENS):
+        return ("likely-test: path marker", 0.1)
+
+    return ("production", 1.0)
+
+
 def mask(value: str) -> str:
     """Redact a secret to ``first4 + "••••" + last4`` (fully hidden if short)."""
     if len(value) <= 8:

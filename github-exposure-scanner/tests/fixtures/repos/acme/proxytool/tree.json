@@ -1,0 +1,5 @@
+[
+  {"path": "certs/localhost.privkey.pem", "size": 1700},
+  {"path": "make-cert.sh", "size": 200},
+  {"path": "src/app.js", "size": 90}
+]

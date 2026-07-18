@@ -1,4 +1,10 @@
-from github_exposure_scanner.rules import Finding, mask, scan_text, SEVERITY_WEIGHT
+from github_exposure_scanner.rules import (
+    Finding,
+    classify_context,
+    mask,
+    scan_text,
+    SEVERITY_WEIGHT,
+)
 
 
 def test_mask_hides_middle():
@@ -40,3 +46,35 @@ def test_clean_text_no_findings():
 
 def test_severity_weight_table():
     assert SEVERITY_WEIGHT == {"Critical": 10, "High": 5, "Medium": 2, "Low": 1}
+
+
+def test_context_provider_token_always_full_confidence():
+    # A real provider token is a leak wherever it sits — even in a test file.
+    ctx, conf = classify_context("AWS Key", "tests/fixtures/creds.txt", ["tests/fixtures/creds.txt"])
+    assert conf == 1.0
+    assert ctx == "production"
+
+
+def test_context_certgen_ancestor_downgrades_hardest():
+    # make-cert.sh one level above the certs/ dir (the burnside layout) → 0.05
+    tree = ["proxy/certs/localhost.privkey.pem", "proxy/certs/localhost.cert.pem", "proxy/make-cert.sh"]
+    ctx, conf = classify_context("Private Key", "proxy/certs/localhost.privkey.pem", tree)
+    assert conf == 0.05
+    assert "cert-gen" in ctx
+
+    # same directory also counts
+    tree2 = ["certs/server.pem", "certs/gen-cert.sh"]
+    ctx2, conf2 = classify_context("Private Key", "certs/server.pem", tree2)
+    assert conf2 == 0.05
+
+
+def test_context_path_marker_downgrades():
+    ctx, conf = classify_context("Private Key", "test/data/id_rsa", ["test/data/id_rsa"])
+    assert conf == 0.1
+    assert "path marker" in ctx
+
+
+def test_context_production_key_stays_full():
+    ctx, conf = classify_context("Private Key", "deploy/prod/id_rsa", ["deploy/prod/id_rsa"])
+    assert conf == 1.0
+    assert ctx == "production"

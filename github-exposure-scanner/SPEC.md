@@ -39,12 +39,33 @@ validate_airtable_credentials ─┬─► publish_findings ─┘
 Values are redacted at detection time: `first4 + "••••" + last4` (fully hidden
 when ≤ 8 chars).
 
+## Context heuristics (test/demo vs real leak)
+
+A committed private key is a true positive for the rule but often a *false
+positive for risk* — e.g. a self-signed `localhost` dev cert. `classify_context`
+assigns each finding a `context` label and a `confidence_real` in [0, 1] that
+scales its risk weight. It applies only to the ambiguous classes (`Private
+Key`, `High-entropy`, `JWT`); provider tokens (AWS/GitHub/Slack/Google/Stripe)
+are live credentials and always stay at confidence 1.0.
+
+| Signal | Example | confidence |
+|---|---|---|
+| Tier 2 — cert-gen script in the key's dir or an ancestor | `make-cert.sh` beside `certs/localhost.privkey.pem` | 0.05 |
+| Tier 1 — test/example/dev path marker | `test/`, `fixtures/`, `localhost`, `/docs/`, … | 0.10 |
+| none — treated as production | `deploy/prod/id_rsa` | 1.00 |
+
+The summary reports a `likely_test` count of findings downgraded below full
+confidence. Documented follow-ups (not yet implemented): Tier 3 — parse the
+paired certificate and check CN/SAN for `localhost`/example domains or
+self-signed issuers; Tier 4 — fingerprint against a blocklist of well-known
+published sample keys.
+
 ## Scoring
 
 Per org:
 
 ```
-base  = Σ (severity_weight × count)
+base  = Σ (severity_weight × confidence_real)   # per finding
 score = round(base × (1 + log10(1 + flagged_stars)))
 ```
 

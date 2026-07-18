@@ -15,7 +15,7 @@ from aaiclick.orchestration import task
 
 from .github_api import GitHubClient, is_scannable, make_client
 from .models import parse_target
-from .rules import scan_text
+from .rules import classify_context, scan_text
 
 REPO_FIELDS = [
     "org", "repo", "repo_url", "default_branch", "head_sha", "stars",
@@ -23,7 +23,7 @@ REPO_FIELDS = [
 ]
 FINDING_FIELDS = [
     "org", "repo", "path", "line", "rule_id", "secret_type", "severity",
-    "masked_value", "permalink", "repo_stars", "detected_at",
+    "masked_value", "permalink", "repo_stars", "detected_at", "context", "confidence",
 ]
 
 _REPO_TYPES = {
@@ -32,7 +32,11 @@ _REPO_TYPES = {
     "files_to_scan": FieldSpec(type="Int64"),
     "list_error": FieldSpec(type="String", nullable=True),
 }
-_FINDING_TYPES = {"line": FieldSpec(type="UInt32"), "repo_stars": FieldSpec(type="Int64")}
+_FINDING_TYPES = {
+    "line": FieldSpec(type="UInt32"),
+    "repo_stars": FieldSpec(type="Int64"),
+    "confidence": FieldSpec(type="Float64"),
+}
 
 
 def _empty_columns(fields: list[str]) -> dict[str, list]:
@@ -110,6 +114,7 @@ async def scan_repos_impl(
             tree = await client.get_tree(org, repo, sha)
         except Exception:  # noqa: BLE001 — skip repos whose tree can't be refetched
             continue
+        tree_paths = [e["path"] for e in tree]
         for entry in tree:
             path, size = entry["path"], entry.get("size", 0)
             if not is_scannable(path, size, max_bytes):
@@ -119,6 +124,7 @@ async def scan_repos_impl(
             except Exception:  # noqa: BLE001 — skip unreadable files
                 continue
             for f in scan_text(path, text):
+                context, confidence = classify_context(f.secret_type, f.path, tree_paths)
                 cols["org"].append(org)
                 cols["repo"].append(repo)
                 cols["path"].append(f.path)
@@ -130,6 +136,8 @@ async def scan_repos_impl(
                 cols["permalink"].append(f"https://github.com/{org}/{repo}/blob/{sha}/{f.path}#L{f.line}")
                 cols["repo_stars"].append(int(stars))
                 cols["detected_at"].append(detected_at)
+                cols["context"].append(context)
+                cols["confidence"].append(confidence)
 
     return await create_object_from_value(cols, name="ghx_findings", scope=scope, fields=_FINDING_TYPES)
 
