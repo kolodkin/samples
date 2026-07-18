@@ -5,23 +5,37 @@ exposure** by scanning its public repositories for leaked secrets. Reads only
 public data, redacts every secret, and frames the output as a company cyber
 profile that later steps (DNS, TLS, breach data, …) extend.
 
-## Pipeline (aaiclick DAG)
+## Pipeline (aaiclick DAG — dynamic fan-out)
+
+The `@job` entry task resolves the repo list at runtime, then **fans out one
+`scan_one_repo` task per discovered repo**. All per-repo tasks append into a
+shared findings `Object`; scoring/report/Airtable tasks fan back in via
+`depends_on`, running only once every scan has completed.
 
 ```
-list_repos ─► scan_repos ─┬─► score_exposure ─┐
-                          │                    ├─► generate_report
-validate_airtable_credentials ─┬─► publish_findings ─┘
-                               └─► publish_summary ───┘
+entry (resolve repos inline)
+   ├─► scan_one_repo(repo₁) ─┐
+   ├─► scan_one_repo(repo₂) ─┤
+   ├─► …                     ├─► score_exposure ─► generate_report
+   └─► scan_one_repo(repoₙ) ─┤            │
+                             └────────────┴─► publish_findings / publish_summary
 ```
 
-- **list_repos** — resolves each target (`org` → top-N public repos by stars;
-  `org/repo` → that repo), records a `list_error` per repo instead of aborting.
-- **scan_repos** — fetches each scannable file at HEAD, runs the regex rules,
-  emits redacted findings with a GitHub permalink. File content is scanned in
-  Python and discarded — never stored in ClickHouse or Airtable.
-- **score_exposure** — SQL group-by for repo/file/error aggregates; Python
-  scoring formula and risk bands.
+- **entry** — resolves each target (`org` → top-N public repos by stars;
+  `org/repo` → that repo) via `list_repos_impl` (a `list_error` is recorded per
+  repo instead of aborting), then builds one child task per repo.
+- **scan_one_repo** — one task per repository: fetches each scannable file at
+  HEAD, runs the regex rules, and appends redacted findings (with a GitHub
+  permalink) into the shared findings `Object`. File content is scanned in
+  Python and discarded — never stored in ClickHouse or Airtable. Per-repo
+  isolation means one repo's fetch error can't fail the others.
+- **score_exposure** — depends on all `scan_one_repo` tasks; SQL group-by for
+  repo/file/error aggregates plus the Python scoring formula and risk bands.
 - **generate_report** — renders via `Object.markdown()`.
+
+The inline (non-orchestrated) equivalent, `scan_repos_impl`, performs the same
+scan in one pass and backs the offline unit tests; the dynamic DAG is covered
+end-to-end by an in-process `ajob_test` run over the fixtures.
 
 ## Secret-detection rules
 

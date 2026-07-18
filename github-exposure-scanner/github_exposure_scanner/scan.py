@@ -1,10 +1,14 @@
 """Repo enumeration and secret-scanning tasks.
 
-``list_repos_impl`` turns targets into a repos ``Object`` (one row per repo,
-with a ``list_error`` column for repos that couldn't be listed). ``scan_repos_impl``
-fetches each scannable file's content, runs the regex rules, and returns a
-redacted findings ``Object``. File content is scanned in Python and discarded —
-never stored.
+``list_repos`` turns targets into a repos ``Object`` (one row per repo, with a
+``list_error`` column for repos that couldn't be listed). ``scan_repos`` is a
+dynamic *expander*: at runtime it reads the repo list and fans out one
+``scan_one_repo`` task per repo, each fetching that repo's files, running the
+regex rules, and appending its redacted findings into a shared findings
+``Object``. File content is scanned in Python and discarded — never stored.
+
+``scan_repos_impl`` is the same scan performed inline (no orchestration) — used
+by the offline unit tests and by the fixed-shape data flow.
 """
 
 from datetime import UTC, datetime
@@ -96,10 +100,51 @@ async def list_repos_impl(
     return await create_object_from_value(cols, name="ghx_repos", scope=scope, fields=_REPO_TYPES)
 
 
+async def scan_repo_findings(
+    client: GitHubClient, org: str, repo: str, sha: str, stars: int, max_file_kb: int, detected_at: str
+) -> dict[str, list]:
+    """Scan a single repo's current-HEAD files → redacted finding columns.
+
+    Shared by the inline path (``scan_repos_impl``) and the per-repo task
+    (``scan_one_repo``) so both produce identical findings.
+    """
+    max_bytes = max_file_kb * 1024
+    cols = _empty_columns(FINDING_FIELDS)
+    try:
+        tree = await client.get_tree(org, repo, sha)
+    except Exception:  # noqa: BLE001 — skip repos whose tree can't be refetched
+        return cols
+    tree_paths = [e["path"] for e in tree]
+    for entry in tree:
+        path, size = entry["path"], entry.get("size", 0)
+        if not is_scannable(path, size, max_bytes):
+            continue
+        try:
+            text = await client.get_raw(org, repo, sha, path)
+        except Exception:  # noqa: BLE001 — skip unreadable files
+            continue
+        for f in scan_text(path, text):
+            context, confidence = classify_context(f.secret_type, f.path, tree_paths)
+            cols["org"].append(org)
+            cols["repo"].append(repo)
+            cols["path"].append(f.path)
+            cols["line"].append(f.line)
+            cols["rule_id"].append(f.rule_id)
+            cols["secret_type"].append(f.secret_type)
+            cols["severity"].append(f.severity)
+            cols["masked_value"].append(f.masked_value)
+            cols["permalink"].append(f"https://github.com/{org}/{repo}/blob/{sha}/{f.path}#L{f.line}")
+            cols["repo_stars"].append(int(stars))
+            cols["detected_at"].append(detected_at)
+            cols["context"].append(context)
+            cols["confidence"].append(confidence)
+    return cols
+
+
 async def scan_repos_impl(
     repos: Object, max_file_kb: int, client: GitHubClient, scope: str | None = "job"
 ) -> Object:
-    max_bytes = max_file_kb * 1024
+    """Inline (non-orchestrated) scan of every repo into one findings Object."""
     repo_rows = await repos.data(orient=ORIENT_DICT)
     n = len(repo_rows["repo"])
     detected_at = datetime.now(UTC).strftime("%Y-%m-%d")
@@ -108,36 +153,17 @@ async def scan_repos_impl(
     for i in range(n):
         if repo_rows["list_error"][i]:
             continue
-        org, repo = repo_rows["org"][i], repo_rows["repo"][i]
-        sha, stars = repo_rows["head_sha"][i], repo_rows["stars"][i]
-        try:
-            tree = await client.get_tree(org, repo, sha)
-        except Exception:  # noqa: BLE001 — skip repos whose tree can't be refetched
-            continue
-        tree_paths = [e["path"] for e in tree]
-        for entry in tree:
-            path, size = entry["path"], entry.get("size", 0)
-            if not is_scannable(path, size, max_bytes):
-                continue
-            try:
-                text = await client.get_raw(org, repo, sha, path)
-            except Exception:  # noqa: BLE001 — skip unreadable files
-                continue
-            for f in scan_text(path, text):
-                context, confidence = classify_context(f.secret_type, f.path, tree_paths)
-                cols["org"].append(org)
-                cols["repo"].append(repo)
-                cols["path"].append(f.path)
-                cols["line"].append(f.line)
-                cols["rule_id"].append(f.rule_id)
-                cols["secret_type"].append(f.secret_type)
-                cols["severity"].append(f.severity)
-                cols["masked_value"].append(f.masked_value)
-                cols["permalink"].append(f"https://github.com/{org}/{repo}/blob/{sha}/{f.path}#L{f.line}")
-                cols["repo_stars"].append(int(stars))
-                cols["detected_at"].append(detected_at)
-                cols["context"].append(context)
-                cols["confidence"].append(confidence)
+        one = await scan_repo_findings(
+            client,
+            repo_rows["org"][i],
+            repo_rows["repo"][i],
+            repo_rows["head_sha"][i],
+            repo_rows["stars"][i],
+            max_file_kb,
+            detected_at,
+        )
+        for k, v in one.items():
+            cols[k].extend(v)
 
     return await create_object_from_value(cols, name="ghx_findings", scope=scope, fields=_FINDING_TYPES)
 
@@ -151,10 +177,29 @@ async def list_repos(targets: list[str], max_repos: int = 25) -> Object:
         await client.aclose()
 
 
+async def new_findings_object(scope: str | None = "job") -> Object:
+    """Create an empty findings Object with the correct schema for children to fill."""
+    return await create_object_from_value(
+        _empty_columns(FINDING_FIELDS), name="ghx_findings", scope=scope, fields=_FINDING_TYPES
+    )
+
+
 @task
-async def scan_repos(repos: Object, max_file_kb: int = 512) -> Object:
+async def scan_one_repo(
+    org: str, repo: str, head_sha: str, stars: int, max_file_kb: int, out: Object
+) -> None:
+    """Scan one repo and append its redacted findings into the shared ``out`` Object.
+
+    This is the per-repo unit the job fans out to — one task instance per
+    discovered repository.
+    """
     client = make_client()
     try:
-        return await scan_repos_impl(repos, max_file_kb, client)
+        cols = await scan_repo_findings(
+            client, org, repo, head_sha, stars, max_file_kb, datetime.now(UTC).strftime("%Y-%m-%d")
+        )
     finally:
         await client.aclose()
+    if cols["org"]:  # only touch the table when this repo actually had findings
+        part = await create_object_from_value(cols, fields=_FINDING_TYPES)
+        await out.insert(part)
