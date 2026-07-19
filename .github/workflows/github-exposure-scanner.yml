@@ -1,0 +1,43 @@
+name: github-exposure-scanner
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'github-exposure-scanner/**'
+      - '.github/workflows/github-exposure-scanner.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'github-exposure-scanner/**'
+      - '.github/workflows/github-exposure-scanner.yml'
+
+permissions:
+  contents: read
+
+# A newer push to the same ref supersedes an in-flight run.
+concurrency:
+  group: github-exposure-scanner-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: github-exposure-scanner
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      # Deterministic + offline: the suite runs the full pipeline in-process
+      # against the committed tests/fixtures (the `acme` org) via GHX_FIXTURE_DIR,
+      # so no GitHub network, tokens, or Postgres/ClickHouse services are needed.
+      - name: Run tests
+        run: uv run --group dev pytest -q

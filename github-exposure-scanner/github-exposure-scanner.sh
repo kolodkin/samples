@@ -20,6 +20,9 @@
 # Environment:
 #   GITHUB_TOKEN  — raises the GitHub API rate limit (public data still works
 #                   unauthenticated, but at 60 req/hr)
+#   GITHUB_REPOS  — default targets when --targets is omitted: comma-separated
+#                   "org|repo" or bare "org" entries (e.g. "acme|widgets,octocat").
+#                   An explicit --targets on the command line overrides it.
 
 set -e
 
