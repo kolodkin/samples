@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
-import { segClosest, obstacleHit, pushOutOfObstacles } from './geom.js';
+import { segClosest, obstacleHit, pushOutOfObstacles, firstBlockingObstacle } from './geom.js';
 import { setShadows } from './relief.js';
 
 function lambert(color) { return new THREE.MeshLambertMaterial({ color }); }
@@ -84,7 +84,7 @@ export class EnemySystem {
     const e = {
       type, c, mesh, hp: c.hp, state: 'advance', inert,
       frozen: 0, burn: 0, burnSpreadTimer: 0,
-      coverTimer: 0, cover: null, hasShot: false,
+      coverTimer: 0, cover: null, hasShot: false, detourSide: 0,
       peekSide: this.game.rng.random() < 0.5 ? -1 : 1,
       bobT: this.game.rng.range(0, Math.PI * 2),
     };
@@ -150,14 +150,36 @@ export class EnemySystem {
 
   speedOf(e) { return e.c.speed * CONFIG.stages[this.game.stage].speedMult; }
 
+  // Walkers have no pathfinding, and the slide push-out alone deadlocks in
+  // the concave pocket between two adjacent obstacles (a pillar wall lined
+  // up across the approach). Steer instead of relying on the slide: when
+  // the lane ahead is blocked, walk the blocking obstacle's tangent with a
+  // light outward bias. The detour side sticks until the lane clears, so a
+  // wall is followed to its end rather than re-decided (and reversed) in
+  // every pocket along the way.
+  steerAround(e, dir, dist) {
+    const pos = e.mesh.position;
+    const o = firstBlockingObstacle(
+      pos, dir, Math.min(4, dist), e.c.bodyRadius + 0.1, this.game.obstacles,
+    );
+    if (!o) { e.detourSide = 0; return dir; }
+    const radial = new THREE.Vector3(pos.x - o.x, 0, pos.z - o.z).normalize();
+    if (!e.detourSide) { // turn toward the nearer tangent, then commit
+      e.detourSide = radial.x * dir.z - radial.z * dir.x >= 0 ? 1 : -1;
+    }
+    return new THREE.Vector3(-radial.z * e.detourSide, 0, radial.x * e.detourSide)
+      .addScaledVector(radial, 0.25).normalize();
+  }
+
   moveToward(e, target, dt, speed) {
     const pos = e.mesh.position;
     const dir = new THREE.Vector3(target.x - pos.x, 0, target.z - pos.z);
     const dist = dir.length();
     if (dist < 0.05) return;
     dir.normalize();
-    pos.addScaledVector(dir, Math.min(dist, speed * dt));
-    e.mesh.rotation.y = Math.atan2(dir.x, dir.z);
+    const step = this.steerAround(e, dir, dist);
+    pos.addScaledVector(step, Math.min(dist, speed * dt));
+    e.mesh.rotation.y = Math.atan2(step.x, step.z);
   }
 
   update(dt) {
@@ -221,8 +243,9 @@ export class EnemySystem {
       const perp = new THREE.Vector3(-dir.z, 0, dir.x);
       dir.addScaledVector(perp, Math.sin(e.bobT * 0.9) * 0.5).normalize();
     }
-    pos.addScaledVector(dir, this.speedOf(e) * dt);
-    e.mesh.rotation.y = Math.atan2(dir.x, dir.z);
+    const step = this.steerAround(e, dir, flatDist);
+    pos.addScaledVector(step, this.speedOf(e) * dt);
+    e.mesh.rotation.y = Math.atan2(step.x, step.z);
   }
 
   updateArcher(e, dt, playerPos) {

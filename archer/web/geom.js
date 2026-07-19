@@ -36,6 +36,24 @@ function segCylinderT(a, b, cx, cz, r, h) {
   return null;
 }
 
+// First obstacle whose padded circle blocks a walker's XZ lane
+// [pos, pos + dir·len], or null. Only obstacles the walker actually moves
+// toward count: while hugging a circle the position sits on (or just
+// inside) the padded rim, and a grazing t=0 "hit" from that circle must
+// not read as a wall across the lane.
+export function firstBlockingObstacle(pos, dir, len, r, obstacles) {
+  const a = new THREE.Vector3(pos.x, 0, pos.z);
+  const b = new THREE.Vector3(pos.x + dir.x * len, 0, pos.z + dir.z * len);
+  let best = null;
+  let bestT = Infinity;
+  for (const o of obstacles) {
+    if (dir.x * (o.x - pos.x) + dir.z * (o.z - pos.z) <= 0) continue;
+    const t = segCylinderT(a, b, o.x, o.z, o.radius + r, o.height);
+    if (t !== null && t < bestT) { bestT = t; best = o; }
+  }
+  return best;
+}
+
 // Push a body circle of radius r at pos out of every obstacle cylinder it
 // overlaps (in place, XZ only). Only the radial part of the offending step
 // is cancelled, so movers slide around obstacles instead of sticking.
