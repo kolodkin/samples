@@ -101,6 +101,14 @@ and `raw.githubusercontent.com` for file content. `GITHUB_TOKEN`, when set,
 raises the rate limit to 5000 req/hr (60 req/hr unauthenticated). A rate-limit
 response raises `RateLimitError`; per-repo network errors are isolated.
 
+Targets come from `--targets`/`params`; when neither is given, the
+`GITHUB_REPOS` env var is the fallback (an explicit `--targets` overrides it).
+It holds comma-separated entries, each `org|repo` (a single repo) or a bare
+`org` (enumerate the org) — e.g. `GITHUB_REPOS="acme|widgets,octocat"`. The pipe
+form is confined to this env var; `parse_repos_env` normalises it to the
+internal `org/repo` targets before scanning. With nothing set anywhere the
+default remains `octocat/Hello-World`.
+
 **Fixture mode** (`GHX_FIXTURE_DIR`) reads canned files instead of the network
 — used by the test suite and CI so runs are deterministic and offline:
 

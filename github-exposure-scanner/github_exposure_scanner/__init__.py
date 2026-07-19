@@ -14,6 +14,10 @@ DAG::
 
 Environment variables:
     GITHUB_TOKEN         — raises GitHub API rate limit (optional)
+    GITHUB_REPOS         — default targets when no explicit ``targets`` are
+                           passed: comma-separated ``org|repo`` or bare ``org``
+                           entries (e.g. ``"acme|widgets,octocat"``). An explicit
+                           ``--targets``/``params`` overrides it.
     GHX_FIXTURE_DIR      — offline fixture mode (tests/CI)
     AIRTABLE_API_KEY     — Airtable PAT (required with publish_airtable=True)
     AIRTABLE_BASE_ID     — Airtable base id (required with publish_airtable=True)
@@ -28,6 +32,7 @@ from aaiclick.orchestration import job, tasks_list
 
 from .airtable import publish_findings, publish_summary, validate_airtable_credentials
 from .github_api import make_client
+from .models import targets_from_env
 from .report import generate_report
 from .scan import list_repos_impl, new_findings_object, scan_one_repo
 from .score import score_exposure
@@ -50,7 +55,8 @@ async def exposure_pipeline(
     report, and Airtable tasks fan in via ``depends_on`` so they run only once
     every per-repo scan has completed.
     """
-    targets = targets or DEFAULT_TARGETS
+    # Explicit targets win; else fall back to the GITHUB_REPOS env var; else default.
+    targets = targets or targets_from_env() or DEFAULT_TARGETS
 
     client = make_client()
     try:
