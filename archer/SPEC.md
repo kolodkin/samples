@@ -141,6 +141,16 @@ store.
   toward the player instead of clipping through (or sticking to) them.
   Skeleton cover points sit 0.7 m off the obstacle edge — outside every
   body radius — so cover-hugging is unaffected.
+- Sliding alone deadlocks in the concave pocket between two adjacent
+  obstacles (a pillar wall lined up across the approach — the pushes from
+  the two circles cancel), so walkers also steer
+  (`EnemySystem.steerAround()`): when the lane a few metres ahead is
+  blocked (`firstBlockingObstacle()` in `web/geom.js`), they follow the
+  blocking obstacle's tangent with a light outward bias, and the detour
+  side sticks until the lane clears so a wall is followed to its end
+  rather than re-decided (and reversed) in every pocket along it. Applies
+  to melee advance and every skeleton `moveToward()` alike; the push-out
+  stays as the collision safety net.
 - Melee ignores the perch elevation: attacks reach the player from the
   perch base by design.
 - A melee attacker is spent on contact: it lands one hit and disappears
