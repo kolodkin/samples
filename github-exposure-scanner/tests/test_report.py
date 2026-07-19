@@ -13,7 +13,7 @@ FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
 async def test_report_contains_sections_and_no_raw_secret():
     client = GitHubClient(fixture_dir=FIXTURES)
     async with data_context():
-        repos = await list_repos_impl(["acme/widgets"], 25, client, "2026-07-17", scope=None)
+        repos, _ = await list_repos_impl(["acme/widgets"], 25, client, "2026-07-17", scope=None)
         findings = await scan_repos_impl(repos, 512, client, scope=None)
         summary = await score_exposure_impl(repos, findings, scope=None)
         text = await render_report(repos, findings, summary, None, None)

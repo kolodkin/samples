@@ -54,7 +54,7 @@ async def exposure_pipeline(
 
     client = make_client()
     try:
-        repos = await list_repos_impl(
+        repos, trees = await list_repos_impl(
             targets, max_repos, client, datetime.now(UTC).strftime("%Y-%m-%d"), scope="job"
         )
     finally:
@@ -70,6 +70,7 @@ async def exposure_pipeline(
             stars=int(rows["stars"][i]),
             max_file_kb=max_file_kb,
             out=findings,
+            tree=trees.get(f'{rows["org"][i]}/{rows["repo"][i]}'),  # reuse the tree from listing
         )
         for i in range(len(rows["repo"]))
         if not rows["list_error"][i]

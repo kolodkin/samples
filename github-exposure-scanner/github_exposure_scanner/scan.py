@@ -65,8 +65,14 @@ def _append_repo_row(
 
 async def list_repos_impl(
     targets: list[str], max_repos: int, client: GitHubClient, now: str, scope: str | None = "job"
-) -> Object:
+) -> tuple[Object, dict[str, list[dict]]]:
+    """Resolve targets → (repos Object, trees).
+
+    ``trees`` maps ``"org/repo"`` to the git-tree entries fetched here, so the
+    per-repo scan can reuse them instead of calling ``get_tree`` a second time.
+    """
     cols = _empty_columns(REPO_FIELDS)
+    trees: dict[str, list[dict]] = {}
 
     async def _add_repo(org: str, repo_meta: dict) -> None:
         repo = repo_meta["name"]
@@ -75,6 +81,7 @@ async def list_repos_impl(
             sha = await client.get_head_sha(org, repo, branch)
             tree = await client.get_tree(org, repo, sha)
             files_to_scan = sum(1 for e in tree if is_scannable(e["path"], e.get("size", 0), 512 * 1024))
+            trees[f"{org}/{repo}"] = tree
             error = None
         except Exception as exc:  # noqa: BLE001 — per-repo isolation
             sha, files_to_scan, error = "", 0, f"{type(exc).__name__}: {exc}"
@@ -99,23 +106,27 @@ async def list_repos_impl(
         for meta in metas:
             await _add_repo(target.org, meta)
 
-    return await create_object_from_value(cols, name="ghx_repos", scope=scope, fields=_REPO_TYPES)
+    obj = await create_object_from_value(cols, name="ghx_repos", scope=scope, fields=_REPO_TYPES)
+    return obj, trees
 
 
 async def scan_repo_findings(
-    client: GitHubClient, org: str, repo: str, sha: str, stars: int, max_file_kb: int, detected_at: str
+    client: GitHubClient, org: str, repo: str, sha: str, stars: int, max_file_kb: int,
+    detected_at: str, tree: list[dict] | None = None,
 ) -> dict[str, list]:
     """Scan a single repo's current-HEAD files → redacted finding columns.
 
     Shared by the inline path (``scan_repos_impl``) and the per-repo task
-    (``scan_one_repo``) so both produce identical findings.
+    (``scan_one_repo``) so both produce identical findings. ``tree`` may be the
+    entries already fetched during listing; when omitted they are fetched here.
     """
     max_bytes = max_file_kb * 1024
     cols = _empty_columns(FINDING_FIELDS)
-    try:
-        tree = await client.get_tree(org, repo, sha)
-    except Exception:  # noqa: BLE001 — skip repos whose tree can't be refetched
-        return cols
+    if tree is None:
+        try:
+            tree = await client.get_tree(org, repo, sha)
+        except Exception:  # noqa: BLE001 — skip repos whose tree can't be refetched
+            return cols
     tree_paths = [e["path"] for e in tree]
     for entry in tree:
         path, size = entry["path"], entry.get("size", 0)
@@ -179,17 +190,20 @@ async def new_findings_object(scope: str | None = "job") -> Object:
 
 @task
 async def scan_one_repo(
-    org: str, repo: str, head_sha: str, stars: int, max_file_kb: int, out: Object
+    org: str, repo: str, head_sha: str, stars: int, max_file_kb: int, out: Object,
+    tree: list[dict] | None = None,
 ) -> None:
     """Scan one repo and append its redacted findings into the shared ``out`` Object.
 
     This is the per-repo unit the job fans out to — one task instance per
-    discovered repository.
+    discovered repository. ``tree`` carries the entries already fetched during
+    listing so the scan doesn't re-fetch the git tree (kwargs are persisted, so
+    this trades a redundant API call for a larger task row — fine at this scale).
     """
     client = make_client()
     try:
         cols = await scan_repo_findings(
-            client, org, repo, head_sha, stars, max_file_kb, datetime.now(UTC).strftime("%Y-%m-%d")
+            client, org, repo, head_sha, stars, max_file_kb, datetime.now(UTC).strftime("%Y-%m-%d"), tree=tree
         )
     finally:
         await client.aclose()

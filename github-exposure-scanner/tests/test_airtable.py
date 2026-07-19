@@ -19,7 +19,7 @@ async def test_validate_skips_without_credentials(monkeypatch):
 async def test_field_records_shape():
     client = GitHubClient(fixture_dir=FIXTURES)
     async with data_context():
-        repos = await list_repos_impl(["acme/widgets"], 25, client, "2026-07-17", scope=None)
+        repos, _ = await list_repos_impl(["acme/widgets"], 25, client, "2026-07-17", scope=None)
         findings = await scan_repos_impl(repos, 512, client, scope=None)
         records = await _field_records(findings, _FINDINGS_MAP)
         assert records and records[0]["fields"]["Organization"] == "acme"

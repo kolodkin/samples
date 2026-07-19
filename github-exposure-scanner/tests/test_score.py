@@ -32,7 +32,7 @@ async def test_context_downgrades_demo_key_end_to_end():
     # scanner should flag it (Critical rule) but score it as likely-test.
     client = GitHubClient(fixture_dir=FIXTURES)
     async with data_context():
-        repos = await list_repos_impl(["acme/proxytool"], 25, client, "2026-07-17", scope=None)
+        repos, _ = await list_repos_impl(["acme/proxytool"], 25, client, "2026-07-17", scope=None)
         findings = await scan_repos_impl(repos, 512, client, scope=None)
         fdata = await findings.data(orient=ORIENT_DICT)
         idx = fdata["secret_type"].index("Private Key")
@@ -50,7 +50,7 @@ async def test_context_downgrades_demo_key_end_to_end():
 async def test_score_exposure_summary():
     client = GitHubClient(fixture_dir=FIXTURES)
     async with data_context():
-        repos = await list_repos_impl(["acme/widgets"], 25, client, "2026-07-17", scope=None)
+        repos, _ = await list_repos_impl(["acme/widgets"], 25, client, "2026-07-17", scope=None)
         findings = await scan_repos_impl(repos, 512, client, scope=None)
         summary = await score_exposure_impl(repos, findings, scope=None)
         data = await summary.data(orient=ORIENT_DICT)
