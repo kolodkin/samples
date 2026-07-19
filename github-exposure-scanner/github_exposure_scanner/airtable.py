@@ -197,7 +197,7 @@ async def _publish_impl(
     if validation.status == "skipped":
         return AirtablePublishResult(status="skipped", reason=validation.reason, table=table)
     api_key = os.environ["AIRTABLE_API_KEY"]
-    base_id = _parse_base_id(os.environ["AIRTABLE_BASE_ID"])
+    base_id = validation.base  # already parsed by validate_airtable_credentials
     records = await _field_records(obj, mapping)
     await _ensure_table_schema_with(api_key, base_id, table, schema)
     existing = await _list_all_record_ids(api_key, base_id, table)

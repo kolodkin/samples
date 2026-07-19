@@ -67,27 +67,27 @@ async def score_exposure_impl(repos: Object, findings: Object, scope: str | None
 
     finding_data = await findings.data(orient=ORIENT_DICT)
 
-    def _new_bucket(idx: int | None) -> dict:
-        return {
-            "repos_scanned": repo_data["repo"][idx] if idx is not None else 0,
-            "files_scanned": repo_data["files_to_scan"][idx] if idx is not None else 0,
-            "scan_errors": repo_data["is_error"][idx] if idx is not None else 0,
+    # Every finding comes from a scanned repo, so its org is always one of the
+    # group-by keys below — no defensive fallback bucket is needed.
+    per_org: dict[str, dict] = {
+        org: {
+            "repos_scanned": repo_data["repo"][idx],
+            "files_scanned": repo_data["files_to_scan"][idx],
+            "scan_errors": repo_data["is_error"][idx],
             "counts": {"Critical": 0, "High": 0, "Medium": 0, "Low": 0},
             "weighted_base": 0.0,
             "likely_test": 0,
             "types": {},
             "flagged_repos": set(),
         }
-
-    orgs = list(repo_data["org"])
-    per_org: dict[str, dict] = {org: _new_bucket(idx) for idx, org in enumerate(orgs)}
+        for idx, org in enumerate(repo_data["org"])
+    }
 
     for i in range(len(finding_data["org"])):
-        org = finding_data["org"][i]
-        bucket = per_org.setdefault(org, _new_bucket(None))
+        bucket = per_org[finding_data["org"][i]]
         sev = finding_data["severity"][i]
         confidence = finding_data["confidence"][i]
-        bucket["counts"][sev] = bucket["counts"].get(sev, 0) + 1
+        bucket["counts"][sev] += 1
         bucket["weighted_base"] += SEVERITY_WEIGHT[sev] * confidence
         if confidence < 1.0:
             bucket["likely_test"] += 1

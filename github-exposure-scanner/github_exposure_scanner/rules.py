@@ -4,6 +4,7 @@ Detection is pure Python over file text. Every match is redacted at
 detection time — raw secret values never leave this module.
 """
 
+import posixpath
 import re
 from dataclasses import dataclass
 
@@ -82,14 +83,6 @@ _TEST_PATH_TOKENS = (
 _CERTGEN_RE = re.compile(r"(make[-_]?cert|gen[-_]?cert|create[-_]?cert|mkcert|gencert|cert.*\.sh$)", re.IGNORECASE)
 
 
-def _dirname(path: str) -> str:
-    return path.rsplit("/", 1)[0] if "/" in path else ""
-
-
-def _basename(path: str) -> str:
-    return path.rsplit("/", 1)[-1]
-
-
 def classify_context(secret_type: str, path: str, tree_paths: list[str]) -> tuple[str, float]:
     """Classify a finding's likely realness → ``(context_label, confidence_real)``.
 
@@ -103,11 +96,11 @@ def classify_context(secret_type: str, path: str, tree_paths: list[str]) -> tupl
 
     # Tier 2: a cert-gen script in the key's directory or any ancestor of it
     # (the common layout puts make-cert.sh one level above a certs/ subdir).
-    key_dir = _dirname(path)
+    key_dir = posixpath.dirname(path)
     for p in tree_paths:
-        if not _CERTGEN_RE.search(_basename(p)):
+        if not _CERTGEN_RE.search(posixpath.basename(p)):
             continue
-        script_dir = _dirname(p)
+        script_dir = posixpath.dirname(p)
         if key_dir == script_dir or key_dir.startswith(script_dir + "/") or script_dir == "":
             return ("likely-test: cert-gen script nearby", 0.05)
 

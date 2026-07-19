@@ -15,7 +15,10 @@ async def render_report(
     summary: Object,
     findings_publish: AirtablePublishResult | None,
     summary_publish: AirtablePublishResult | None,
+    total_findings: int | None = None,
 ) -> str:
+    if total_findings is None:
+        total_findings = await (await findings["org"].count()).data()
     lines: list[str] = ["# Company Cyber Profile", "", "## GitHub Exposure", ""]
 
     lines.append("### Exposure Summary")
@@ -31,7 +34,6 @@ async def render_report(
 
     lines.append("### Findings (redacted)")
     lines.append("")
-    total_findings = await (await findings["org"].count()).data()
     if total_findings:
         findings_view = findings[
             ["org", "repo", "path", "line", "secret_type", "severity", "confidence", "context", "masked_value"]
@@ -66,7 +68,10 @@ async def generate_report(
     findings_publish: AirtablePublishResult | None = None,
     summary_publish: AirtablePublishResult | None = None,
 ) -> dict:
-    rendered = await render_report(repos, findings, summary, findings_publish, summary_publish)
+    total_findings = await (await findings["org"].count()).data()
+    rendered = await render_report(
+        repos, findings, summary, findings_publish, summary_publish, total_findings=total_findings
+    )
     report_file = os.environ.get("AAICLICK_REPORT_FILE")
     if report_file:
         Path(report_file).parent.mkdir(parents=True, exist_ok=True)
@@ -74,7 +79,6 @@ async def generate_report(
     else:
         print(rendered)
 
-    total_findings = await (await findings["org"].count()).data()
     return {
         "repos_scanned": await (await repos["org"].count()).data(),
         "total_findings": total_findings,

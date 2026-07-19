@@ -1,14 +1,13 @@
-"""Repo enumeration and secret-scanning tasks.
+"""Repo enumeration and secret-scanning building blocks.
 
-``list_repos`` turns targets into a repos ``Object`` (one row per repo, with a
-``list_error`` column for repos that couldn't be listed). ``scan_repos`` is a
-dynamic *expander*: at runtime it reads the repo list and fans out one
-``scan_one_repo`` task per repo, each fetching that repo's files, running the
-regex rules, and appending its redacted findings into a shared findings
-``Object``. File content is scanned in Python and discarded — never stored.
+``list_repos_impl`` turns targets into a repos ``Object`` (one row per repo,
+with a ``list_error`` column for repos that couldn't be listed). ``scan_one_repo``
+is the per-repo task the job fans out — it fetches that repo's files, runs the
+regex rules, and appends its redacted findings into a shared findings ``Object``.
+File content is scanned in Python and discarded — never stored.
 
-``scan_repos_impl`` is the same scan performed inline (no orchestration) — used
-by the offline unit tests and by the fixed-shape data flow.
+``scan_repos_impl`` performs the same scan inline (no orchestration) — used by
+the offline unit tests.
 """
 
 from datetime import UTC, datetime
@@ -47,6 +46,23 @@ def _empty_columns(fields: list[str]) -> dict[str, list]:
     return {f: [] for f in fields}
 
 
+def _append_repo_row(
+    cols: dict[str, list], *, org: str, repo: str, branch: str = "", sha: str = "", stars: int = 0,
+    pushed_at: str = "", language: str = "", size_kb: int = 0, files_to_scan: int = 0,
+    list_error: str | None = None,
+) -> None:
+    """Append one fully-populated repo row — the single writer for every column,
+    so success and listing-error rows can't drift out of sync with REPO_FIELDS."""
+    row = {
+        "org": org, "repo": repo, "repo_url": f"https://github.com/{org}/{repo}",
+        "default_branch": branch, "head_sha": sha, "stars": int(stars),
+        "pushed_at": str(pushed_at), "language": str(language or ""),
+        "size_kb": int(size_kb), "files_to_scan": files_to_scan, "list_error": list_error,
+    }
+    for key, value in row.items():
+        cols[key].append(value)
+
+
 async def list_repos_impl(
     targets: list[str], max_repos: int, client: GitHubClient, now: str, scope: str | None = "job"
 ) -> Object:
@@ -62,17 +78,12 @@ async def list_repos_impl(
             error = None
         except Exception as exc:  # noqa: BLE001 — per-repo isolation
             sha, files_to_scan, error = "", 0, f"{type(exc).__name__}: {exc}"
-        cols["org"].append(org)
-        cols["repo"].append(repo)
-        cols["repo_url"].append(f"https://github.com/{org}/{repo}")
-        cols["default_branch"].append(branch)
-        cols["head_sha"].append(sha)
-        cols["stars"].append(int(repo_meta.get("stargazers_count", 0)))
-        cols["pushed_at"].append(str(repo_meta.get("pushed_at", "")))
-        cols["language"].append(str(repo_meta.get("language") or ""))
-        cols["size_kb"].append(int(repo_meta.get("size", 0)))
-        cols["files_to_scan"].append(files_to_scan)
-        cols["list_error"].append(error)
+        _append_repo_row(
+            cols, org=org, repo=repo, branch=branch, sha=sha,
+            stars=repo_meta.get("stargazers_count", 0), pushed_at=repo_meta.get("pushed_at", ""),
+            language=repo_meta.get("language"), size_kb=repo_meta.get("size", 0),
+            files_to_scan=files_to_scan, list_error=error,
+        )
 
     for raw in targets:
         target = parse_target(raw)
@@ -82,17 +93,8 @@ async def list_repos_impl(
             else:
                 metas = await client.list_org_repos(target.org, max_repos)
         except Exception as exc:  # noqa: BLE001 — record listing failure as a row
-            cols["org"].append(target.org)
-            cols["repo"].append(target.repo or "*")
-            cols["repo_url"].append(f"https://github.com/{target.org}")
-            cols["default_branch"].append("")
-            cols["head_sha"].append("")
-            cols["stars"].append(0)
-            cols["pushed_at"].append("")
-            cols["language"].append("")
-            cols["size_kb"].append(0)
-            cols["files_to_scan"].append(0)
-            cols["list_error"].append(f"{type(exc).__name__}: {exc}")
+            _append_repo_row(cols, org=target.org, repo=target.repo or "*",
+                             list_error=f"{type(exc).__name__}: {exc}")
             continue
         for meta in metas:
             await _add_repo(target.org, meta)
@@ -166,15 +168,6 @@ async def scan_repos_impl(
             cols[k].extend(v)
 
     return await create_object_from_value(cols, name="ghx_findings", scope=scope, fields=_FINDING_TYPES)
-
-
-@task
-async def list_repos(targets: list[str], max_repos: int = 25) -> Object:
-    client = make_client()
-    try:
-        return await list_repos_impl(targets, max_repos, client, datetime.now(UTC).strftime("%Y-%m-%d"))
-    finally:
-        await client.aclose()
 
 
 async def new_findings_object(scope: str | None = "job") -> Object:
