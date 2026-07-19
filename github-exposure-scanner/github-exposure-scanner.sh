@@ -3,7 +3,7 @@
 # files for leaked secrets, score exposure, and print a redacted report.
 #
 # Usage: ./github-exposure-scanner.sh [--targets "org,org/repo,..."] \
-#          [--max-repos N] [--max-file-kb N] [--airtable] [--local-setup]
+#          [--max-repos N] [--max-file-kb N] [--airtable]
 #
 # Options:
 #   --targets LIST     Comma-separated orgs and/or org/repo targets
@@ -12,8 +12,10 @@
 #   --max-file-kb N    Skip files larger than this (default: 512)
 #   --airtable         Publish findings + summary to Airtable (default: off;
 #                      requires AIRTABLE_API_KEY + AIRTABLE_BASE_ID)
-#   --local-setup      Auto-provision ClickHouse + PostgreSQL locally via the
-#                      repo's scripts (default: off; CI provides them as services)
+#
+# Requires a distributed aaiclick backend (PostgreSQL + ClickHouse server)
+# reachable at AAICLICK_SQL_URL / AAICLICK_CH_URL — provided by CI as service
+# containers, or point those vars at an existing cluster.
 #
 # Environment:
 #   GITHUB_TOKEN  — raises the GitHub API rate limit (public data still works
@@ -61,31 +63,13 @@ while [ $# -gt 0 ]; do
             PARAMS_PARTS+=('"publish_airtable": true')
             shift
             ;;
-        --local-setup)
-            LOCAL_SETUP=1
-            shift
-            ;;
         *)
             echo "Unknown flag: $1" >&2
-            echo "Usage: $0 [--targets LIST] [--max-repos N] [--max-file-kb N] [--airtable] [--local-setup]" >&2
+            echo "Usage: $0 [--targets LIST] [--max-repos N] [--max-file-kb N] [--airtable]" >&2
             exit 1
             ;;
     esac
 done
-
-# Auto-provision databases locally only when --local-setup is passed.
-if [ -n "${LOCAL_SETUP:-}" ]; then
-    REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-    if [ -x "$REPO_ROOT/scripts/setup_clickhouse" ] && [ -x "$REPO_ROOT/scripts/setup_postgres" ]; then
-        echo "Provisioning distributed backend (ClickHouse + PostgreSQL)..."
-        "$REPO_ROOT/scripts/setup_clickhouse"
-        "$REPO_ROOT/scripts/setup_postgres"
-        echo
-    else
-        echo "WARNING: scripts/setup_{clickhouse,postgres} not found — assuming a" >&2
-        echo "         distributed backend is already running at the URLs above." >&2
-    fi
-fi
 
 PARAMS_ARG=""
 if [ ${#PARAMS_PARTS[@]} -gt 0 ]; then
