@@ -42,14 +42,19 @@ function segCylinderT(a, b, cx, cz, r, h) {
 // inside) the padded rim, and a grazing t=0 "hit" from that circle must
 // not read as a wall across the lane.
 export function firstBlockingObstacle(pos, dir, len, r, obstacles) {
-  const a = new THREE.Vector3(pos.x, 0, pos.z);
-  const b = new THREE.Vector3(pos.x + dir.x * len, 0, pos.z + dir.z * len);
+  const a = { x: pos.x, y: 0, z: pos.z };
+  const b = { x: pos.x + dir.x * len, y: 0, z: pos.z + dir.z * len };
+  const ahead = obstacles.filter((o) => dir.x * (o.x - pos.x) + dir.z * (o.z - pos.z) > 0);
+  return firstHit(a, b, ahead, r)?.o ?? null;
+}
+
+// Earliest impact along [a,b] against obstacle cylinders padded by pad,
+// as { t, o }; null if the path is clear.
+function firstHit(a, b, obstacles, pad) {
   let best = null;
-  let bestT = Infinity;
   for (const o of obstacles) {
-    if (dir.x * (o.x - pos.x) + dir.z * (o.z - pos.z) <= 0) continue;
-    const t = segCylinderT(a, b, o.x, o.z, o.radius + r, o.height);
-    if (t !== null && t < bestT) { bestT = t; best = o; }
+    const t = segCylinderT(a, b, o.x, o.z, o.radius + pad, o.height);
+    if (t !== null && (best === null || t < best.t)) best = { t, o };
   }
   return best;
 }
@@ -80,10 +85,6 @@ export function pushOutOfObstacles(pos, r, obstacles) {
 // cylinders based at y=0), padded by the projectile radius; null if the
 // path is clear.
 export function obstacleHit(a, b, obstacles, pad = 0) {
-  let best = null;
-  for (const o of obstacles) {
-    const t = segCylinderT(a, b, o.x, o.z, o.radius + pad, o.height);
-    if (t !== null && (best === null || t < best)) best = t;
-  }
-  return best === null ? null : new THREE.Vector3().lerpVectors(a, b, best);
+  const hit = firstHit(a, b, obstacles, pad);
+  return hit && new THREE.Vector3().lerpVectors(a, b, hit.t);
 }

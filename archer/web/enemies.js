@@ -5,6 +5,8 @@ import { setShadows } from './relief.js';
 
 function lambert(color) { return new THREE.MeshLambertMaterial({ color }); }
 
+const perpXZ = (v) => new THREE.Vector3(-v.z, 0, v.x);
+
 // Builders return a Group whose base sits at y=0; collision spheres are
 // derived from config (bodyRadius/height/headRadius), not from the meshes.
 // Deliberately smooth flat tints (no relief-mottle treatment): monsters must
@@ -67,6 +69,14 @@ const BUILDERS = { goblin: buildGoblin, ogre: buildOgre, skeleton: buildSkeleton
 
 const PROJ_GRAVITY = 4; // m/s² drop on skeleton projectiles (shoot() compensates)
 const PROJ_RADIUS = 0.09; // skeleton projectile: mesh size and collision pad
+
+// Walker steering (steerAround): lane lookahead (m); clearance margin over
+// the push-out resting distance (pushOutOfObstacles parks a hugging walker
+// at exactly obstacle.radius + bodyRadius); outward bias that keeps a
+// detour from grazing back into the circle it rounds.
+const STEER_LOOKAHEAD = 4;
+const STEER_CLEARANCE = 0.1;
+const STEER_OUT_BIAS = 0.25;
 
 export class EnemySystem {
   constructor(game) {
@@ -150,25 +160,23 @@ export class EnemySystem {
 
   speedOf(e) { return e.c.speed * CONFIG.stages[this.game.stage].speedMult; }
 
-  // Walkers have no pathfinding, and the slide push-out alone deadlocks in
-  // the concave pocket between two adjacent obstacles (a pillar wall lined
-  // up across the approach). Steer instead of relying on the slide: when
-  // the lane ahead is blocked, walk the blocking obstacle's tangent with a
-  // light outward bias. The detour side sticks until the lane clears, so a
-  // wall is followed to its end rather than re-decided (and reversed) in
-  // every pocket along the way.
+  // No pathfinding: the slide push-out alone deadlocks in the concave
+  // pocket between adjacent obstacles, so a walker whose lane is blocked
+  // follows the blocking obstacle's tangent instead; detourSide sticks
+  // until the lane clears, so a wall is followed to its end (see SPEC.md).
   steerAround(e, dir, dist) {
     const pos = e.mesh.position;
     const o = firstBlockingObstacle(
-      pos, dir, Math.min(4, dist), e.c.bodyRadius + 0.1, this.game.obstacles,
+      pos, dir, Math.min(STEER_LOOKAHEAD, dist),
+      e.c.bodyRadius + STEER_CLEARANCE, this.game.obstacles,
     );
     if (!o) { e.detourSide = 0; return dir; }
     const radial = new THREE.Vector3(pos.x - o.x, 0, pos.z - o.z).normalize();
     if (!e.detourSide) { // turn toward the nearer tangent, then commit
       e.detourSide = radial.x * dir.z - radial.z * dir.x >= 0 ? 1 : -1;
     }
-    return new THREE.Vector3(-radial.z * e.detourSide, 0, radial.x * e.detourSide)
-      .addScaledVector(radial, 0.25).normalize();
+    return perpXZ(radial).multiplyScalar(e.detourSide)
+      .addScaledVector(radial, STEER_OUT_BIAS).normalize();
   }
 
   moveToward(e, target, dt, speed) {
@@ -238,14 +246,14 @@ export class EnemySystem {
       return;
     }
     // Advance with a slight weave (goblins zigzag; ogres lumber straight).
-    const dir = new THREE.Vector3(playerPos.x - pos.x, 0, playerPos.z - pos.z).normalize();
+    // The weave is a perpendicular offset on the target point, so
+    // moveToward stays the one walking (and steering) primitive.
+    const target = new THREE.Vector3(playerPos.x, 0, playerPos.z);
     if (e.type === 'goblin') {
-      const perp = new THREE.Vector3(-dir.z, 0, dir.x);
-      dir.addScaledVector(perp, Math.sin(e.bobT * 0.9) * 0.5).normalize();
+      const dir = new THREE.Vector3(playerPos.x - pos.x, 0, playerPos.z - pos.z).normalize();
+      target.addScaledVector(perpXZ(dir), Math.sin(e.bobT * 0.9) * 0.5 * flatDist);
     }
-    const step = this.steerAround(e, dir, flatDist);
-    pos.addScaledVector(step, this.speedOf(e) * dt);
-    e.mesh.rotation.y = Math.atan2(step.x, step.z);
+    this.moveToward(e, target, dt, this.speedOf(e));
   }
 
   updateArcher(e, dt, playerPos) {
@@ -326,8 +334,7 @@ export class EnemySystem {
   peekPoint(cover, side, playerPos) {
     const c = this.coverPoint(cover, playerPos);
     const away = new THREE.Vector3(cover.x - playerPos.x, 0, cover.z - playerPos.z).normalize();
-    const perp = new THREE.Vector3(-away.z, 0, away.x);
-    return c.addScaledVector(perp, side * (cover.radius + 0.5));
+    return c.addScaledVector(perpXZ(away), side * (cover.radius + 0.5));
   }
 
   shoot(e, playerPos) {
