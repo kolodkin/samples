@@ -36,6 +36,29 @@ function segCylinderT(a, b, cx, cz, r, h) {
   return null;
 }
 
+// First obstacle whose padded circle blocks a walker's XZ lane
+// [pos, pos + dir·len], or null. Only obstacles the walker actually moves
+// toward count: while hugging a circle the position sits on (or just
+// inside) the padded rim, and a grazing t=0 "hit" from that circle must
+// not read as a wall across the lane.
+export function firstBlockingObstacle(pos, dir, len, r, obstacles) {
+  const a = { x: pos.x, y: 0, z: pos.z };
+  const b = { x: pos.x + dir.x * len, y: 0, z: pos.z + dir.z * len };
+  const ahead = obstacles.filter((o) => dir.x * (o.x - pos.x) + dir.z * (o.z - pos.z) > 0);
+  return firstHit(a, b, ahead, r)?.o ?? null;
+}
+
+// Earliest impact along [a,b] against obstacle cylinders padded by pad,
+// as { t, o }; null if the path is clear.
+function firstHit(a, b, obstacles, pad) {
+  let best = null;
+  for (const o of obstacles) {
+    const t = segCylinderT(a, b, o.x, o.z, o.radius + pad, o.height);
+    if (t !== null && (best === null || t < best.t)) best = { t, o };
+  }
+  return best;
+}
+
 // Push a body circle of radius r at pos out of every obstacle cylinder it
 // overlaps (in place, XZ only). Only the radial part of the offending step
 // is cancelled, so movers slide around obstacles instead of sticking.
@@ -62,10 +85,6 @@ export function pushOutOfObstacles(pos, r, obstacles) {
 // cylinders based at y=0), padded by the projectile radius; null if the
 // path is clear.
 export function obstacleHit(a, b, obstacles, pad = 0) {
-  let best = null;
-  for (const o of obstacles) {
-    const t = segCylinderT(a, b, o.x, o.z, o.radius + pad, o.height);
-    if (t !== null && (best === null || t < best)) best = t;
-  }
-  return best === null ? null : new THREE.Vector3().lerpVectors(a, b, best);
+  const hit = firstHit(a, b, obstacles, pad);
+  return hit && new THREE.Vector3().lerpVectors(a, b, hit.t);
 }

@@ -382,6 +382,32 @@ def test_goblin_walks_around_obstacle_not_through(server_url, page):
     assert page.evaluate("() => window.__minGap") > 0.2
 
 
+def test_goblin_routes_around_a_wall_of_obstacles(server_url, page):
+    # Regression: several pillars in a row with overlapping edges form a
+    # wall whose concave pockets are stable equilibria for the slide
+    # push-out — a walker heading straight at the player wedges between
+    # two circles and jitters in place forever (the iceberg pillar-line
+    # stall). It must route around the wall's end instead.
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
+    page.evaluate(
+        """() => {
+          window.__ARCHER.setObstacles([
+            { x: -2.8, z: 22, radius: 1.5, height: 6 },
+            { x: 0,    z: 22, radius: 1.5, height: 6 },
+            { x: 2.8,  z: 22, radius: 1.5, height: 6 },
+          ]);
+          window.__ARCHER.spawnEnemy('goblin', 0, 12);
+        }"""
+    )
+    # Around the wall (~10 m of detour) and on to the player: one strike,
+    # then it despawns. Generous wall-clock timeout for SwiftShader (see
+    # the skeleton-volley test).
+    page.wait_for_function("() => window.__ARCHER.state.enemyCount === 0", timeout=60000)
+    assert page.evaluate("() => window.__ARCHER.state.hp") == 10000 - 10
+
+
 def test_player_death_shows_game_over(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
