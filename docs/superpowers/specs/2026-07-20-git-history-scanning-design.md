@@ -39,7 +39,7 @@ separate future steps in the cyber-risk roadmap.
 | Depth | Full history + configurable safety caps |
 | Mode | History is the **default**; `--head-only` restores the fast path |
 | Walk strategy | **Blob-based, deduped** (scan each unique blob once) |
-| Language | **Python now** (combined regex + binary/size skips); native acceleration is a documented future option |
+| Language | **Python now** (blob dedup + binary/size skip); combined-regex / faster-lib / native are documented future options |
 
 ## Architecture
 
@@ -71,16 +71,18 @@ size pre-check ──► mirror clone ──► walk (dedup blobs) ──► sca
 - **Skip early**: blobs over a size cap, and binary blobs (NUL-byte / decode
   check), before running any regex.
 
-### Detection (reused, one change)
+### Detection (reused, unchanged)
 
-- `scan_text` and `classify_context` are reused as-is.
-- **Performance:** rules are combined into a **single regex pass per line**
-  (one alternation with named groups) instead of iterating N compiled patterns.
-  `scan_text`'s public signature and output stay identical — this is an internal
-  optimization behind the same interface.
-- `classify_context` uses the path list of the finding's commit tree (or the
-  union of paths in the mirror) to keep the existing test-vs-real heuristics
-  working for historical blobs.
+- `scan_text` and `classify_context` are reused as-is — no signature or
+  behavior change.
+- **Performance comes from the walk, not the regex:** scanning each unique blob
+  **once** (dedup) and skipping binary/oversized blobs *before* any regex runs
+  are the real wins and are correctness-safe. Combining the rule set into a
+  single automaton is a marginal micro-optimization with real correctness risk
+  (per-rule flags and value groups), so it is deferred to the future-acceleration
+  list rather than done now.
+- `classify_context` uses the union of introduced paths in the mirror to keep
+  the existing test-vs-real heuristics working for historical blobs.
 
 ### Attribution
 
@@ -88,9 +90,16 @@ For each blob that produced findings, compute:
 
 | Field | Meaning |
 |---|---|
-| `commit_sha`, `commit_date`, `commit_author` | The commit that introduced the blob (first-seen) |
-| `first_seen`, `last_seen` | Date range the secret existed in history |
+| `commit_sha`, `commit_author` | The commit that introduced the blob (first-seen) |
+| `first_seen` | ISO date the blob first entered history (introducing commit's date) |
 | `still_present_at_head` | Whether the blob is in the current HEAD tree — the triage flag |
+
+The introducing commit and date come reliably from a single
+`git log --all --reverse --raw` pass (oldest-first, so the first appearance of a
+blob sha is its introduction). A precise "last seen" date would require tracking
+each blob's *removal* commit — deferred as not worth the extra machinery for this
+iteration; `first_seen` + `still_present_at_head` already carry the disclosure
+signal.
 
 `still_present_at_head` drives the disclosure framing: **live at HEAD** = "still
 public, rotate now"; **history-only** = "was exposed on `<date>`, rotate
@@ -111,10 +120,13 @@ Exceeding any cap records a `partial`/`skipped` row (same shape as today's
 
 ## Data model changes
 
-`FINDING_FIELDS` gains: `commit_sha`, `commit_author`, `commit_date`,
-`first_seen`, `last_seen`, `still_present_at_head`. Types added to
-`_FINDING_TYPES` (`still_present_at_head` → `UInt8`/bool; dates → `String`).
-Existing columns are unchanged, so the Airtable schema extends additively.
+`FINDING_FIELDS` gains: `commit_sha`, `commit_author`, `first_seen`,
+`still_present_at_head`. Types added to `_FINDING_TYPES`
+(`still_present_at_head` → `UInt8`; the rest `String`). Existing columns are
+unchanged, so the Airtable schema extends additively. The HEAD-only path fills
+these consistently: `commit_sha` = HEAD sha, `commit_author` = "",
+`first_seen` = "", `still_present_at_head` = 1 (HEAD findings are by definition
+present at HEAD).
 
 ## Scoring & report
 
@@ -149,14 +161,14 @@ Existing columns are unchanged, so the Airtable schema extends additively.
 
 Python is sufficient: the hot spots are network (clone) and git's own C code
 (`rev-list`/`cat-file`); only regex scanning is our CPU, and `re` is C-backed.
-The design closes the gap algorithmically — dedup by blob, single combined
-regex, early binary/size skip.
+The design closes the gap algorithmically — **dedup by blob** and **early
+binary/size skip** — both correctness-safe.
 
-**Future option (not now):** if profiling at engagement scale shows the regex
-loop dominates, swap `re` for a faster library (`google-re2`/`pyre2` or
+**Future options (not now), in escalating order:** combine the rule set into a
+single automaton; swap `re` for a faster library (`google-re2`/`pyre2` or
 `python-hyperscan`) behind the unchanged `scan_text` interface; a native
-(PyO3/maturin) hot-path is a last resort only if that is still insufficient.
-No build-toolchain changes are introduced by this spec.
+(PyO3/maturin) hot-path only if that is still insufficient. No build-toolchain
+changes are introduced by this spec.
 
 ## Out of scope
 
