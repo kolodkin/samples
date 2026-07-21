@@ -42,6 +42,17 @@ async def test_list_error_recorded_not_raised():
         assert data["list_error"][0] is not None and data["list_error"][0] != ""
 
 
+async def test_max_repo_mb_skips_oversized_repo():
+    client = GitHubClient(fixture_dir=FIXTURES)
+    async with data_context():
+        # acme/widgets fixture repo.json reports size in KB; cap at ~0 MB skips it.
+        repos, _ = await list_repos_impl(
+            ["acme/widgets"], 25, client, "2026-07-17", scope=None, max_repo_mb=0
+        )
+        data = await repos.data(orient=ORIENT_DICT)
+        assert data["list_error"][0] and "exceeds" in data["list_error"][0]
+
+
 async def test_head_path_fills_attribution_fields():
     client = GitHubClient(fixture_dir=FIXTURES)
     async with data_context():

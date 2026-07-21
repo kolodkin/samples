@@ -10,12 +10,16 @@ File content is scanned in Python and discarded — never stored.
 the offline unit tests.
 """
 
+import asyncio
+import os
+import shutil
 from datetime import UTC, datetime
 
 from aaiclick import ORIENT_DICT, FieldSpec, create_object_from_value
 from aaiclick.data.object import Object
 from aaiclick.orchestration import task
 
+from .git_history import repo_dir_for, scan_history
 from .github_api import GitHubClient, is_scannable, make_client
 from .models import parse_target
 from .rules import classify_context, scan_text
@@ -66,12 +70,15 @@ def _append_repo_row(
 
 
 async def list_repos_impl(
-    targets: list[str], max_repos: int, client: GitHubClient, now: str, scope: str | None = "job"
+    targets: list[str], max_repos: int, client: GitHubClient, now: str,
+    scope: str | None = "job", max_repo_mb: int | None = None,
 ) -> tuple[Object, dict[str, list[dict]]]:
     """Resolve targets → (repos Object, trees).
 
     ``trees`` maps ``"org/repo"`` to the git-tree entries fetched here, so the
     per-repo scan can reuse them instead of calling ``get_tree`` a second time.
+    A repo whose GitHub ``size`` (KB) exceeds ``max_repo_mb`` is recorded with a
+    skip ``list_error`` and not listed for scanning — enforced before any clone.
     """
     cols = _empty_columns(REPO_FIELDS)
     trees: dict[str, list[dict]] = {}
@@ -79,6 +86,16 @@ async def list_repos_impl(
     async def _add_repo(org: str, repo_meta: dict) -> None:
         repo = repo_meta["name"]
         branch = repo_meta.get("default_branch", "main")
+        size_kb = repo_meta.get("size", 0)
+        if max_repo_mb is not None and size_kb > max_repo_mb * 1024:
+            _append_repo_row(
+                cols, org=org, repo=repo, branch=branch,
+                stars=repo_meta.get("stargazers_count", 0),
+                pushed_at=repo_meta.get("pushed_at", ""),
+                language=repo_meta.get("language"), size_kb=size_kb,
+                list_error=f"skipped: {size_kb}KB exceeds {max_repo_mb}MB cap",
+            )
+            return
         try:
             sha = await client.get_head_sha(org, repo, branch)
             tree = await client.get_tree(org, repo, sha)
@@ -197,22 +214,33 @@ async def new_findings_object(scope: str | None = "job") -> Object:
 @task
 async def scan_one_repo(
     org: str, repo: str, head_sha: str, stars: int, max_file_kb: int, out: Object,
-    tree: list[dict] | None = None,
+    tree: list[dict] | None = None, head_only: bool = False,
+    max_commits: int = 0, max_blobs: int = 0, clone_timeout: int = 300,
 ) -> None:
-    """Scan one repo and append its redacted findings into the shared ``out`` Object.
+    """Scan one repo and append its redacted findings into shared ``out``.
 
-    This is the per-repo unit the job fans out to — one task instance per
-    discovered repository. ``tree`` carries the entries already fetched during
-    listing so the scan doesn't re-fetch the git tree (kwargs are persisted, so
-    this trades a redundant API call for a larger task row — fine at this scale).
+    History scan by default (mirror clone + object walk); ``head_only`` uses the
+    API-based current-HEAD scan. One task instance per discovered repository.
     """
-    client = make_client()
-    try:
-        cols = await scan_repo_findings(
-            client, org, repo, head_sha, stars, max_file_kb, datetime.now(UTC).strftime("%Y-%m-%d"), tree=tree
-        )
-    finally:
-        await client.aclose()
+    detected_at = datetime.now(UTC).strftime("%Y-%m-%d")
+    if head_only:
+        client = make_client()
+        try:
+            cols = await scan_repo_findings(
+                client, org, repo, head_sha, stars, max_file_kb, detected_at, tree=tree
+            )
+        finally:
+            await client.aclose()
+    else:
+        repo_dir, is_temp = repo_dir_for(org, repo, os.environ.get("GITHUB_TOKEN"), clone_timeout)
+        try:
+            cols = await asyncio.to_thread(
+                scan_history, repo_dir, org, repo, stars, max_file_kb, detected_at,
+                max_commits, max_blobs,
+            )
+        finally:
+            if is_temp:
+                shutil.rmtree(repo_dir, ignore_errors=True)
     if cols["org"]:  # only touch the table when this repo actually had findings
         part = await create_object_from_value(cols, fields=_FINDING_TYPES)
         await out.insert(part)
