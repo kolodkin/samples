@@ -4,6 +4,8 @@ from github_exposure_scanner import git_history as gh
 
 from gitutil import make_repo
 
+AWS_KEY = "AKIAIOSFODNN7EXAMPLE"
+
 
 def test_clone_mirror_and_repo_dir_fixture(tmp_path, monkeypatch):
     src = str(tmp_path / "src")
@@ -68,3 +70,33 @@ def test_iter_blob_history_attributes_introducing_commit(tmp_path):
     assert intros[v1_sha].path == "config.py"
     assert intros[v1_sha].author == "Test Dev"
     assert intros[v2_sha].date == "2021-01-01"
+
+
+def test_scan_history_finds_deleted_secret_redacted(tmp_path):
+    repo = str(tmp_path / "r")
+    make_repo(repo, [
+        {"message": "leak key", "date": "2020-01-01",
+         "files": {"src/config.py": f"AWS = '{AWS_KEY}'\n"}},
+        {"message": "scrub key", "date": "2020-02-01",
+         "files": {"src/config.py": "AWS = ''\n"}},
+    ])
+    cols = gh.scan_history(repo, "acme", "widgets", stars=1200,
+                           max_file_kb=512, detected_at="2026-07-20")
+    assert "AWS Key" in cols["secret_type"]
+    idx = cols["secret_type"].index("AWS Key")
+    assert cols["still_present_at_head"][idx] == 0        # the leaking blob was scrubbed
+    assert cols["first_seen"][idx] == "2020-01-01"
+    assert cols["commit_author"][idx] == "Test Dev"
+    assert cols["path"][idx] == "src/config.py"
+    assert AWS_KEY not in "".join(cols["masked_value"])   # still redacted
+    assert f"/blob/{cols['commit_sha'][idx]}/src/config.py#L1" in cols["permalink"][idx]
+
+
+def test_scan_history_skips_binary_blob(tmp_path):
+    repo = str(tmp_path / "r")
+    make_repo(repo, [
+        {"message": "binary", "date": "2020-01-01",
+         "files": {"data.bin": "AKIAIOSFODNN7EXAMPLE\x00binary\n"}},
+    ])
+    cols = gh.scan_history(repo, "acme", "widgets", 1, 512, "2026-07-20")
+    assert cols["secret_type"] == []   # NUL byte → skipped before regex

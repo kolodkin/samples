@@ -123,3 +123,65 @@ def iter_blob_history(repo_dir: str, max_commits: int = 0) -> dict[str, BlobIntr
                 path=path, commit_sha=cur_sha, author=cur_author, date=cur_date
             )
     return intros
+
+
+def read_blob_bytes(repo_dir: str, blob_sha: str) -> bytes | None:
+    """Return a blob's raw bytes, or None if it cannot be read."""
+    try:
+        return _run_git(repo_dir, "cat-file", "blob", blob_sha)
+    except subprocess.CalledProcessError:
+        return None
+
+
+def scan_history(
+    repo_dir: str, org: str, repo: str, stars: int, max_file_kb: int, detected_at: str,
+    max_commits: int = 0, max_blobs: int = 0,
+) -> dict[str, list]:
+    """Scan a repo's full history → redacted finding columns with attribution.
+
+    Each unique introduced blob is scanned once; binary (NUL-byte) and oversized
+    blobs are skipped before any regex runs. ``still_present_at_head`` marks
+    blobs still reachable from HEAD.
+    """
+    from .scan import FINDING_FIELDS, _empty_columns  # lazy import avoids cycle
+
+    max_bytes = max_file_kb * 1024
+    head = head_blob_shas(repo_dir)
+    intros = iter_blob_history(repo_dir, max_commits)
+    all_paths = [bi.path for bi in intros.values()]
+    cols = _empty_columns(FINDING_FIELDS)
+
+    scanned = 0
+    for blob_sha, bi in intros.items():
+        if max_blobs and scanned >= max_blobs:
+            break
+        scanned += 1
+        raw = read_blob_bytes(repo_dir, blob_sha)
+        if raw is None or b"\x00" in raw:
+            continue
+        if not is_scannable(bi.path, len(raw), max_bytes):
+            continue
+        text = raw.decode("utf-8", "replace")
+        still = 1 if blob_sha in head else 0
+        for f in scan_text(bi.path, text):
+            context, confidence = classify_context(f.secret_type, f.path, all_paths)
+            cols["org"].append(org)
+            cols["repo"].append(repo)
+            cols["path"].append(f.path)
+            cols["line"].append(f.line)
+            cols["rule_id"].append(f.rule_id)
+            cols["secret_type"].append(f.secret_type)
+            cols["severity"].append(f.severity)
+            cols["masked_value"].append(f.masked_value)
+            cols["permalink"].append(
+                f"https://github.com/{org}/{repo}/blob/{bi.commit_sha}/{f.path}#L{f.line}"
+            )
+            cols["repo_stars"].append(int(stars))
+            cols["detected_at"].append(detected_at)
+            cols["context"].append(context)
+            cols["confidence"].append(confidence)
+            cols["commit_sha"].append(bi.commit_sha)
+            cols["commit_author"].append(bi.author)
+            cols["first_seen"].append(bi.date)
+            cols["still_present_at_head"].append(still)
+    return cols
