@@ -80,3 +80,46 @@ def head_blob_shas(repo_dir: str) -> set[str]:
         if len(parts) >= 3 and parts[1] == "blob":
             shas.add(parts[2])
     return shas
+
+
+def iter_blob_history(repo_dir: str, max_commits: int = 0) -> dict[str, BlobIntro]:
+    """Map each blob sha → the commit that first introduced it.
+
+    Walks ``git log --all --reverse`` (oldest first), so the first time a blob
+    sha appears in a commit's ``--raw`` diff is its introduction. Deletions
+    (null new-sha) are ignored. ``max_commits`` (>0) stops after that many
+    commits, keeping the oldest history where secrets are most likely buried.
+    """
+    out = _run_git(
+        repo_dir,
+        "log", "--all", "--reverse", "--no-renames", "--no-abbrev",
+        "--format=commit%x00%H%x00%an%x00%aI", "--raw",
+    ).decode("utf-8", "replace")
+
+    intros: dict[str, BlobIntro] = {}
+    cur_sha = cur_author = cur_date = ""
+    commits_seen = 0
+    for line in out.splitlines():
+        if line.startswith("commit\x00"):
+            _, cur_sha, cur_author, iso = line.split("\x00")
+            cur_date = iso[:10]  # YYYY-MM-DD
+            commits_seen += 1
+            if max_commits and commits_seen > max_commits:
+                break
+            continue
+        if not line.startswith(":"):
+            continue
+        meta, tab, path = line.partition("\t")
+        if not tab:
+            continue
+        fields = meta[1:].split()  # drop leading ':' → "<omode> <nmode> <osha> <nsha> <status>"
+        if len(fields) < 5:
+            continue
+        new_sha, status = fields[3], fields[4]
+        if status.startswith("D") or set(new_sha) == {"0"}:
+            continue
+        if new_sha not in intros:
+            intros[new_sha] = BlobIntro(
+                path=path, commit_sha=cur_sha, author=cur_author, date=cur_date
+            )
+    return intros

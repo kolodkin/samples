@@ -47,3 +47,24 @@ def test_head_blob_shas_reflects_current_tree(tmp_path):
                               check=True, capture_output=True, text=True).stdout.strip()
     assert keep_sha in head
     assert len(head) == 1
+
+
+def test_iter_blob_history_attributes_introducing_commit(tmp_path):
+    repo = str(tmp_path / "r")
+    make_repo(repo, [
+        {"message": "add secret", "date": "2020-01-01",
+         "files": {"config.py": "KEY = 'v1'\n"}},
+        {"message": "unrelated", "date": "2020-06-01",
+         "files": {"README.md": "docs\n"}},
+        {"message": "change secret", "date": "2021-01-01",
+         "files": {"config.py": "KEY = 'v2'\n"}},
+    ])
+    intros = gh.iter_blob_history(repo)
+    v1_sha = subprocess.run(["git", "-C", repo, "rev-parse", "HEAD~2:config.py"],
+                            check=True, capture_output=True, text=True).stdout.strip()
+    v2_sha = subprocess.run(["git", "-C", repo, "rev-parse", "HEAD:config.py"],
+                            check=True, capture_output=True, text=True).stdout.strip()
+    assert intros[v1_sha].date == "2020-01-01"
+    assert intros[v1_sha].path == "config.py"
+    assert intros[v1_sha].author == "Test Dev"
+    assert intros[v2_sha].date == "2021-01-01"
