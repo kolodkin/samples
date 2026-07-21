@@ -31,3 +31,19 @@ def test_clone_url_token_injection():
     assert gh.clone_url("acme", "widgets", None) == "https://github.com/acme/widgets.git"
     assert gh.clone_url("acme", "widgets", "TKN") == \
         "https://x-access-token:TKN@github.com/acme/widgets.git"
+
+
+def test_head_blob_shas_reflects_current_tree(tmp_path):
+    repo = str(tmp_path / "r")
+    make_repo(repo, [
+        {"message": "add two", "date": "2020-01-01",
+         "files": {"keep.txt": "keep\n", "gone.txt": "gone\n"}},
+        {"message": "remove one", "date": "2020-01-02",
+         "files": {"gone.txt": None}},
+    ])
+    head = gh.head_blob_shas(repo)
+    # keep.txt's blob is at HEAD; gone.txt's is not.
+    keep_sha = subprocess.run(["git", "-C", repo, "rev-parse", "HEAD:keep.txt"],
+                              check=True, capture_output=True, text=True).stdout.strip()
+    assert keep_sha in head
+    assert len(head) == 1

@@ -68,3 +68,15 @@ def repo_dir_for(org: str, repo: str, token: str | None, clone_timeout: int) -> 
         shutil.rmtree(dest, ignore_errors=True)
         raise
     return dest, True
+
+
+def head_blob_shas(repo_dir: str) -> set[str]:
+    """Blob shas reachable from HEAD (the current default-branch tree)."""
+    out = _run_git(repo_dir, "ls-tree", "-r", "HEAD").decode("utf-8", "replace")
+    shas: set[str] = set()
+    for line in out.splitlines():
+        meta, _, _ = line.partition("\t")   # "<mode> <type> <sha>\t<path>"
+        parts = meta.split()
+        if len(parts) >= 3 and parts[1] == "blob":
+            shas.add(parts[2])
+    return shas
