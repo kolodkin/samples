@@ -32,15 +32,31 @@ async def render_report(
     lines.append(await repos_view.markdown(truncate={"list_error": 40}))
     lines.append("")
 
-    lines.append("### Findings (redacted)")
+    _cols = ["org", "repo", "path", "line", "secret_type", "severity",
+             "confidence", "context", "first_seen", "masked_value"]
+
+    async def _findings_table(where: str) -> str:
+        view = findings[_cols].view(
+            where=where, order_by="confidence DESC, repo_stars DESC", limit=100
+        )
+        return await view.markdown(truncate={"path": 40, "context": 40})
+
+    lines.append("### Findings — Live at HEAD (redacted)")
     lines.append("")
-    if total_findings:
-        findings_view = findings[
-            ["org", "repo", "path", "line", "secret_type", "severity", "confidence", "context", "masked_value"]
-        ].view(order_by="confidence DESC, repo_stars DESC", limit=100)
-        lines.append(await findings_view.markdown(truncate={"path": 40, "context": 40}))
+    live_count = await (await findings.view(where="still_present_at_head = 1")["org"].count()).data()
+    if live_count:
+        lines.append(await _findings_table("still_present_at_head = 1"))
     else:
-        lines.append("_No leaked secrets detected._")
+        lines.append("_No secrets currently present at HEAD._")
+    lines.append("")
+
+    lines.append("### Findings — Historical-only (redacted)")
+    lines.append("")
+    hist_count = await (await findings.view(where="still_present_at_head = 0")["org"].count()).data()
+    if hist_count:
+        lines.append(await _findings_table("still_present_at_head = 0"))
+    else:
+        lines.append("_No secrets found only in history._")
     lines.append("")
 
     lines.append("### Airtable")

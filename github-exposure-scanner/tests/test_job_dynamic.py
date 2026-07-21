@@ -56,4 +56,6 @@ async def test_history_fan_out(orch_ctx, monkeypatch, tmp_path):
     report = report_file.read_text()
     assert "AWS Key" in report          # widgets, still live at HEAD
     assert "Private Key" in report      # proxytool, historical-only
+    assert "Live at HEAD" in report     # grouping headings present
+    assert "Historical-only" in report
     assert AWS_KEY not in report        # redacted
