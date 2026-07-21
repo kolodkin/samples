@@ -42,6 +42,32 @@ async def test_list_error_recorded_not_raised():
         assert data["list_error"][0] is not None and data["list_error"][0] != ""
 
 
+async def test_clone_first_fallback_when_api_unavailable():
+    client = GitHubClient(fixture_dir=FIXTURES)
+
+    async def _boom(*a, **k):
+        raise RuntimeError("403 Forbidden")
+
+    client.get_repo = _boom  # simulate REST API blocked (e.g. proxy 403)
+    async with data_context():
+        # History mode (allow_clone_fallback): explicit target degrades to a
+        # clone-first row instead of a hard error, so the scan can still clone.
+        repos, _ = await list_repos_impl(
+            ["acme/widgets"], 25, client, "2026-07-17", scope=None, allow_clone_fallback=True
+        )
+        data = await repos.data(orient=ORIENT_DICT)
+        assert data["repo"][0] == "widgets"
+        assert data["list_error"][0] is None   # not an error — clone-first
+        assert data["head_sha"][0] == ""       # no API metadata; scan clones HEAD
+
+        # Without the fallback (HEAD-only mode), the same failure is a list_error.
+        repos2, _ = await list_repos_impl(
+            ["acme/widgets"], 25, client, "2026-07-17", scope=None
+        )
+        d2 = await repos2.data(orient=ORIENT_DICT)
+        assert d2["list_error"][0]             # still a hard error when disabled
+
+
 async def test_max_repo_mb_skips_oversized_repo():
     client = GitHubClient(fixture_dir=FIXTURES)
     async with data_context():

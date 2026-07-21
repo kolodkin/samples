@@ -106,6 +106,25 @@ public, rotate now"; **history-only** = "was exposed on `<date>`, rotate
 regardless." `permalink` points at the blob at its commit SHA so history-only
 findings remain viewable.
 
+## Clone-first listing fallback (history mode)
+
+The history scan clones each repo over the git protocol, but the *listing* step
+(`get_repo` / `get_tree`) still calls the GitHub REST API for metadata. In
+environments where `git clone` works but the REST API is unavailable
+(unauthenticated rate limits, restrictive egress proxies), that coupling makes
+the pipeline record a `list_error` and scan nothing — even though the clone
+would succeed.
+
+In history mode (`allow_clone_fallback = not head_only`), an explicit
+`org/repo` target whose API metadata fetch fails degrades to a **clone-first
+row** (`list_error = None`) instead of an error row: `head_sha`/tree are left
+empty and the per-repo task clones HEAD and scans as usual. When the API *does*
+respond, the normal path runs and `stars`/`size` are preserved (blast-radius
+scoring and the pre-clone size cap keep working). Bare-`org` targets still need
+the API to enumerate repos, so their listing failure remains a hard
+`list_error`. HEAD-only mode is unchanged — it needs the API for file content,
+so it never falls back.
+
 ## Safety caps & isolation
 
 Configurable, enforced per repo:

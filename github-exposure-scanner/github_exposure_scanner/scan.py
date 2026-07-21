@@ -72,6 +72,7 @@ def _append_repo_row(
 async def list_repos_impl(
     targets: list[str], max_repos: int, client: GitHubClient, now: str,
     scope: str | None = "job", max_repo_mb: int | None = None,
+    allow_clone_fallback: bool = False,
 ) -> tuple[Object, dict[str, list[dict]]]:
     """Resolve targets → (repos Object, trees).
 
@@ -79,9 +80,25 @@ async def list_repos_impl(
     per-repo scan can reuse them instead of calling ``get_tree`` a second time.
     A repo whose GitHub ``size`` (KB) exceeds ``max_repo_mb`` is recorded with a
     skip ``list_error`` and not listed for scanning — enforced before any clone.
+
+    ``allow_clone_fallback`` (history mode) degrades an explicit ``org/repo``
+    target to a clone-first row (``list_error=None``, empty ``head_sha``) when
+    the REST API is unavailable, so the per-repo task can still clone HEAD and
+    scan. Bare-``org`` targets always need the API to enumerate, so their
+    failure stays a hard ``list_error``.
     """
     cols = _empty_columns(REPO_FIELDS)
     trees: dict[str, list[dict]] = {}
+
+    def _clone_first_row(org: str, repo: str, repo_meta: dict | None = None) -> None:
+        """Emit a scannable row with no API metadata — the scan clones HEAD."""
+        meta = repo_meta or {}
+        _append_repo_row(
+            cols, org=org, repo=repo, branch=meta.get("default_branch", ""), sha="",
+            stars=meta.get("stargazers_count", 0), pushed_at=meta.get("pushed_at", ""),
+            language=meta.get("language"), size_kb=meta.get("size", 0),
+            files_to_scan=0, list_error=None,
+        )
 
     async def _add_repo(org: str, repo_meta: dict) -> None:
         repo = repo_meta["name"]
@@ -103,6 +120,9 @@ async def list_repos_impl(
             trees[f"{org}/{repo}"] = tree
             error = None
         except Exception as exc:  # noqa: BLE001 — per-repo isolation
+            if allow_clone_fallback:  # API metadata gone — clone-first, keep stars/size
+                _clone_first_row(org, repo, repo_meta)
+                return
             sha, files_to_scan, error = "", 0, f"{type(exc).__name__}: {exc}"
         _append_repo_row(
             cols, org=org, repo=repo, branch=branch, sha=sha,
@@ -119,8 +139,13 @@ async def list_repos_impl(
             else:
                 metas = await client.list_org_repos(target.org, max_repos)
         except Exception as exc:  # noqa: BLE001 — record listing failure as a row
-            _append_repo_row(cols, org=target.org, repo=target.repo or "*",
-                             list_error=f"{type(exc).__name__}: {exc}")
+            # An explicit repo we can't reach via API can still be cloned by SHA-less
+            # HEAD in history mode; a bare org can't be enumerated without the API.
+            if target.repo and allow_clone_fallback:
+                _clone_first_row(target.org, target.repo)
+            else:
+                _append_repo_row(cols, org=target.org, repo=target.repo or "*",
+                                 list_error=f"{type(exc).__name__}: {exc}")
             continue
         for meta in metas:
             await _add_repo(target.org, meta)

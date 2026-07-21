@@ -68,6 +68,7 @@ async def exposure_pipeline(
         repos, trees = await list_repos_impl(
             targets, max_repos, client, datetime.now(UTC).strftime("%Y-%m-%d"),
             scope="job", max_repo_mb=None if head_only else max_repo_mb,
+            allow_clone_fallback=not head_only,
         )
     finally:
         await client.aclose()
