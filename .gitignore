@@ -86,3 +86,6 @@ archer/web/vendor/
 
 # archer Playwright test output
 archer/test-results/
+
+# Example-project runtime output (worker logs, reports)
+tmp/
