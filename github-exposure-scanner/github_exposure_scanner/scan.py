@@ -27,6 +27,7 @@ REPO_FIELDS = [
 FINDING_FIELDS = [
     "org", "repo", "path", "line", "rule_id", "secret_type", "severity",
     "masked_value", "permalink", "repo_stars", "detected_at", "context", "confidence",
+    "commit_sha", "commit_author", "first_seen", "still_present_at_head",
 ]
 
 _REPO_TYPES = {
@@ -39,6 +40,7 @@ _FINDING_TYPES = {
     "line": FieldSpec(type="UInt32"),
     "repo_stars": FieldSpec(type="Int64"),
     "confidence": FieldSpec(type="Float64"),
+    "still_present_at_head": FieldSpec(type="UInt8"),
 }
 
 
@@ -151,6 +153,10 @@ async def scan_repo_findings(
             cols["detected_at"].append(detected_at)
             cols["context"].append(context)
             cols["confidence"].append(confidence)
+            cols["commit_sha"].append(sha)
+            cols["commit_author"].append("")
+            cols["first_seen"].append("")
+            cols["still_present_at_head"].append(1)
     return cols
 
 

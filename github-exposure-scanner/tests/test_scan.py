@@ -42,6 +42,18 @@ async def test_list_error_recorded_not_raised():
         assert data["list_error"][0] is not None and data["list_error"][0] != ""
 
 
+async def test_head_path_fills_attribution_fields():
+    client = GitHubClient(fixture_dir=FIXTURES)
+    async with data_context():
+        repos, _ = await list_repos_impl(["acme/widgets"], 25, client, "2026-07-17", scope=None)
+        findings = await scan_repos_impl(repos, max_file_kb=512, client=client, scope=None)
+        data = await findings.data(orient=ORIENT_DICT)
+        idx = data["secret_type"].index("AWS Key")
+        assert data["still_present_at_head"][idx] == 1   # HEAD findings are live by definition
+        assert data["commit_sha"][idx] != ""             # head sha recorded
+        assert data["first_seen"][idx] == ""             # unknown on the HEAD path
+
+
 async def test_scan_reuses_listing_tree_without_refetch():
     # The tree fetched during listing is reused by the scan — no second get_tree.
     client = GitHubClient(fixture_dir=FIXTURES)
