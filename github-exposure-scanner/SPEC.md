@@ -5,6 +5,14 @@ exposure** by scanning its public repositories for leaked secrets. Reads only
 public data, redacts every secret, and frames the output as a company cyber
 profile that later steps (DNS, TLS, breach data, …) extend.
 
+By default the scanner mirror-clones each repo and walks its **full git
+history**, so a secret that was committed and later "removed" is still caught.
+Every finding carries `commit_sha`, `commit_author`, `first_seen` (the
+introducing commit's date), and `still_present_at_head`; the report groups
+findings into live-at-HEAD vs historical-only. `--head-only` keeps the original
+API-based current-HEAD scan for a fast pass. History details, including the
+blob-dedup walk and safety caps, are in the sections below.
+
 ## Pipeline (aaiclick DAG — dynamic fan-out)
 
 The `@job` entry task resolves the repo list at runtime, then **fans out one
@@ -133,3 +141,9 @@ never displays raw secret values — only masked fingerprints and locations — 
 its output is safe to commit and share. Use it to assess exposure you are
 authorized to review (your own org, or a vendor as part of due diligence), and
 follow responsible-disclosure practice for anything it surfaces.
+
+History scanning surfaces secrets that were committed and later removed but
+remain in public git history — treat every historical finding as compromised
+and rotate it, regardless of whether it is still present at HEAD. The scanner
+detects, redacts, attributes, and reports only; it **never validates a secret
+against any live service**.
