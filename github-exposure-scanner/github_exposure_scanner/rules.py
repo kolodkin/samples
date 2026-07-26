@@ -104,7 +104,9 @@ def classify_context(secret_type: str, path: str, tree_paths: list[str]) -> tupl
         if key_dir == script_dir or key_dir.startswith(script_dir + "/") or script_dir == "":
             return ("likely-test: cert-gen script nearby", 0.05)
 
-    lowered = path.lower()
+    # Leading "/" so segment markers like "/docs/" also match a repo-root-relative
+    # path (e.g. "docs/foo.md"), not just a nested "src/docs/foo.md".
+    lowered = "/" + path.lower()
     if any(tok in lowered for tok in _TEST_PATH_TOKENS):
         return ("likely-test: path marker", 0.1)
 

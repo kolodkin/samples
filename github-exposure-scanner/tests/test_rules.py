@@ -78,3 +78,13 @@ def test_context_production_key_stays_full():
     ctx, conf = classify_context("Private Key", "deploy/prod/id_rsa", ["deploy/prod/id_rsa"])
     assert conf == 1.0
     assert ctx == "production"
+
+
+def test_context_repo_root_docs_marker_matches():
+    # A repo-root-relative docs/ path (no leading slash) is still a doc location.
+    # Path is chosen to contain no other marker word — only the docs/ segment.
+    ctx, conf = classify_context(
+        "Private Key", "docs/architecture/prod-keys.md", ["docs/architecture/prod-keys.md"]
+    )
+    assert conf == 0.1
+    assert "path marker" in ctx
