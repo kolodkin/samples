@@ -73,7 +73,7 @@ export const CONFIG = {
   // and the speed multiplier, not from headcount.
   stages: {
     meadow:  { speedMult: 0.8, waves: [
-      { goblin: 3 },
+      { goblin: 5 },
     ] },
     forest:  { speedMult: 0.9, waves: [
       { goblin: 3, skeleton: 1 },

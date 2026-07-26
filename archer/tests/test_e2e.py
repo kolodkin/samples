@@ -906,11 +906,11 @@ def test_digit_keys_select_ammo(server_url, page):
 def test_wave_one_spawns_meadow_mix(server_url, page):
     page.goto(server_url + "/?autostart=1&seed=42")  # waves ON, default stage
     _wait_ready(page)
-    # Meadow's single wave = 3 goblins, staggered by spawnInterval.
-    page.wait_for_function("() => window.__ARCHER.state.enemyCount === 3", timeout=15000)
+    # Meadow's single wave = 5 goblins, staggered by spawnInterval.
+    page.wait_for_function("() => window.__ARCHER.state.enemyCount === 5", timeout=15000)
     assert page.evaluate("() => window.__ARCHER.state.wave") == 1
     types = page.evaluate("() => window.__ARCHER.state.enemies.map(e => e.type)")
-    assert types == ["goblin"] * 3
+    assert types == ["goblin"] * 5
 
 
 def test_skip_to_wave(server_url, page):
