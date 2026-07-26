@@ -46,6 +46,11 @@ async def exposure_pipeline(
     max_repos: int = 25,
     max_file_kb: int = 512,
     publish_airtable: bool = False,
+    head_only: bool = False,
+    max_repo_mb: int = 100,
+    max_commits: int = 0,
+    max_blobs: int = 0,
+    clone_timeout: int = 300,
 ):
     """Entry task: discover repos, then fan out one scan task per repo.
 
@@ -61,7 +66,9 @@ async def exposure_pipeline(
     client = make_client()
     try:
         repos, trees = await list_repos_impl(
-            targets, max_repos, client, datetime.now(UTC).strftime("%Y-%m-%d"), scope="job"
+            targets, max_repos, client, datetime.now(UTC).strftime("%Y-%m-%d"),
+            scope="job", max_repo_mb=None if head_only else max_repo_mb,
+            allow_clone_fallback=not head_only,
         )
     finally:
         await client.aclose()
@@ -77,6 +84,10 @@ async def exposure_pipeline(
             max_file_kb=max_file_kb,
             out=findings,
             tree=trees.get(f'{rows["org"][i]}/{rows["repo"][i]}'),  # reuse the tree from listing
+            head_only=head_only,
+            max_commits=max_commits,
+            max_blobs=max_blobs,
+            clone_timeout=clone_timeout,
         )
         for i in range(len(rows["repo"]))
         if not rows["list_error"][i]

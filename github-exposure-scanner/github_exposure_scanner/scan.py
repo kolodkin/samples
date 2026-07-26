@@ -10,15 +10,19 @@ File content is scanned in Python and discarded — never stored.
 the offline unit tests.
 """
 
+import asyncio
+import os
+import shutil
 from datetime import UTC, datetime
 
 from aaiclick import ORIENT_DICT, FieldSpec, create_object_from_value
 from aaiclick.data.object import Object
 from aaiclick.orchestration import task
 
+from .git_history import repo_dir_for, scan_history
 from .github_api import GitHubClient, is_scannable, make_client
 from .models import parse_target
-from .rules import classify_context, scan_text
+from .rules import finding_confidence, scan_text
 
 REPO_FIELDS = [
     "org", "repo", "repo_url", "default_branch", "head_sha", "stars",
@@ -27,6 +31,7 @@ REPO_FIELDS = [
 FINDING_FIELDS = [
     "org", "repo", "path", "line", "rule_id", "secret_type", "severity",
     "masked_value", "permalink", "repo_stars", "detected_at", "context", "confidence",
+    "commit_sha", "commit_author", "first_seen", "still_present_at_head",
 ]
 
 _REPO_TYPES = {
@@ -39,6 +44,7 @@ _FINDING_TYPES = {
     "line": FieldSpec(type="UInt32"),
     "repo_stars": FieldSpec(type="Int64"),
     "confidence": FieldSpec(type="Float64"),
+    "still_present_at_head": FieldSpec(type="UInt8"),
 }
 
 
@@ -64,19 +70,49 @@ def _append_repo_row(
 
 
 async def list_repos_impl(
-    targets: list[str], max_repos: int, client: GitHubClient, now: str, scope: str | None = "job"
+    targets: list[str], max_repos: int, client: GitHubClient, now: str,
+    scope: str | None = "job", max_repo_mb: int | None = None,
+    allow_clone_fallback: bool = False,
 ) -> tuple[Object, dict[str, list[dict]]]:
     """Resolve targets → (repos Object, trees).
 
     ``trees`` maps ``"org/repo"`` to the git-tree entries fetched here, so the
     per-repo scan can reuse them instead of calling ``get_tree`` a second time.
+    A repo whose GitHub ``size`` (KB) exceeds ``max_repo_mb`` is recorded with a
+    skip ``list_error`` and not listed for scanning — enforced before any clone.
+
+    ``allow_clone_fallback`` (history mode) degrades an explicit ``org/repo``
+    target to a clone-first row (``list_error=None``, empty ``head_sha``) when
+    the REST API is unavailable, so the per-repo task can still clone HEAD and
+    scan. Bare-``org`` targets always need the API to enumerate, so their
+    failure stays a hard ``list_error``.
     """
     cols = _empty_columns(REPO_FIELDS)
     trees: dict[str, list[dict]] = {}
 
+    def _clone_first_row(org: str, repo: str, repo_meta: dict | None = None) -> None:
+        """Emit a scannable row with no API metadata — the scan clones HEAD."""
+        meta = repo_meta or {}
+        _append_repo_row(
+            cols, org=org, repo=repo, branch=meta.get("default_branch", ""), sha="",
+            stars=meta.get("stargazers_count", 0), pushed_at=meta.get("pushed_at", ""),
+            language=meta.get("language"), size_kb=meta.get("size", 0),
+            files_to_scan=0, list_error=None,
+        )
+
     async def _add_repo(org: str, repo_meta: dict) -> None:
         repo = repo_meta["name"]
         branch = repo_meta.get("default_branch", "main")
+        size_kb = repo_meta.get("size", 0)
+        if max_repo_mb is not None and size_kb > max_repo_mb * 1024:
+            _append_repo_row(
+                cols, org=org, repo=repo, branch=branch,
+                stars=repo_meta.get("stargazers_count", 0),
+                pushed_at=repo_meta.get("pushed_at", ""),
+                language=repo_meta.get("language"), size_kb=size_kb,
+                list_error=f"skipped: {size_kb}KB exceeds {max_repo_mb}MB cap",
+            )
+            return
         try:
             sha = await client.get_head_sha(org, repo, branch)
             tree = await client.get_tree(org, repo, sha)
@@ -84,6 +120,9 @@ async def list_repos_impl(
             trees[f"{org}/{repo}"] = tree
             error = None
         except Exception as exc:  # noqa: BLE001 — per-repo isolation
+            if allow_clone_fallback:  # API metadata gone — clone-first, keep stars/size
+                _clone_first_row(org, repo, repo_meta)
+                return
             sha, files_to_scan, error = "", 0, f"{type(exc).__name__}: {exc}"
         _append_repo_row(
             cols, org=org, repo=repo, branch=branch, sha=sha,
@@ -100,8 +139,13 @@ async def list_repos_impl(
             else:
                 metas = await client.list_org_repos(target.org, max_repos)
         except Exception as exc:  # noqa: BLE001 — record listing failure as a row
-            _append_repo_row(cols, org=target.org, repo=target.repo or "*",
-                             list_error=f"{type(exc).__name__}: {exc}")
+            # An explicit repo we can't reach via API can still be cloned by SHA-less
+            # HEAD in history mode; a bare org can't be enumerated without the API.
+            if target.repo and allow_clone_fallback:
+                _clone_first_row(target.org, target.repo)
+            else:
+                _append_repo_row(cols, org=target.org, repo=target.repo or "*",
+                                 list_error=f"{type(exc).__name__}: {exc}")
             continue
         for meta in metas:
             await _add_repo(target.org, meta)
@@ -137,7 +181,7 @@ async def scan_repo_findings(
         except Exception:  # noqa: BLE001 — skip unreadable files
             continue
         for f in scan_text(path, text):
-            context, confidence = classify_context(f.secret_type, f.path, tree_paths)
+            context, confidence = finding_confidence(f, tree_paths)
             cols["org"].append(org)
             cols["repo"].append(repo)
             cols["path"].append(f.path)
@@ -151,6 +195,10 @@ async def scan_repo_findings(
             cols["detected_at"].append(detected_at)
             cols["context"].append(context)
             cols["confidence"].append(confidence)
+            cols["commit_sha"].append(sha)
+            cols["commit_author"].append("")
+            cols["first_seen"].append("")
+            cols["still_present_at_head"].append(1)
     return cols
 
 
@@ -191,22 +239,33 @@ async def new_findings_object(scope: str | None = "job") -> Object:
 @task
 async def scan_one_repo(
     org: str, repo: str, head_sha: str, stars: int, max_file_kb: int, out: Object,
-    tree: list[dict] | None = None,
+    tree: list[dict] | None = None, head_only: bool = False,
+    max_commits: int = 0, max_blobs: int = 0, clone_timeout: int = 300,
 ) -> None:
-    """Scan one repo and append its redacted findings into the shared ``out`` Object.
+    """Scan one repo and append its redacted findings into shared ``out``.
 
-    This is the per-repo unit the job fans out to — one task instance per
-    discovered repository. ``tree`` carries the entries already fetched during
-    listing so the scan doesn't re-fetch the git tree (kwargs are persisted, so
-    this trades a redundant API call for a larger task row — fine at this scale).
+    History scan by default (mirror clone + object walk); ``head_only`` uses the
+    API-based current-HEAD scan. One task instance per discovered repository.
     """
-    client = make_client()
-    try:
-        cols = await scan_repo_findings(
-            client, org, repo, head_sha, stars, max_file_kb, datetime.now(UTC).strftime("%Y-%m-%d"), tree=tree
-        )
-    finally:
-        await client.aclose()
+    detected_at = datetime.now(UTC).strftime("%Y-%m-%d")
+    if head_only:
+        client = make_client()
+        try:
+            cols = await scan_repo_findings(
+                client, org, repo, head_sha, stars, max_file_kb, detected_at, tree=tree
+            )
+        finally:
+            await client.aclose()
+    else:
+        repo_dir, is_temp = repo_dir_for(org, repo, os.environ.get("GITHUB_TOKEN"), clone_timeout)
+        try:
+            cols = await asyncio.to_thread(
+                scan_history, repo_dir, org, repo, stars, max_file_kb, detected_at,
+                max_commits, max_blobs,
+            )
+        finally:
+            if is_temp:
+                shutil.rmtree(repo_dir, ignore_errors=True)
     if cols["org"]:  # only touch the table when this repo actually had findings
         part = await create_object_from_value(cols, fields=_FINDING_TYPES)
         await out.insert(part)

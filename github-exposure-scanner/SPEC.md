@@ -5,6 +5,14 @@ exposure** by scanning its public repositories for leaked secrets. Reads only
 public data, redacts every secret, and frames the output as a company cyber
 profile that later steps (DNS, TLS, breach data, …) extend.
 
+By default the scanner mirror-clones each repo and walks its **full git
+history**, so a secret that was committed and later "removed" is still caught.
+Every finding carries `commit_sha`, `commit_author`, `first_seen` (the
+introducing commit's date), and `still_present_at_head`; the report groups
+findings into live-at-HEAD vs historical-only. `--head-only` keeps the original
+API-based current-HEAD scan for a fast pass. History details, including the
+blob-dedup walk and safety caps, are in the sections below.
+
 ## Pipeline (aaiclick DAG — dynamic fan-out)
 
 The `@job` entry task resolves the repo list at runtime, then **fans out one
@@ -64,15 +72,24 @@ are live credentials and always stay at confidence 1.0.
 
 | Signal | Example | confidence |
 |---|---|---|
+| Tier 3 — private-key header with no real body | `-----BEGIN RSA PRIVATE KEY-----` followed by `abc` / no `END` | 0.05 |
 | Tier 2 — cert-gen script in the key's dir or an ancestor | `make-cert.sh` beside `certs/localhost.privkey.pem` | 0.05 |
-| Tier 1 — test/example/dev path marker | `test/`, `fixtures/`, `localhost`, `/docs/`, … | 0.10 |
+| Tier 1 — test/example/dev path marker | `test/`, `fixtures/`, `localhost`, `docs/`, … | 0.10 |
 | none — treated as production | `deploy/prod/id_rsa` | 1.00 |
 
+Tier 3 inspects the lines after a private-key header (`finding_confidence` /
+`_pem_body_confidence`): a real PEM has a substantial base64 body ending in a
+matching `-----END … PRIVATE KEY-----`; a header with a stub body or no `END`
+is a reference, not a leak, so it is capped at 0.05 regardless of path. Path
+markers are matched against a leading-slash-normalised path, so a repo-root
+`docs/…` counts the same as a nested `src/docs/…`.
+
 The summary reports a `likely_test` count of findings downgraded below full
-confidence. Documented follow-ups (not yet implemented): Tier 3 — parse the
-paired certificate and check CN/SAN for `localhost`/example domains or
-self-signed issuers; Tier 4 — fingerprint against a blocklist of well-known
-published sample keys.
+confidence. Remaining follow-ups (not yet implemented): a richer Tier 3 that
+parses the paired certificate and checks CN/SAN for `localhost`/example domains
+or self-signed issuers; a value-based placeholder scorer (embedded
+example/test words, sequential/repeated runs) for the token classes; Tier 4 —
+fingerprint against a blocklist of well-known published sample keys.
 
 ## Scoring
 
@@ -133,3 +150,9 @@ never displays raw secret values — only masked fingerprints and locations — 
 its output is safe to commit and share. Use it to assess exposure you are
 authorized to review (your own org, or a vendor as part of due diligence), and
 follow responsible-disclosure practice for anything it surfaces.
+
+History scanning surfaces secrets that were committed and later removed but
+remain in public git history — treat every historical finding as compromised
+and rotate it, regardless of whether it is still present at HEAD. The scanner
+detects, redacts, attributes, and reports only; it **never validates a secret
+against any live service**.

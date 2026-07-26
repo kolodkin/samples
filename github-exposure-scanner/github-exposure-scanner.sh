@@ -1,15 +1,24 @@
 #!/bin/bash
-# GitHub Exposure Scanner: enumerate an org's public repos, scan current-HEAD
-# files for leaked secrets, score exposure, and print a redacted report.
+# GitHub Exposure Scanner: enumerate an org's public repos, mirror-clone each,
+# scan their full git history for leaked secrets, score exposure, and print a
+# redacted report. Each finding is attributed to the commit that introduced it
+# and flagged live-at-HEAD or historical-only.
 #
 # Usage: ./github-exposure-scanner.sh [--targets "org,org/repo,..."] \
-#          [--max-repos N] [--max-file-kb N] [--airtable]
+#          [--max-repos N] [--max-file-kb N] [--head-only] [--max-repo-mb N] \
+#          [--max-commits N] [--max-blobs N] [--clone-timeout N] [--airtable]
 #
 # Options:
 #   --targets LIST     Comma-separated orgs and/or org/repo targets
 #                      (default: octocat/Hello-World)
 #   --max-repos N      Max repos per bare org, top by stars (default: 25)
 #   --max-file-kb N    Skip files larger than this (default: 512)
+#   --head-only        Scan only current HEAD (fast path); default scans full
+#                      git history via a local mirror clone
+#   --max-repo-mb N    Skip repos whose GitHub size exceeds N MB (default: 100)
+#   --max-commits N    Cap history walk to N oldest commits (0 = all)
+#   --max-blobs N      Cap history scan to N unique blobs (0 = all)
+#   --clone-timeout N  Per-repo clone timeout in seconds (default: 300)
 #   --airtable         Publish findings + summary to Airtable (default: off;
 #                      requires AIRTABLE_API_KEY + AIRTABLE_BASE_ID)
 #
@@ -61,6 +70,26 @@ while [ $# -gt 0 ]; do
             PARAMS_PARTS+=("\"max_file_kb\": $2")
             shift 2
             ;;
+        --head-only)
+            PARAMS_PARTS+=('"head_only": true')
+            shift
+            ;;
+        --max-repo-mb)
+            PARAMS_PARTS+=("\"max_repo_mb\": $2")
+            shift 2
+            ;;
+        --max-commits)
+            PARAMS_PARTS+=("\"max_commits\": $2")
+            shift 2
+            ;;
+        --max-blobs)
+            PARAMS_PARTS+=("\"max_blobs\": $2")
+            shift 2
+            ;;
+        --clone-timeout)
+            PARAMS_PARTS+=("\"clone_timeout\": $2")
+            shift 2
+            ;;
         --airtable)
             echo "Airtable publishing enabled..."
             PARAMS_PARTS+=('"publish_airtable": true')
@@ -68,7 +97,8 @@ while [ $# -gt 0 ]; do
             ;;
         *)
             echo "Unknown flag: $1" >&2
-            echo "Usage: $0 [--targets LIST] [--max-repos N] [--max-file-kb N] [--airtable]" >&2
+            echo "Usage: $0 [--targets LIST] [--max-repos N] [--max-file-kb N] [--head-only]" \
+                 "[--max-repo-mb N] [--max-commits N] [--max-blobs N] [--clone-timeout N] [--airtable]" >&2
             exit 1
             ;;
     esac
@@ -101,7 +131,7 @@ echo
 
 # Step 3: Start worker
 echo "Starting worker..."
-$PYTHON -m aaiclick worker start > "$WORKER_LOG" 2>&1 &
+$PYTHON -m aaiclick execution-worker start > "$WORKER_LOG" 2>&1 &
 WORKER_PID=$!
 echo "Worker started (PID: $WORKER_PID)"
 echo

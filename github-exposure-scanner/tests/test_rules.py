@@ -1,10 +1,22 @@
 from github_exposure_scanner.rules import (
     Finding,
     classify_context,
+    finding_confidence,
     mask,
     scan_text,
     SEVERITY_WEIGHT,
 )
+
+REAL_PEM = (
+    "-----BEGIN RSA PRIVATE KEY-----\n"
+    + "\n".join(["MIIEow" + "A" * 58] * 25)
+    + "\n-----END RSA PRIVATE KEY-----\n"
+)
+STUB_PEM = "-----BEGIN RSA PRIVATE KEY-----\nabc\n"
+
+
+def _pk_finding(path, text):
+    return next(f for f in scan_text(path, text) if f.secret_type == "Private Key")
 
 
 def test_mask_hides_middle():
@@ -78,3 +90,37 @@ def test_context_production_key_stays_full():
     ctx, conf = classify_context("Private Key", "deploy/prod/id_rsa", ["deploy/prod/id_rsa"])
     assert conf == 1.0
     assert ctx == "production"
+
+
+def test_pem_stub_body_downgraded_even_in_prod_path():
+    # A header with no real key body is a reference, not a leak — demote it
+    # regardless of a production-looking path.
+    f = _pk_finding("deploy/prod/id_rsa", STUB_PEM)
+    ctx, conf = finding_confidence(f, ["deploy/prod/id_rsa"])
+    assert conf <= 0.05
+    assert "no key body" in ctx
+
+
+def test_pem_real_body_stays_full_in_prod_path():
+    f = _pk_finding("deploy/prod/id_rsa", REAL_PEM)
+    ctx, conf = finding_confidence(f, ["deploy/prod/id_rsa"])
+    assert conf == 1.0
+    assert ctx == "production"
+
+
+def test_finding_confidence_takes_min_of_path_and_body():
+    # Real-bodied key in a test path is still demoted by the path heuristic.
+    f = _pk_finding("tests/fixtures/id_rsa", REAL_PEM)
+    ctx, conf = finding_confidence(f, ["tests/fixtures/id_rsa"])
+    assert conf == 0.1
+    assert "path marker" in ctx
+
+
+def test_context_repo_root_docs_marker_matches():
+    # A repo-root-relative docs/ path (no leading slash) is still a doc location.
+    # Path is chosen to contain no other marker word — only the docs/ segment.
+    ctx, conf = classify_context(
+        "Private Key", "docs/architecture/prod-keys.md", ["docs/architecture/prod-keys.md"]
+    )
+    assert conf == 0.1
+    assert "path marker" in ctx
