@@ -161,11 +161,13 @@ store.
 
 Five stages, easiest first: meadow (goblins only, low cover) → forest
 (dense cover, skeleton archers debut) → desert (long sightlines, first
-ogre) → iceberg (sparse cover, ogre pairs) → volcano (ember dusk,
-obsidian crags — the finale, running exactly the pre-redesign desert
-wave table at the top speed multiplier). A stage's wave count is the
-length of its `waves` array in `CONFIG.stages` (3 → 4 → 4 → 5 → 5); the
-HUD counter and the stage-clear check both read it. HP refills between
+ogre) → iceberg (sparse cover, ogre debut in pairs) → volcano (ember
+dusk, obsidian crags — the finale at the top speed multiplier). A
+stage's wave count is the length of its `waves` array in
+`CONFIG.stages` (1 → 2 → 2 → 3 → 3); the HUD counter and the
+stage-clear check both read it. Rounds are short by design: the late
+arc has more waves, but each is smaller than the forest/desert waves —
+difficulty comes from the mix and the speed multiplier. HP refills between
 stages; special ammo carries over, and stages with a `grant` entry
 top the quiver up to a floor at stage start (`max(current, grant)`,
 before the retry snapshot, so retries keep it) — freezing arrives with
