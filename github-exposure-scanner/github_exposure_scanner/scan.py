@@ -22,7 +22,7 @@ from aaiclick.orchestration import task
 from .git_history import repo_dir_for, scan_history
 from .github_api import GitHubClient, is_scannable, make_client
 from .models import parse_target
-from .rules import classify_context, scan_text
+from .rules import finding_confidence, scan_text
 
 REPO_FIELDS = [
     "org", "repo", "repo_url", "default_branch", "head_sha", "stars",
@@ -181,7 +181,7 @@ async def scan_repo_findings(
         except Exception:  # noqa: BLE001 — skip unreadable files
             continue
         for f in scan_text(path, text):
-            context, confidence = classify_context(f.secret_type, f.path, tree_paths)
+            context, confidence = finding_confidence(f, tree_paths)
             cols["org"].append(org)
             cols["repo"].append(repo)
             cols["path"].append(f.path)

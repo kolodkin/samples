@@ -72,15 +72,24 @@ are live credentials and always stay at confidence 1.0.
 
 | Signal | Example | confidence |
 |---|---|---|
+| Tier 3 — private-key header with no real body | `-----BEGIN RSA PRIVATE KEY-----` followed by `abc` / no `END` | 0.05 |
 | Tier 2 — cert-gen script in the key's dir or an ancestor | `make-cert.sh` beside `certs/localhost.privkey.pem` | 0.05 |
-| Tier 1 — test/example/dev path marker | `test/`, `fixtures/`, `localhost`, `/docs/`, … | 0.10 |
+| Tier 1 — test/example/dev path marker | `test/`, `fixtures/`, `localhost`, `docs/`, … | 0.10 |
 | none — treated as production | `deploy/prod/id_rsa` | 1.00 |
 
+Tier 3 inspects the lines after a private-key header (`finding_confidence` /
+`_pem_body_confidence`): a real PEM has a substantial base64 body ending in a
+matching `-----END … PRIVATE KEY-----`; a header with a stub body or no `END`
+is a reference, not a leak, so it is capped at 0.05 regardless of path. Path
+markers are matched against a leading-slash-normalised path, so a repo-root
+`docs/…` counts the same as a nested `src/docs/…`.
+
 The summary reports a `likely_test` count of findings downgraded below full
-confidence. Documented follow-ups (not yet implemented): Tier 3 — parse the
-paired certificate and check CN/SAN for `localhost`/example domains or
-self-signed issuers; Tier 4 — fingerprint against a blocklist of well-known
-published sample keys.
+confidence. Remaining follow-ups (not yet implemented): a richer Tier 3 that
+parses the paired certificate and checks CN/SAN for `localhost`/example domains
+or self-signed issuers; a value-based placeholder scorer (embedded
+example/test words, sequential/repeated runs) for the token classes; Tier 4 —
+fingerprint against a blocklist of well-known published sample keys.
 
 ## Scoring
 

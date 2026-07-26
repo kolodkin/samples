@@ -15,7 +15,7 @@ import tempfile
 from dataclasses import dataclass
 
 from .github_api import is_scannable
-from .rules import classify_context, scan_text
+from .rules import finding_confidence, scan_text
 
 GIT_FIXTURE_ENV = "GHX_GIT_FIXTURE_DIR"
 
@@ -164,7 +164,7 @@ def scan_history(
         text = raw.decode("utf-8", "replace")
         still = 1 if blob_sha in head else 0
         for f in scan_text(bi.path, text):
-            context, confidence = classify_context(f.secret_type, f.path, all_paths)
+            context, confidence = finding_confidence(f, all_paths)
             cols["org"].append(org)
             cols["repo"].append(repo)
             cols["path"].append(f.path)

@@ -61,6 +61,12 @@ class Finding:
     secret_type: str
     severity: str
     masked_value: str
+    # Tier 3 (private keys): a per-finding confidence cap derived from the PEM
+    # body. 1.0 = real/plausible body or not applicable; lower = header with no
+    # real key body (a reference, not a leak). Combined with path context by
+    # ``finding_confidence``.
+    body_confidence: float = 1.0
+    body_context: str = ""
 
 
 # --- Context heuristics: distinguish a throwaway/demo secret from a real leak ---
@@ -120,13 +126,41 @@ def mask(value: str) -> str:
     return f"{value[:4]}••••{value[-4:]}"
 
 
+# --- Tier 3: private-key body inspection ---
+# A private-key rule matches only the "-----BEGIN ... PRIVATE KEY-----" header,
+# so it fires the same for a real key and a doc/test reference. Inspect the
+# lines after the header: a real PEM has a substantial base64 body ending in a
+# matching END marker; a stub ("abc", "...", or no END) is not a usable key.
+_PEM_END_RE = re.compile(r"-----END .*PRIVATE KEY-----")
+_MIN_PEM_BODY = 128   # base64 chars; smallest real keys clear this, stubs don't
+_PEM_LOOKAHEAD = 64   # lines to scan for the END marker
+
+
+def _pem_body_confidence(lines: list[str], header_idx: int) -> tuple[float, str]:
+    """(confidence, context) for a private-key header at ``lines[header_idx]``."""
+    body_chars = 0
+    found_end = False
+    for j in range(header_idx + 1, min(len(lines), header_idx + 1 + _PEM_LOOKAHEAD)):
+        if _PEM_END_RE.search(lines[j]):
+            found_end = True
+            break
+        body_chars += len(lines[j].strip())
+    if found_end and body_chars >= _MIN_PEM_BODY:
+        return (1.0, "")
+    return (0.05, "likely-test: no key body")
+
+
 def scan_text(path: str, text: str) -> list[Finding]:
     """Scan file text line-by-line against every rule; return redacted findings."""
     findings: list[Finding] = []
-    for lineno, line in enumerate(text.splitlines(), start=1):
+    lines = text.splitlines()
+    for lineno, line in enumerate(lines, start=1):
         for rule in RULES:
             for m in rule.pattern.finditer(line):
                 value = m.group(rule.value_group)
+                body_conf, body_ctx = 1.0, ""
+                if rule.id == "private-key":
+                    body_conf, body_ctx = _pem_body_confidence(lines, lineno - 1)
                 findings.append(
                     Finding(
                         path=path,
@@ -135,6 +169,20 @@ def scan_text(path: str, text: str) -> list[Finding]:
                         secret_type=rule.secret_type,
                         severity=rule.severity,
                         masked_value=mask(value),
+                        body_confidence=body_conf,
+                        body_context=body_ctx,
                     )
                 )
     return findings
+
+
+def finding_confidence(finding: Finding, tree_paths: list[str]) -> tuple[str, float]:
+    """Resolve a finding's ``(context, confidence_real)``.
+
+    Combines the path/cert-gen heuristics (``classify_context``) with the
+    private-key body signal, taking the more conservative (lower) confidence.
+    """
+    context, conf = classify_context(finding.secret_type, finding.path, tree_paths)
+    if finding.body_confidence < conf:
+        return (finding.body_context or context, finding.body_confidence)
+    return (context, conf)
