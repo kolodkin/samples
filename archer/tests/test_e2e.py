@@ -906,19 +906,19 @@ def test_digit_keys_select_ammo(server_url, page):
 def test_wave_one_spawns_meadow_mix(server_url, page):
     page.goto(server_url + "/?autostart=1&seed=42")  # waves ON, default stage
     _wait_ready(page)
-    # Meadow wave 1 = 2 goblins, staggered by spawnInterval.
-    page.wait_for_function("() => window.__ARCHER.state.enemyCount === 2", timeout=15000)
+    # Meadow's single wave = 5 goblins, staggered by spawnInterval.
+    page.wait_for_function("() => window.__ARCHER.state.enemyCount === 5", timeout=15000)
     assert page.evaluate("() => window.__ARCHER.state.wave") == 1
     types = page.evaluate("() => window.__ARCHER.state.enemies.map(e => e.type)")
-    assert types == ["goblin"] * 2
+    assert types == ["goblin"] * 5
 
 
 def test_skip_to_wave(server_url, page):
-    page.goto(server_url + "/?autostart=1&seed=42")
+    page.goto(server_url + "/?autostart=1&seed=42&stage=iceberg")
     _wait_ready(page)
     page.evaluate("() => window.__ARCHER.skipToWave(3)")
-    # Meadow wave 3 (its last) = 4 goblins.
-    page.wait_for_function("() => window.__ARCHER.state.enemyCount === 4", timeout=15000)
+    # Iceberg wave 3 (its last) = 3 goblins + 1 skeleton + 1 ogre.
+    page.wait_for_function("() => window.__ARCHER.state.enemyCount === 5", timeout=15000)
     assert page.evaluate("() => window.__ARCHER.state.wave") == 3
 
 
@@ -954,7 +954,7 @@ def _clear_final_wave(page, wave):
     page.evaluate("() => window.__ARCHER.setDropChance(0)")
     page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
     page.evaluate(f"() => window.__ARCHER.skipToWave({wave})")
-    # Generous timeout: 16-enemy final waves spawn over ~13 game seconds,
+    # Generous timeout: final-wave spawns stagger over several game seconds,
     # stretched further by the dt clamp (see the skeleton-volley test).
     page.wait_for_function(
         """() => {
@@ -965,10 +965,10 @@ def _clear_final_wave(page, wave):
     )
 
 
-def test_meadow_clears_after_three_waves_then_forest(server_url, page):
+def test_meadow_clears_after_one_wave_then_forest(server_url, page):
     page.goto(server_url + "/?autostart=1&seed=42")  # default stage: meadow
     _wait_ready(page)
-    _clear_final_wave(page, 3)  # meadow has only 3 waves
+    _clear_final_wave(page, 1)  # meadow is a single-wave round
     assert page.evaluate("() => window.__ARCHER.state.screen") == "stageClear"
     _shot(page, "stage-clear-screen")
     page.evaluate("() => window.__ARCHER.nextStage()")
@@ -978,17 +978,17 @@ def test_meadow_clears_after_three_waves_then_forest(server_url, page):
     assert state["hp"] == 100  # HP refills between stages
 
 
-def test_forest_clears_after_four_waves(server_url, page):
+def test_forest_clears_after_two_waves(server_url, page):
     page.goto(server_url + "/?autostart=1&seed=42&stage=forest")
     _wait_ready(page)
-    _clear_final_wave(page, 4)  # forest has 4 waves in the 5-stage arc
+    _clear_final_wave(page, 2)  # forest has 2 waves in the 5-stage arc
     assert page.evaluate("() => window.__ARCHER.state.screen") == "stageClear"
 
 
 def test_volcano_final_wave_wins_the_game(server_url, page):
     page.goto(server_url + "/?autostart=1&seed=42&stage=volcano")
     _wait_ready(page)
-    _clear_final_wave(page, 5)  # volcano is the last stage: clearing it wins
+    _clear_final_wave(page, 3)  # volcano is the last stage: clearing it wins
     assert page.evaluate("() => window.__ARCHER.state.screen") == "victory"
     # The victory banner quotes the game's real stage count, not a literal.
     total = page.evaluate("() => window.__ARCHER.state.totalStages")
@@ -1264,9 +1264,9 @@ def test_hud_reflects_score_ammo_and_selection(server_url, page):
     # the pick, and the HUD shows it.
     expect(page.get_by_test_id("slot-freezing")).to_have_class(re.compile(r"\bactive\b"))
     _shot(page, "hud-auto-freezing-pick")
-    # Wave counter shows the current stage's own wave count (forest: 4).
+    # Wave counter shows the current stage's own wave count (forest: 2).
     expect(page.get_by_test_id("wave")).to_contain_text("forest")
-    expect(page.get_by_test_id("wave")).to_contain_text("/4")
+    expect(page.get_by_test_id("wave")).to_contain_text("/2")
 
 
 def test_radar_tracks_enemies(server_url, page):
