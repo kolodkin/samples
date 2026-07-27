@@ -162,8 +162,8 @@ def test_trajectory_hint_ends_at_ground_impact(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
     # Default aim: horizontal from the perch (0, 3.2, 34) at 60% power
-    # (speed 50), origin nudged 0.7 forward. Analytic ballistic impact:
-    # 3.2 - 7.5 t^2 = 0.05 -> t = 0.648 s -> z = 33.3 - 50 t = 0.9.
+    # (speed 65), origin nudged 0.7 forward. Analytic ballistic impact:
+    # 3.2 - 7.5 t^2 = 0.05 -> t = 0.648 s -> z = 33.3 - 65 t = -8.8.
     dots = page.evaluate("() => window.__ARCHER.state.trajectory")
     # The preview stops at the ground instead of filling its dot budget…
     assert 0 < len(dots) < 24
@@ -172,7 +172,7 @@ def test_trajectory_hint_ends_at_ground_impact(server_url, page):
     assert len(ground) == 1
     assert dots[-1]["y"] <= 0.06
     # The landing dot sits near the analytic impact point.
-    assert abs(dots[-1]["z"] - 0.9) < 2
+    assert abs(dots[-1]["z"] - -8.8) < 2
     assert abs(dots[-1]["x"]) < 0.1
     _shot(page, "trajectory-hint")
 

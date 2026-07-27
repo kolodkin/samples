@@ -109,7 +109,7 @@ store.
   `game.onShotResolved` once, when the last fragment is spent — a hit if
   any fragment damaged someone (`ArrowSystem.resolve()` in
   `web/arrows.js`).
-- Arrow collision is segment-vs-sphere per frame (no tunneling at 70 m/s).
+- Arrow collision is segment-vs-sphere per frame (no tunneling at 95 m/s).
 - Obstacles (trees, cacti, rocks, ice pillars) block arrows in flight —
   the player's and skeleton projectiles alike. Each obstacle is a
   collision cylinder (`{radius, height}` from its maker in
