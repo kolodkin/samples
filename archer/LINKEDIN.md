@@ -7,7 +7,7 @@ Draft post announcing the archer game. Replace `[link]` with the live game URL b
 
 After playing with point clouds in three.js, I had to try the fun side of 3D — so I built a simple first-person archery game. 🏹
 
-You hold the line against waves of goblins, ogres and skeleton archers across five low-poly arenas: meadow, forest, desert, iceberg and a volcano finale. Arrows obey gravity, and kills drop special pickups — exploding, lightning, freezing, and a burning arrow that splits mid-dive into a volley of fire arrows. 🔥
+You hold the line against waves of goblins, ogres and skeleton archers across five low-poly arenas. Arrows obey gravity, and kills drop special pickups — exploding, lightning, freezing, and a burning arrow that splits mid-dive into a volley of fire arrows. 🔥
 
 It's a 2-minute game. Give it a go and let me know what you think:
 👉 [link]
