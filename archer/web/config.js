@@ -5,7 +5,7 @@ export const CONFIG = {
   player: { hp: 100, pos: { x: 0, y: 3.2, z: 34 } },
   bow: {
     minSpeed: 20,
-    maxSpeed: 70,
+    maxSpeed: 95,
     power: { min: 0.2, max: 1, step: 0.1, initial: 0.6 }, // +/- adjusted shot power
     // Shot animation timing (s): string snap on release, empty-bow reload,
     // then the new arrow rides the string back out to the power draw.
