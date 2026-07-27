@@ -5,7 +5,7 @@ Draft post announcing the archer game.
 
 ---
 
-After playing with point clouds in three.js, I had to try the fun side of 3D — so I built a simple first-person archery game. 🏹
+After playing with point clouds in three.js, I had to try the fun side of 3D — so I built a simple first-person shooter (archer) game. 🏹
 
 You hold the line against waves of goblins, ogres and skeleton archers across five low-poly arenas. Arrows obey gravity, and kills drop special pickups — exploding, lightning, freezing, and a burning arrow that splits mid-dive into a volley of fire arrows. 🔥 The animation is naive, yet everything flows surprisingly well.
 
