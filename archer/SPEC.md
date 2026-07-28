@@ -123,6 +123,20 @@ store.
 
 - **Goblin** — weaving melee rush.
 - **Ogre** — slow tank.
+- Monsters are articulated figures (`web/models.js`): legs and arms are
+  pivot groups at the hip/shoulder joints, and
+  `EnemySystem.animateRig()` swings them each frame. The walk cycle's
+  phase advances with the distance actually covered that frame (never
+  wall-clock), so limb swing always matches ground speed — no
+  foot-sliding, and an enemy that stops (or an inert e2e dummy) eases
+  back to a neutral stance instead of pacing in place. Footfalls drive a
+  small bob; a frozen enemy holds its pose mid-stride. Skeleton archers
+  carry their bow in the left hand and blend both arms into a raised aim
+  pose while peeking, squaring up to face the player (walking faces the
+  movement direction, which reads wrong with a drawn bow). Collision is
+  untouched by any of this: hit spheres stay config-derived
+  (bodyRadius/height/headRadius), with the visual head centered at
+  y=height.
 - **Skeleton archer** — advances into range, hides behind the nearest
   obstacle on the player line, peeks to shoot, hides again (cover/peek
   point selection: `pickCover()`/`coverPoint()` in `web/enemies.js`).

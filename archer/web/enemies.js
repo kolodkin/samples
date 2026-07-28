@@ -2,70 +2,9 @@ import * as THREE from 'three';
 import { CONFIG } from './config.js';
 import { segClosest, obstacleHit, pushOutOfObstacles, firstBlockingObstacle } from './geom.js';
 import { setShadows } from './relief.js';
-
-function lambert(color) { return new THREE.MeshLambertMaterial({ color }); }
+import { buildEnemyModel } from './models.js';
 
 const perpXZ = (v) => new THREE.Vector3(-v.z, 0, v.x);
-
-// Builders return a Group whose base sits at y=0; collision spheres are
-// derived from config (bodyRadius/height/headRadius), not from the meshes.
-// Deliberately smooth flat tints (no relief-mottle treatment): monsters must
-// pop against the textured terrain and props, not blend into them.
-function buildGoblin(c) {
-  const g = new THREE.Group();
-  const body = new THREE.Mesh(
-    new THREE.CylinderGeometry(c.bodyRadius * 0.7, c.bodyRadius, c.height * 0.75, 8),
-    lambert(c.color),
-  );
-  body.position.y = c.height * 0.375;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(c.headRadius, 8, 6), lambert(0x5ea34c));
-  head.position.y = c.height;
-  g.add(body, head);
-  for (const s of [-1, 1]) {
-    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.25, 4), lambert(0x5ea34c));
-    ear.position.set(s * c.headRadius, c.height + 0.1, 0);
-    ear.rotation.z = -s * 1.2;
-    g.add(ear);
-  }
-  return g;
-}
-
-function buildOgre(c) {
-  const g = new THREE.Group();
-  const body = new THREE.Mesh(
-    new THREE.CylinderGeometry(c.bodyRadius * 0.8, c.bodyRadius, c.height * 0.8, 8),
-    lambert(c.color),
-  );
-  body.position.y = c.height * 0.4;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(c.headRadius, 8, 6), lambert(0x8a765f));
-  head.position.y = c.height;
-  g.add(body, head);
-  for (const s of [-1, 1]) {
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.3, c.height * 0.6, 0.3), lambert(c.color));
-    arm.position.set(s * (c.bodyRadius + 0.18), c.height * 0.5, 0);
-    g.add(arm);
-  }
-  return g;
-}
-
-function buildSkeleton(c) {
-  const g = new THREE.Group();
-  const body = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.22, 0.3, c.height * 0.8, 6), lambert(c.color),
-  );
-  body.position.y = c.height * 0.4;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(c.headRadius, 8, 6), lambert(0xe8e4d8));
-  head.position.y = c.height;
-  const bow = new THREE.Mesh(
-    new THREE.TorusGeometry(0.3, 0.03, 5, 16, Math.PI), lambert(0x6b4a2f),
-  );
-  bow.position.set(0.35, c.height * 0.65, 0.1);
-  bow.rotation.y = Math.PI / 2;
-  g.add(body, head, bow);
-  return g;
-}
-
-const BUILDERS = { goblin: buildGoblin, ogre: buildOgre, skeleton: buildSkeleton };
 
 const PROJ_GRAVITY = 4; // m/s² drop on skeleton projectiles (shoot() compensates)
 const PROJ_RADIUS = 0.09; // skeleton projectile: mesh size and collision pad
@@ -87,7 +26,7 @@ export class EnemySystem {
 
   spawn(type, x, z, inert = false) {
     const c = CONFIG.enemies[type];
-    const mesh = BUILDERS[type](c);
+    const mesh = buildEnemyModel(type, c);
     mesh.position.set(x, 0, z);
     setShadows(mesh);
     this.game.scene.add(mesh);
@@ -97,7 +36,9 @@ export class EnemySystem {
       coverTimer: 0, cover: null, hasShot: false, detourSide: 0,
       peekSide: this.game.rng.random() < 0.5 ? -1 : 1,
       bobT: this.game.rng.range(0, Math.PI * 2),
+      walkAmp: 0, aimBlend: 0, moved: 0,
     };
+    e.walkPhase = e.bobT; // desync strides without an extra rng draw
     this.list.push(e);
     return e;
   }
@@ -186,7 +127,9 @@ export class EnemySystem {
     if (dist < 0.05) return;
     dir.normalize();
     const step = this.steerAround(e, dir, dist);
-    pos.addScaledVector(step, Math.min(dist, speed * dt));
+    const len = Math.min(dist, speed * dt);
+    pos.addScaledVector(step, len);
+    e.moved += len; // feeds the walk cycle (animateRig)
     e.mesh.rotation.y = Math.atan2(step.x, step.z);
   }
 
@@ -194,10 +137,11 @@ export class EnemySystem {
     const playerPos = this.game.camera.position;
     for (const e of [...this.list]) {
       e.bobT += dt * 6;
+      e.moved = 0;
       if (e.frozen > 0) {
         e.frozen -= dt;
         if (e.frozen <= 0) this.setTint(e, 0x000000);
-        continue; // frozen solid: no movement, no attacks
+        continue; // frozen solid: no movement, no attacks — pose holds mid-stride
       }
       if (e.burn > 0) {
         e.burn -= dt;
@@ -214,9 +158,43 @@ export class EnemySystem {
         // body circle (not the fatter bodyRadius() arrow hit-sphere).
         pushOutOfObstacles(e.mesh.position, e.c.bodyRadius, this.game.obstacles);
       }
-      e.mesh.position.y = Math.abs(Math.sin(e.bobT)) * 0.07; // visual bob only
+      this.animateRig(e, dt, playerPos);
     }
     this.updateProjectiles(dt, playerPos);
+  }
+
+  // Walk cycle on the jointed figure (models.js): the phase advances with
+  // the distance actually covered this frame, so limb swing matches ground
+  // speed and feet never slide; the amplitude eases in and out so starts
+  // and stops don't snap. The footfall bob replaces the old flat-blob
+  // hover. Archers blend their arms into the raised aim pose while
+  // peeking and square up toward the player — moveToward faces the strafe
+  // direction, which reads wrong with a drawn bow.
+  animateRig(e, dt, playerPos) {
+    const rig = e.mesh.userData.rig;
+    const ease = Math.min(1, dt * 8);
+    e.walkAmp += ((e.moved > 1e-4 ? 1 : 0) - e.walkAmp) * ease;
+    e.walkPhase += (e.moved / rig.stride) * Math.PI * 2;
+    const s = Math.sin(e.walkPhase) * rig.swing * e.walkAmp;
+    rig.legL.rotation.x = s;
+    rig.legR.rotation.x = -s;
+    let armL = -s * rig.armFactor;
+    let armR = s * rig.armFactor;
+    if (rig.aimPose !== undefined) {
+      e.aimBlend += ((e.state === 'peek' ? 1 : 0) - e.aimBlend) * Math.min(1, dt * 6);
+      armL += (rig.aimPose - armL) * e.aimBlend;
+      armR += (rig.aimPose * 0.85 - armR) * e.aimBlend; // draw hand trails a touch
+      if (e.aimBlend > 0.02) {
+        const pos = e.mesh.position;
+        const yaw = Math.atan2(playerPos.x - pos.x, playerPos.z - pos.z);
+        let d = yaw - e.mesh.rotation.y;
+        d -= Math.round(d / (2 * Math.PI)) * 2 * Math.PI; // shortest arc
+        e.mesh.rotation.y += d * e.aimBlend * ease;
+      }
+    }
+    rig.armL.rotation.x = armL;
+    rig.armR.rotation.x = armR;
+    e.mesh.position.y = Math.abs(Math.sin(e.walkPhase)) * rig.bob * e.walkAmp;
   }
 
   spreadBurn(e, dt) {

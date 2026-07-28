@@ -492,6 +492,61 @@ def test_skeleton_shoots_the_player(server_url, page):
     page.wait_for_function("() => window.__ARCHER.state.hp < 100", timeout=45000)
 
 
+# Articulated character rigs (web/models.js): every enemy is a jointed
+# figure whose legs and arms swing while it walks. The cycle is driven by
+# the distance actually covered each frame (no foot-sliding), so a standing
+# enemy holds a neutral pose. state.enemies exposes the left-limb pivot
+# angles as legSwing/armSwing.
+
+
+def test_walking_goblin_swings_legs_and_arms(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
+    page.evaluate("() => window.__ARCHER.setObstacles([])")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, -10)")
+    # A full stride passes through both extremes: the left leg swings
+    # forward (arms counter-swinging), then back past neutral.
+    page.wait_for_function(
+        "() => { const e = window.__ARCHER.state.enemies[0];"
+        "  return e && e.legSwing > 0.2 && e.armSwing < -0.1; }",
+        timeout=20000,
+    )
+    _shot(page, "goblin-walking")
+    page.wait_for_function(
+        "() => { const e = window.__ARCHER.state.enemies[0];"
+        "  return e && e.legSwing < -0.2; }",
+        timeout=20000,
+    )
+
+
+def test_inert_dummy_holds_a_neutral_pose(server_url, page):
+    # The walk cycle is distance-driven: a dummy that never moves keeps its
+    # limbs at rest instead of pacing in place.
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 26, true)")
+    page.wait_for_timeout(800)
+    enemy = page.evaluate("() => window.__ARCHER.state.enemies[0]")
+    assert abs(enemy["legSwing"]) < 1e-3
+    assert abs(enemy["armSwing"]) < 1e-3
+
+
+def test_skeleton_raises_bow_to_aim_while_peeking(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('skeleton', 0, 12)")
+    # During the peek window the bow arm blends from hanging (~0) into the
+    # raised aim pose (rig.aimPose, about -1.3 rad).
+    page.wait_for_function(
+        "() => { const e = window.__ARCHER.state.enemies[0];"
+        "  return e && e.state === 'peek' && e.armSwing < -0.9; }",
+        timeout=45000,
+    )
+    _shot(page, "skeleton-aiming")
+
+
 def test_exploding_arrow_splashes_the_group(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)

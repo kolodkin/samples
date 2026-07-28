@@ -380,6 +380,9 @@ window.__ARCHER = {
         type: e.type, x: e.mesh.position.x, z: e.mesh.position.z,
         hp: e.hp, state: e.state, frozen: e.frozen > 0, burning: e.burn > 0,
         hasCover: !!e.cover,
+        // Left-limb pivot angles of the walk/aim rig (see models.js).
+        legSwing: e.mesh.userData.rig.legL.rotation.x,
+        armSwing: e.mesh.userData.rig.armL.rotation.x,
       })),
       radar: radarBlips(game),
       wave: game.waves.waveIndex,
