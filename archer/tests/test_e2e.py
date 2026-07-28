@@ -299,6 +299,44 @@ def test_headshot_double_damage_and_bonus(server_url, page):
     assert page.evaluate("() => window.__ARCHER.state.score") == 150
 
 
+def test_headshot_lands_at_the_visible_head(server_url, page):
+    # Regression for the glTF model swap: aiming at the head the player
+    # SEES must strike the config head sphere. The spheres are fixed at
+    # c.height, so this holds only while each model is scaled to its
+    # skinned standing height — the unskinned bind-pose box that models.js
+    # once measured rendered the goblin ~2× and the ogre ~2.6× oversized,
+    # parking the visible head metres above the hitbox: every aimed
+    # headshot whiffed.
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
+    page.evaluate("() => window.__ARCHER.setObstacles([])")
+    page.evaluate("() => window.__ARCHER.setDropChance(0)")
+    # (type, hp, config headRadius). Aim one head-radius below the model's
+    # visible top: the middle of the face on all three figures.
+    for etype, hp, head_r in (("goblin", 40, 0.28),
+                              ("skeleton", 60, 0.26),
+                              ("ogre", 220, 0.45)):
+        page.evaluate(f"() => window.__ARCHER.spawnEnemy('{etype}', 0, 26, true)")
+        page.wait_for_timeout(400)  # idle pose settles
+        top = page.evaluate("() => window.__ARCHER.enemyVisualTop(0)")
+        page.evaluate(f"() => window.__ARCHER.fireAt(0, {top - head_r}, 26)")
+        page.wait_for_function("() => window.__ARCHER.state.arrowCount === 0", timeout=5000)
+        state = page.evaluate("() => window.__ARCHER.state")
+        # A normal arrow to the head deals 34*2=68: it one-shots the goblin
+        # (40) and skeleton (60) — a body hit (34) would not — and leaves
+        # the ogre at exactly 220-68.
+        if etype == "ogre":
+            assert state["enemies"][0]["hp"] == 220 - 68, (
+                f"ogre visible-head shot at y={top - head_r:.2f} "
+                f"dealt {220 - state['enemies'][0]['hp']} damage, expected 68")
+        else:
+            assert state["enemyCount"] == 0, (
+                f"{etype} (hp {hp}) survived a visible-head shot at "
+                f"y={top - head_r:.2f} (model top {top:.2f})")
+        page.evaluate("() => window.__ARCHER.killAll()")
+
+
 def test_goblin_advances_hits_once_and_despawns(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)

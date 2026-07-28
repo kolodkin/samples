@@ -421,6 +421,25 @@ window.__ARCHER = {
   killAll: () => {
     for (const e of [...game.enemies.list]) game.enemies.damage(e, 1e9);
   },
+  // e2e helper: highest world-space vertex of enemy i's rendered model in
+  // its current pose — the top of the head the player actually sees.
+  // Skinning applied on the CPU: bones carry most of these rigs' transforms,
+  // so unskinned bounds land nowhere near the visible figure.
+  enemyVisualTop(i) {
+    const mesh = game.enemies.list[i].mesh;
+    mesh.updateMatrixWorld(true);
+    const v = new THREE.Vector3();
+    let top = -Infinity;
+    mesh.traverse((o) => {
+      if (!o.isMesh) return;
+      const pos = o.geometry.attributes.position;
+      for (let j = 0; j < pos.count; j++) {
+        o.getVertexPosition(j, v).applyMatrix4(o.matrixWorld);
+        if (v.y > top) top = v.y;
+      }
+    });
+    return top;
+  },
   skipToWave: (n) => { game.waves.skipToWave(n); },
   start: (i = 0) => startGame(i),
   nextStage: () => nextStage(),
