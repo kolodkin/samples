@@ -1,0 +1,20 @@
+Enemy character models — all CC0 (Creative Commons Zero)
+https://creativecommons.org/publicdomain/zero/1.0/
+
+goblin.glb   — "Tribal" (Big body type), Ultimate Monsters pack by Quaternius
+ogre.glb     — "Orc" (Big body type),    Ultimate Monsters pack by Quaternius
+               https://quaternius.com/packs/ultimatemonsters.html
+
+skeleton.glb              — "Skeleton_Minion", KayKit Character Pack: Skeletons 1.1 (FREE)
+skeleton_anim_*.glb       — KayKit Rig_Medium animation library (same pack)
+crossbow.glb              — crossbow accessory (same pack)
+               by Kay Lousberg, https://kaylousberg.itch.io/kaykit-skeletons
+
+CC0: free for personal and commercial use, no attribution required.
+Credits given anyway because these packs are excellent.
+
+Files are repacked from the original downloads with gltf-transform:
+converted to binary .glb and trimmed to the clips the game plays
+(goblin Run/Idle, ogre Walk/Idle, skeleton Walking_A/Idle_B/Throw); the
+animation libraries are clip donors, so their rig meshes are stripped.
+Re-download the packs above for the full untrimmed assets.

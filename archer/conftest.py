@@ -26,7 +26,9 @@ def _free_port() -> int:
 @pytest.fixture(scope="session", autouse=True)
 def vendored():
     """Ensure web/vendor/ is populated (runs vendor.sh once if missing)."""
-    sentinel = os.path.join(VENDOR, "three.module.js")
+    # Sentinel is the newest vendored file, so stale caches (populated before
+    # the glTF loader modules were added) still trigger a vendor.sh run.
+    sentinel = os.path.join(VENDOR, "utils", "BufferGeometryUtils.js")
     if not os.path.exists(sentinel):
         subprocess.run(["bash", os.path.join(HERE, "vendor.sh")], check=True)
     assert os.path.exists(sentinel), "vendor.sh did not populate web/vendor/"
