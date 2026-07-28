@@ -225,7 +225,7 @@ export class EnemySystem {
     const target = new THREE.Vector3(playerPos.x, 0, playerPos.z);
     if (e.type === 'goblin') {
       const dir = new THREE.Vector3(playerPos.x - pos.x, 0, playerPos.z - pos.z).normalize();
-      target.addScaledVector(perpXZ(dir), Math.sin(e.bobT * 0.9) * 0.5 * flatDist);
+      target.addScaledVector(perpXZ(dir), Math.sin(e.bobT * 0.9) * 0.3 * flatDist);
     }
     this.moveToward(e, target, dt, this.speedOf(e));
   }
