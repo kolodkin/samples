@@ -353,7 +353,7 @@ def test_goblin_walks_around_obstacle_not_through(server_url, page):
     _wait_ready(page)
     page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
     # One fat trunk dead on the line from the spawn to the player (0, 3.2, 34).
-    # The goblin's zigzag weave (~±0.8 m) cannot sidestep a 1.5 m radius, so
+    # The goblin's zigzag weave (~±0.5 m) cannot sidestep a 1.5 m radius, so
     # any interior frame means it walked through. Track the deepest
     # penetration every frame: our rAF callback registers after the game
     # loop, so it samples post-tick positions.
