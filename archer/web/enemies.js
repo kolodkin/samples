@@ -38,7 +38,8 @@ export class EnemySystem {
       bobT: this.game.rng.range(0, Math.PI * 2),
       walkAmp: 0, aimBlend: 0, moved: 0,
     };
-    e.walkPhase = e.bobT; // desync strides without an extra rng draw
+    // Desync animation cycles across a wave without an extra rng draw.
+    mesh.userData.anim.mixer.update(e.bobT);
     this.list.push(e);
     return e;
   }
@@ -163,27 +164,24 @@ export class EnemySystem {
     this.updateProjectiles(dt, playerPos);
   }
 
-  // Walk cycle on the jointed figure (models.js): the phase advances with
-  // the distance actually covered this frame, so limb swing matches ground
-  // speed and feet never slide; the amplitude eases in and out so starts
-  // and stops don't snap. The footfall bob replaces the old flat-blob
-  // hover. Archers blend their arms into the raised aim pose while
-  // peeking and square up toward the player — moveToward faces the strafe
-  // direction, which reads wrong with a drawn bow.
+  // Drive the character's AnimationMixer (models.js): walking and idle
+  // crossfade on an eased weight, and the walk clip's timeScale is set
+  // from the distance actually covered this frame, so footfalls track
+  // ground speed and feet never slide. Frozen enemies skip this entirely
+  // (update() continues before it), holding their pose mid-stride.
+  // Archers square up toward the player while peeking — moveToward faces
+  // the strafe direction, which reads wrong with a drawn crossbow.
   animateRig(e, dt, playerPos) {
-    const rig = e.mesh.userData.rig;
+    const anim = e.mesh.userData.anim;
     const ease = Math.min(1, dt * 8);
     e.walkAmp += ((e.moved > 1e-4 ? 1 : 0) - e.walkAmp) * ease;
-    e.walkPhase += (e.moved / rig.stride) * Math.PI * 2;
-    const s = Math.sin(e.walkPhase) * rig.swing * e.walkAmp;
-    rig.legL.rotation.x = s;
-    rig.legR.rotation.x = -s;
-    let armL = -s * rig.armFactor;
-    let armR = s * rig.armFactor;
-    if (rig.aimPose !== undefined) {
+    anim.walk.setEffectiveWeight(e.walkAmp);
+    anim.idle.setEffectiveWeight(1 - e.walkAmp);
+    if (dt > 0 && e.moved > 0) {
+      anim.walk.setEffectiveTimeScale((e.moved / dt) / anim.walkRef);
+    }
+    if (e.type === 'skeleton') {
       e.aimBlend += ((e.state === 'peek' ? 1 : 0) - e.aimBlend) * Math.min(1, dt * 6);
-      armL += (rig.aimPose - armL) * e.aimBlend;
-      armR += (rig.aimPose * 0.85 - armR) * e.aimBlend; // draw hand trails a touch
       if (e.aimBlend > 0.02) {
         const pos = e.mesh.position;
         const yaw = Math.atan2(playerPos.x - pos.x, playerPos.z - pos.z);
@@ -192,9 +190,7 @@ export class EnemySystem {
         e.mesh.rotation.y += d * e.aimBlend * ease;
       }
     }
-    rig.armL.rotation.x = armL;
-    rig.armR.rotation.x = armR;
-    e.mesh.position.y = Math.abs(Math.sin(e.walkPhase)) * rig.bob * e.walkAmp;
+    anim.mixer.update(dt);
   }
 
   spreadBurn(e, dt) {
@@ -252,7 +248,14 @@ export class EnemySystem {
     if (e.state === 'cover') {
       if (e.cover) this.moveToward(e, this.coverPoint(e.cover, playerPos), dt, speed);
       e.coverTimer -= dt;
-      if (e.coverTimer <= 0) { e.state = 'peek'; e.coverTimer = e.c.peekTime; e.hasShot = false; }
+      if (e.coverTimer <= 0) {
+        e.state = 'peek';
+        e.coverTimer = e.c.peekTime;
+        e.hasShot = false;
+        // Wind up the Throw clip now so the release lands mid-peek, when
+        // shoot() actually looses the bolt (at peekTime * 0.5).
+        e.mesh.userData.anim.playAttack?.();
+      }
     } else if (e.state === 'peek') {
       if (e.cover) this.moveToward(e, this.peekPoint(e.cover, e.peekSide, playerPos), dt, speed);
       if (!e.hasShot && e.coverTimer <= e.c.peekTime * 0.5) {

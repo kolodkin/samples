@@ -1,0 +1,14 @@
+Enemy character models — all CC0 (Creative Commons Zero)
+https://creativecommons.org/publicdomain/zero/1.0/
+
+goblin.gltf  — "Tribal" (Big body type), Ultimate Monsters pack by Quaternius
+ogre.gltf    — "Orc" (Big body type),    Ultimate Monsters pack by Quaternius
+               https://quaternius.com/packs/ultimatemonsters.html
+
+skeleton.glb              — "Skeleton_Minion", KayKit Character Pack: Skeletons 1.1 (FREE)
+skeleton_anim_*.glb       — KayKit Rig_Medium animation library (same pack)
+Skeleton_Crossbow.gltf/…  — crossbow + shared texture atlas (same pack)
+               by Kay Lousberg, https://kaylousberg.itch.io/kaykit-skeletons
+
+CC0: free for personal and commercial use, no attribution required.
+Credits given anyway because these packs are excellent.
