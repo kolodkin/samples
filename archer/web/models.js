@@ -19,12 +19,12 @@ const load = (url) => new Promise((resolve, reject) => loader.load(url, resolve,
 
 const [goblinGltf, ogreGltf, skeletonGltf, moveGltf, generalGltf, crossbowGltf] =
   await Promise.all([
-    load('./assets/goblin.gltf'),
-    load('./assets/ogre.gltf'),
+    load('./assets/goblin.glb'),
+    load('./assets/ogre.glb'),
     load('./assets/skeleton.glb'),
     load('./assets/skeleton_anim_movement.glb'),
     load('./assets/skeleton_anim_general.glb'),
-    load('./assets/Skeleton_Crossbow.gltf'),
+    load('./assets/crossbow.glb'),
   ]);
 
 // The crossbow rides the skeleton's hand socket in the template, so every
