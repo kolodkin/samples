@@ -123,6 +123,31 @@ store.
 
 - **Goblin** — weaving melee rush.
 - **Ogre** — slow tank.
+- Monsters are animated CC0 glTF characters (`web/models.js`, sources
+  and licenses in `web/assets/CREDITS.txt`): the goblin (Tribal) and
+  ogre (Orc) are Quaternius "Ultimate Monsters" characters with
+  their animations baked in; the skeleton archer is KayKit's
+  Skeleton_Minion, animated by the shared KayKit Rig_Medium clip
+  library, with the pack's crossbow socketed into its hand bone so hand
+  animation carries the weapon. Everything loads once at module init
+  (top-level await, before the first frame and before
+  `__ARCHER.ready`), so `buildEnemyModel()` stays synchronous for
+  spawns and e2e hooks; spawns clone via SkeletonUtils and clone
+  materials per instance, so freeze/burn emissive tints never leak
+  between enemies.
+- `EnemySystem.animateRig()` drives each enemy's AnimationMixer: walk
+  and idle clips crossfade on an eased weight, and the walk clip's
+  timeScale follows the distance actually covered that frame (never
+  wall-clock), so footfalls always match ground speed — no
+  foot-sliding, and an enemy that stops (or an inert e2e dummy) idles
+  instead of pacing in place. A frozen enemy skips the mixer update and
+  holds its pose mid-stride. Skeleton archers wind up their Throw clip
+  on entering a peek (the release lands mid-peek, when `shoot()`
+  looses the bolt) and square up to face the player while peeking
+  (walking faces the movement direction, which reads wrong with a
+  crossbow). Collision is untouched by any of this: hit spheres stay
+  config-derived (bodyRadius/height/headRadius), and each model is
+  scaled so its visual head sits at the config head sphere.
 - **Skeleton archer** — advances into range, hides behind the nearest
   obstacle on the player line, peeks to shoot, hides again (cover/peek
   point selection: `pickCover()`/`coverPoint()` in `web/enemies.js`).
@@ -190,8 +215,10 @@ Props and the player's gear share the same low-poly texturing recipe via
 mottling + flat shading): tree bark and boughs, cactus ribs, sandstone
 rocks, ice crags, the bow's grained wood and leather grip, and arrow
 shafts (a `grainY` stretch elongates the noise for lengthwise wood
-grain). Monsters are deliberately NOT textured — smooth flat tints keep
-them visually distinct from the terrain and props they move through.
+grain). Monsters don't use this recipe — they are textured glTF
+characters (gradient-atlas low-poly, see Enemies), which keeps them
+visually distinct from the hash-noise terrain and props they move
+through.
 The same no-rng rule applies — obstacle makers derive their texture seeds
 from values already drawn (e.g. trunk height), never from fresh draws, so
 the pinned layouts don't shift. Arrow fletching is three flat swept vanes

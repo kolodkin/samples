@@ -487,9 +487,69 @@ def test_skeleton_shoots_the_player(server_url, page):
     page.evaluate("() => window.__ARCHER.spawnEnemy('skeleton', 0, 12)")
     # Peek/shoot cycle is ~3.4 s game time; several volleys land within ~20 s.
     # Wall-clock headroom on top: SwiftShader renders ~15 fps with the shadow
-    # pass, and the dt clamp (0.05 s) makes game time run slower than wall
-    # time below 20 fps.
-    page.wait_for_function("() => window.__ARCHER.state.hp < 100", timeout=45000)
+    # pass (slower still with the skinned characters), and the dt clamp
+    # (0.05 s) makes game time run slower than wall time below 20 fps.
+    page.wait_for_function("() => window.__ARCHER.state.hp < 100", timeout=90000)
+
+
+# Animated character models (web/models.js): every enemy is a rigged CC0
+# glTF figure driven by an AnimationMixer. The walk clip's weight and
+# timeScale follow the distance actually covered each frame (no
+# foot-sliding), so a standing enemy idles instead of pacing in place.
+# state.enemies exposes walkWeight (walk/idle blend), animTime (mixer
+# clock), and attacking (the archer's Throw clip).
+
+
+def test_walking_goblin_plays_its_walk_animation(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
+    page.evaluate("() => window.__ARCHER.setObstacles([])")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, -10)")
+    # The walk clip blends in as it advances...
+    page.wait_for_function(
+        "() => { const e = window.__ARCHER.state.enemies[0];"
+        "  return e && e.walkWeight > 0.8; }",
+        timeout=20000,
+    )
+    _shot(page, "goblin-walking")
+    # ...and the mixer clock advances with it (the animation is running).
+    t0 = page.evaluate("() => window.__ARCHER.state.enemies[0].animTime")
+    page.wait_for_function(
+        f"() => {{ const e = window.__ARCHER.state.enemies[0];"
+        f"  return e && e.animTime > {t0} + 0.2; }}",
+        timeout=10000,
+    )
+
+
+def test_inert_dummy_idles_without_walking(server_url, page):
+    # The walk blend is distance-driven: a dummy that never moves stays on
+    # its idle clip instead of walking in place — but it still animates.
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.spawnEnemy('goblin', 0, 26, true)")
+    page.wait_for_timeout(800)
+    enemy = page.evaluate("() => window.__ARCHER.state.enemies[0]")
+    assert enemy["walkWeight"] < 0.05
+    t0 = enemy["animTime"]
+    page.wait_for_function(
+        f"() => window.__ARCHER.state.enemies[0].animTime > {t0} + 0.2", timeout=10000
+    )
+
+
+def test_skeleton_plays_attack_clip_while_peeking(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('skeleton', 0, 12)")
+    # Entering a peek winds up the Throw clip, so the release lands when
+    # shoot() looses the bolt mid-peek.
+    page.wait_for_function(
+        "() => { const e = window.__ARCHER.state.enemies[0];"
+        "  return e && e.state === 'peek' && e.attacking; }",
+        timeout=45000,
+    )
+    _shot(page, "skeleton-aiming")
 
 
 def test_exploding_arrow_splashes_the_group(server_url, page):

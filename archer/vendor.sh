@@ -10,7 +10,7 @@ HTM=3.1.1
 BASE=https://unpkg.com
 DEST=web/vendor
 
-mkdir -p "$DEST"
+mkdir -p "$DEST" "$DEST/loaders" "$DEST/utils"
 
 fetch() { # url dest
   if [ -f "$2" ]; then echo "have   $2"; return; fi
@@ -19,6 +19,11 @@ fetch() { # url dest
 }
 
 fetch "$BASE/three@$THREE/build/three.module.js"        "$DEST/three.module.js"
+# three example modules for the glTF enemy models; the loaders/ + utils/
+# layout mirrors examples/jsm so GLTFLoader's relative import resolves.
+fetch "$BASE/three@$THREE/examples/jsm/loaders/GLTFLoader.js"        "$DEST/loaders/GLTFLoader.js"
+fetch "$BASE/three@$THREE/examples/jsm/utils/SkeletonUtils.js"       "$DEST/utils/SkeletonUtils.js"
+fetch "$BASE/three@$THREE/examples/jsm/utils/BufferGeometryUtils.js" "$DEST/utils/BufferGeometryUtils.js"
 fetch "$BASE/preact@$PREACT/dist/preact.module.js"      "$DEST/preact.module.js"
 fetch "$BASE/preact@$PREACT/hooks/dist/hooks.module.js" "$DEST/preact-hooks.module.js"
 fetch "$BASE/htm@$HTM/dist/htm.module.js"               "$DEST/htm.module.js"
