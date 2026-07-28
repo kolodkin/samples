@@ -58,7 +58,9 @@ const TEMPLATES = {
     height: 1.7, walk: 'Run', idle: 'Idle', walkRef: 4.5,
   }),
   ogre: template(ogreGltf, {
-    height: 3.0, walk: 'Walk', idle: 'Idle', walkRef: 2.2,
+    // Big but not kaiju: the face lands in the lower half of the config
+    // head sphere (2.05..2.95), so aiming at what you see still headshots.
+    height: 2.6, walk: 'Walk', idle: 'Idle', walkRef: 2.2,
   }),
   skeleton: template(skeletonGltf, {
     // Chibi proportions + a hunched idle: scale past the nominal 1.6 m so
