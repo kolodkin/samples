@@ -530,6 +530,31 @@ def test_skeleton_shoots_the_player(server_url, page):
     page.wait_for_function("() => window.__ARCHER.state.hp < 100", timeout=90000)
 
 
+def test_skeleton_bolt_leaves_the_crossbow(server_url, page):
+    # Bolts spawn at the crossbow socketed in the hand bone, not at the head
+    # hit-sphere center. With no obstacles the archer engages standing still
+    # at its spawn point, so its head center is exactly (0, 1.6, 26) — the
+    # hand offset shows up as a nonzero distance from that point. The bolt
+    # is slowed to 6 m/s so the screenshot catches it in flight beside the
+    # archer (at the stock 20 m/s it is meters downrange by the first poll
+    # that sees it; the recorded spawn keeps the assertion exact either way).
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
+    page.evaluate("() => window.__ARCHER.setObstacles([])")
+    page.evaluate("() => window.__ARCHER.setProjectileSpeed(6)")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('skeleton', 0, 26)")
+    bolt = page.wait_for_function(
+        "() => window.__ARCHER.state.projectiles[0] ?? null", timeout=45000
+    ).json_value()
+    _shot(page, "skeleton-shooting")
+    d = (
+        bolt["spawnX"] ** 2 + (bolt["spawnY"] - 1.6) ** 2 + (bolt["spawnZ"] - 26) ** 2
+    ) ** 0.5
+    # Clearly off the head center, but still within arm's reach of the model.
+    assert 0.15 < d < 1.5
+
+
 # Animated character models (web/models.js): every enemy is a rigged CC0
 # glTF figure driven by an AnimationMixer. The walk clip's weight and
 # timeScale follow the distance actually covered each frame (no

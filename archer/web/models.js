@@ -93,9 +93,17 @@ export function buildEnemyModel(type, c) { // eslint-disable-line no-unused-vars
   inst.rotation.y = t.face;
   // Clone materials per spawn: freeze/burn tints (EnemySystem.setTint sets
   // material.emissive) must never leak between enemies sharing a template.
-  inst.traverse((o) => { if (o.isMesh) o.material = o.material.clone(); });
+  // The hand socket (carrying the archer's crossbow) is re-found in the
+  // clone and stashed as `muzzle`, so EnemySystem.shoot can loose bolts
+  // from the weapon as posed by the Throw clip instead of the head sphere.
+  let muzzle = null;
+  inst.traverse((o) => {
+    if (o.isMesh) o.material = o.material.clone();
+    if (/^handslot.?r$/i.test(o.name)) muzzle = o;
+  });
   const wrapper = new THREE.Group();
   wrapper.add(inst);
+  wrapper.userData.muzzle = muzzle;
 
   const mixer = new THREE.AnimationMixer(inst);
   const action = (name) => mixer.clipAction(THREE.AnimationClip.findByName(t.clips, name));
