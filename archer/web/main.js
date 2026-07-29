@@ -386,6 +386,10 @@ window.__ARCHER = {
         animTime: e.mesh.userData.anim.mixer.time,
         attacking: !!e.mesh.userData.anim.attack?.isRunning(),
       })),
+      projectiles: game.enemies.projectiles.map((p) => ({
+        x: p.mesh.position.x, y: p.mesh.position.y, z: p.mesh.position.z,
+        spawnX: p.spawn.x, spawnY: p.spawn.y, spawnZ: p.spawn.z,
+      })),
       radar: radarBlips(game),
       wave: game.waves.waveIndex,
       waveState: game.waves.state,

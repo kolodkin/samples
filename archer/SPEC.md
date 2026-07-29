@@ -156,7 +156,10 @@ store.
   would shuttle between trees permanently hidden and stall the wave); it
   commits to the exposed side. With no workable cover and no line of fire
   from where it stands, it keeps advancing until a shot line opens.
-  Projectiles drop at 4 m/s² with compensated aim, so long shots arc
+  Bolts loose from the crossbow itself (the hand socket's world position,
+  mid-Throw pose — mirroring the player's arrows spawning at the nocked
+  tip), not from the head hit sphere. Projectiles drop at 4 m/s² with
+  compensated aim, so long shots arc
   visibly; like player arrows they use segment-vs-sphere collision, so
   they cannot tunnel through the player even at low frame rates.
 - Walkers collide with obstacles: after each AI step,
@@ -243,7 +246,8 @@ All gameplay randomness flows through one seeded mulberry32 stream
 `window.__ARCHER` (defined in `web/main.js`) exposes `ready`, a `state`
 snapshot (screen, hp, score, wave, enemies, pickups, obstacles, best,
 yaw/pitch/touch/power, selected/mode, nocked/canShoot, arrows with type,
-physics vs visual positions and trail length), and test hooks: `fireAt()`
+physics vs visual positions and trail length, skeleton projectiles with
+current and spawn positions), and test hooks: `fireAt()`
 (gravity-compensated),
 `spawnEnemy()` (optional `inert` flag disables the AI), `skipToWave()`,
 `killAll()`, `giveAmmo()`, `selectAmmo()`, `setDropChance()`, `setHealChance()`,
