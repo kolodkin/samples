@@ -251,7 +251,8 @@ current and spawn positions), and test hooks: `fireAt()`
 (gravity-compensated),
 `spawnEnemy()` (optional `inert` flag disables the AI), `skipToWave()`,
 `killAll()`, `giveAmmo()`, `selectAmmo()`, `setDropChance()`, `setHealChance()`,
-`setFreezeBurstChance()`,
+`setFreezeBurstChance()`, `setProjectileSpeed()` (slow skeleton bolts so a
+screenshot can catch one in flight),
 `setObstacles()` (replace the collision-obstacle list to build exact cover
 layouts; stage meshes stay), `setPlayerHp()`, `start()`,
 `nextStage()`, `retryStage()`, `visiblePixelCount()`. Tests boot with

@@ -420,6 +420,7 @@ window.__ARCHER = {
   giveAmmo: (type, n) => { game.stats.ammo[type] += n; game.syncUI(); },
   selectAmmo,
   setDropChance: (c) => { CONFIG.drops.chance = c; },
+  setProjectileSpeed: (v) => { CONFIG.enemies.skeleton.projectileSpeed = v; },
   setHealChance: (c) => { CONFIG.drops.heal.chance = c; },
   setFreezeBurstChance: (c) => { CONFIG.arrow.types.freezing.burst.chance = c; },
   killAll: () => {
