@@ -375,7 +375,7 @@ export class TrajectoryHint {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.n * 3), 3));
     this.line = new THREE.Line(geo, new THREE.LineDashedMaterial({
-      color: 0xffffff, dashSize: 0.45, gapSize: 0.35, transparent: true, opacity: 0.5,
+      color: 0xffffff, dashSize: 0.25, gapSize: 0.18, transparent: true, opacity: 0.5,
     }));
     this.line.visible = false;
     game.scene.add(this.line);
