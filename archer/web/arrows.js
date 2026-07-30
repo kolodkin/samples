@@ -499,14 +499,19 @@ export class TrajectoryHint {
     // A grazing light shows nothing: hover it above a ground hit so the
     // patch is lit from overhead, and toward the eye on an enemy or
     // obstacle so the strike spot is lit from the shooter's side rather
-    // than from inside the mesh.
+    // than from inside the mesh. The vertical hover leaves the ground
+    // light ~0.5 m off its surface while the eye-side hover sits ~0.35 m
+    // off the struck body, so the enemy/obstacle case needs more candela
+    // to warm its spot as visibly as the ground patch.
     this.glow.position.copy(this.impactPoint);
     if (kind === 'ground') {
       this.glow.position.y += 0.5;
+      this.glow.intensity = 1.2;
     } else {
       const toEye = player.camera.getWorldPosition(new THREE.Vector3())
         .sub(this.impactPoint).normalize();
-      this.glow.position.addScaledVector(toEye, 0.35);
+      this.glow.position.addScaledVector(toEye, 0.6);
+      this.glow.intensity = 8;
     }
   }
 }
