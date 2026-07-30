@@ -379,30 +379,25 @@ export class TrajectoryHint {
     }));
     this.line.visible = false;
     game.scene.add(this.line);
-    // Gentle impact cue at the lane's end: a soft bullseye (dot + thin ring)
-    // where the previewed shot lands, warm-tinted when it would strike an
-    // enemy. Billboarded to the shooter — a flat ground decal is viewed
-    // nearly edge-on from the low perch and vanishes — and drawn
-    // reticle-style (no depth test) so the ground never buries the ring's
-    // lower half. Hidden when the arc runs out its vertex budget in the air.
-    this.markerMat = new THREE.MeshBasicMaterial({
-      color: 0xffffff, transparent: true, opacity: 0.35,
-      side: THREE.DoubleSide, depthWrite: false, depthTest: false,
-    });
-    this.marker = new THREE.Group();
-    const dot = new THREE.Mesh(new THREE.CircleGeometry(0.06, 16), this.markerMat);
-    const ring = new THREE.Mesh(new THREE.RingGeometry(0.16, 0.22, 24), this.markerMat);
-    dot.renderOrder = ring.renderOrder = 2;
-    this.marker.add(dot, ring);
-    this.marker.visible = false;
+    // Gentle impact cue at the lane's end: a small warm point light hovering
+    // just off the surface, so only the hit zone itself warms up — the patch
+    // of ground, the tree bark, or the spot on the enemy the arrow would
+    // strike — with nothing drawn over the scene. Local by construction
+    // (distance-limited, quadratic falloff) and channel-free: the freeze and
+    // burn status tints ride the emissive channel, which a light never
+    // touches. Hidden when the arc runs out its vertex budget in the air.
+    this.glow = new THREE.PointLight(0xffaa66, 1.2, 2.2, 2);
+    this.glow.visible = false;
     this.impactKind = null; // 'ground' | 'obstacle' | 'enemy' | null (in air)
-    game.scene.add(this.marker);
+    this.impactPoint = new THREE.Vector3();
+    this.target = null; // enemy the lane currently ends on (e2e handle)
+    game.scene.add(this.glow);
   }
 
   // e2e handle: where (and on what) the previewed shot lands; null in air.
   impact() {
-    if (!this.marker.visible) return null;
-    const { x, y, z } = this.marker.position;
+    if (!this.impactKind) return null;
+    const { x, y, z } = this.impactPoint;
     return { kind: this.impactKind, x, y, z };
   }
 
@@ -419,7 +414,8 @@ export class TrajectoryHint {
   }
 
   // First enemy sphere (head or body — the same spheres a live arrow tests)
-  // touched by chord [a, b], as the closest chord point; null if clear.
+  // touched by chord [a, b], as { q: closest chord point, e: the enemy };
+  // null if clear.
   enemyHit(a, b) {
     const enemies = this.game.enemies;
     if (!enemies) return null;
@@ -433,15 +429,20 @@ export class TrajectoryHint {
         const q = segClosest(a, b, c);
         if (q.distanceTo(c) >= r + R) continue;
         const d = q.distanceToSquared(a);
-        if (!best || d < best.d) best = { q, d };
+        if (!best || d < best.d) best = { q, d, e };
       }
     }
-    return best && best.q;
+    return best;
   }
 
   update(player, active) {
     this.line.visible = active;
-    if (!active) { this.marker.visible = false; this.impactKind = null; return; }
+    if (!active) {
+      this.glow.visible = false;
+      this.impactKind = null;
+      this.target = null;
+      return;
+    }
     const speed = CONFIG.bow.minSpeed
       + (CONFIG.bow.maxSpeed - CONFIG.bow.minSpeed) * player.power;
     const p = player.aimOrigin();
@@ -463,6 +464,7 @@ export class TrajectoryHint {
     let n = 1;
     let landed = false;
     let kind = null;
+    let target = null;
     while (n < this.n && !landed) {
       prev.copy(p);
       for (let k = 0; k < perVert; k++) {
@@ -479,7 +481,7 @@ export class TrajectoryHint {
       // a foe peeking in front of cover wins and one hiding behind it never
       // registers, matching the live arrow's block-then-hit order.
       const foe = this.enemyHit(prev, p);
-      if (foe) { p.copy(foe); landed = true; kind = 'enemy'; }
+      if (foe) { p.copy(foe.q); landed = true; kind = 'enemy'; target = foe.e; }
       const blend = Math.max(0, 1 - (n * perVert * step) / SPAWN_BLEND);
       attr.setXYZ(n++, p.x + spawnOffset.x * blend,
         Math.max(p.y + spawnOffset.y * blend, 0.05), p.z + spawnOffset.z * blend);
@@ -490,17 +492,21 @@ export class TrajectoryHint {
     // dashes smear as the arc moves with the aim.
     this.line.computeLineDistances();
     this.impactKind = landed ? kind : null;
-    this.marker.visible = landed;
+    this.impactPoint.set(attr.getX(n - 1), attr.getY(n - 1), attr.getZ(n - 1));
+    this.target = kind === 'enemy' ? target : null;
+    this.glow.visible = landed;
     if (!landed) return;
-    const m = this.marker;
-    m.position.set(attr.getX(n - 1), attr.getY(n - 1), attr.getZ(n - 1));
-    m.quaternion.copy(player.camera.quaternion);
-    // Grow gently with range so the cue stays legible downrange — at 40 m
-    // an unscaled ring is a couple of pixels — without shouting up close.
-    const dist = player.camera.getWorldPosition(new THREE.Vector3())
-      .distanceTo(m.position);
-    m.scale.setScalar(1 + dist * 0.02);
-    this.markerMat.color.setHex(kind === 'enemy' ? 0xff9977 : 0xffffff);
-    this.markerMat.opacity = kind === 'enemy' ? 0.5 : 0.35;
+    // A grazing light shows nothing: hover it above a ground hit so the
+    // patch is lit from overhead, and toward the eye on an enemy or
+    // obstacle so the strike spot is lit from the shooter's side rather
+    // than from inside the mesh.
+    this.glow.position.copy(this.impactPoint);
+    if (kind === 'ground') {
+      this.glow.position.y += 0.5;
+    } else {
+      const toEye = player.camera.getWorldPosition(new THREE.Vector3())
+        .sub(this.impactPoint).normalize();
+      this.glow.position.addScaledVector(toEye, 0.35);
+    }
   }
 }

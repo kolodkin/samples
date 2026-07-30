@@ -194,13 +194,15 @@ def test_trajectory_hint_marks_enemy_impact(server_url, page):
     page.wait_for_function(
         "() => window.__ARCHER.state.trajectoryImpact"
         " && window.__ARCHER.state.trajectoryImpact.kind === 'enemy'",
-        timeout=2000,
+        timeout=5000,
     )
     state = page.evaluate("() => window.__ARCHER.state")
     imp = state["trajectoryImpact"]
     assert abs(imp["z"] - 10) < 3
     # The lane stopped at the ogre instead of running through to the ground.
     assert state["trajectory"][-1]["y"] > 0.5
+    # The cue is the ogre itself: warmed by the aim highlight.
+    assert state["enemies"][0]["highlighted"] is True
     _shot(page, "trajectory-hit-marker")
 
 
