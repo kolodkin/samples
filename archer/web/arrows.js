@@ -115,8 +115,8 @@ export class ArrowSystem {
   // mesh appears; physics always runs on `pos` from `origin` on the aim
   // line, so where the arrow *lands* is unaffected. The gap between the two
   // blends away over SPAWN_BLEND seconds — the shot visibly leaves the bow
-  // and converges onto the flight line instead of popping in at the
-  // crosshair as a dot.
+  // and converges onto the flight line instead of popping in at screen
+  // center as a dot.
   fire(origin, dir, power, type, visualOrigin = null) {
     const speed = CONFIG.bow.minSpeed + (CONFIG.bow.maxSpeed - CONFIG.bow.minSpeed) * power;
     this.spawn(origin, dir.clone().multiplyScalar(speed), type, visualOrigin);
@@ -366,26 +366,26 @@ export class ArrowSystem {
   }
 }
 
-// Dotted arc preview shown at partial power; fades out toward max power so
-// full-power shots stay skill-based.
+// Dashed arc lane traced from the bow along the aim line — the game's only
+// sight (there is no crosshair), so it stays visible at every power level.
 export class TrajectoryHint {
   constructor(game) {
     this.game = game;
     this.n = 24;
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.n * 3), 3));
-    this.points = new THREE.Points(geo, new THREE.PointsMaterial({
-      color: 0xffffff, size: 0.12, transparent: true, opacity: 0.5,
+    this.line = new THREE.Line(geo, new THREE.LineDashedMaterial({
+      color: 0xffffff, dashSize: 0.25, gapSize: 0.18, transparent: true, opacity: 0.5,
     }));
-    this.points.visible = false;
-    game.scene.add(this.points);
+    this.line.visible = false;
+    game.scene.add(this.line);
   }
 
-  // e2e handle: world positions of the visible dots.
+  // e2e handle: world positions of the arc's sample points.
   snapshot() {
-    if (!this.points.visible) return [];
-    const attr = this.points.geometry.attributes.position;
-    const n = Math.min(this.n, this.points.geometry.drawRange.count);
+    if (!this.line.visible) return [];
+    const attr = this.line.geometry.attributes.position;
+    const n = Math.min(this.n, this.line.geometry.drawRange.count);
     const out = [];
     for (let i = 0; i < n; i++) {
       out.push({ x: attr.getX(i), y: attr.getY(i), z: attr.getZ(i) });
@@ -394,38 +394,48 @@ export class TrajectoryHint {
   }
 
   update(player, active) {
-    const show = active && player.power < 0.85;
-    this.points.visible = show;
-    if (!show) return;
+    this.line.visible = active;
+    if (!active) return;
     const speed = CONFIG.bow.minSpeed
       + (CONFIG.bow.maxSpeed - CONFIG.bow.minSpeed) * player.power;
     const p = player.aimOrigin();
     const v = player.aimDir().multiplyScalar(speed);
     const prev = new THREE.Vector3();
-    const attr = this.points.geometry.attributes.position;
+    const attr = this.line.geometry.attributes.position;
+    // The lane is anchored at the bow: vertex 0 sits on the nocked arrow's
+    // tip and the same SPAWN_BLEND offset the projectile uses eases the
+    // early vertices onto the aim line, so the sight visibly leaves the
+    // weapon — exactly the path the released arrow will fly. Physics (and
+    // where the lane ends) stays on the aim line.
+    const spawnOffset = player.arrowSpawnPoint().sub(p);
+    attr.setXYZ(0, p.x + spawnOffset.x, p.y + spawnOffset.y, p.z + spawnOffset.z);
     // Integrate at the arrow's own frame step (semi-implicit Euler, ~1/60 s)
-    // and emit a dot every few substeps — one coarse 0.07 s step over-applies
-    // gravity and the arc lands visibly short of the real arrow.
+    // and emit a vertex every few substeps — one coarse 0.07 s step
+    // over-applies gravity and the arc lands visibly short of the real arrow.
     const step = 1 / 60;
-    const perDot = 4;
-    let n = 0;
+    const perVert = 4;
+    let n = 1;
     let landed = false;
-    for (let i = 0; i < this.n && !landed; i++) {
+    while (n < this.n && !landed) {
       prev.copy(p);
-      for (let k = 0; k < perDot; k++) {
+      for (let k = 0; k < perVert; k++) {
         v.y += CONFIG.arrow.gravity * step;
         p.addScaledVector(v, step);
         if (p.y <= 0.05) { landed = true; break; } // same plane arrows die on
       }
-      // The preview dies where the arrow would. One obstacle check per dot
+      // The preview dies where the arrow would. One obstacle check per vertex
       // chord, not per substep: the arc sags ~3 cm across a chord, invisible
-      // under a 0.12-size dot, and it cuts the scans 4×.
+      // at dash width, and it cuts the scans 4×.
       const hit = obstacleHit(prev, p, this.game.obstacles, CONFIG.arrow.radius);
       if (hit) { p.copy(hit); landed = true; }
-      attr.setXYZ(n++, p.x, Math.max(p.y, 0.05), p.z);
+      const blend = Math.max(0, 1 - (n * perVert * step) / SPAWN_BLEND);
+      attr.setXYZ(n++, p.x + spawnOffset.x * blend,
+        Math.max(p.y + spawnOffset.y * blend, 0.05), p.z + spawnOffset.z * blend);
     }
-    this.points.geometry.setDrawRange(0, n);
+    this.line.geometry.setDrawRange(0, n);
     attr.needsUpdate = true;
-    this.points.material.opacity = 0.5 * (1 - Math.max(0, (player.power - 0.6) / 0.25));
+    // Dash phase accumulates along the polyline; recompute per frame or the
+    // dashes smear as the arc moves with the aim.
+    this.line.computeLineDistances();
   }
 }

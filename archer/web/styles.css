@@ -95,11 +95,3 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000;
   .screen p { padding: 0 20px; }
 }
 
-.crosshair { position: absolute; left: 50%; top: 50%; width: 8px; height: 8px;
-  transform: translate(-50%, -50%); }
-.crosshair::before { content: ''; position: absolute; inset: 0;
-  border-radius: 50%; background: rgba(255, 255, 255, 0.9); }
-.power-ring { position: absolute; inset: -14px; border-radius: 50%;
-  background: conic-gradient(#ffd257 calc(var(--power) * 360deg), rgba(255, 255, 255, 0.15) 0);
-  -webkit-mask: radial-gradient(circle, transparent 58%, #000 60%);
-  mask: radial-gradient(circle, transparent 58%, #000 60%); }
