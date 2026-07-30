@@ -174,7 +174,34 @@ def test_trajectory_hint_ends_at_ground_impact(server_url, page):
     # The landing dot sits near the analytic impact point.
     assert abs(dots[-1]["z"] - -8.8) < 2
     assert abs(dots[-1]["x"]) < 0.1
+    # The gentle impact marker sits on the lane's landing dot.
+    imp = page.evaluate("() => window.__ARCHER.state.trajectoryImpact")
+    assert imp["kind"] == "ground"
+    assert imp["y"] <= 0.06
+    assert abs(imp["z"] - dots[-1]["z"]) < 0.01
     _shot(page, "trajectory-hint")
+
+
+def test_trajectory_hint_marks_enemy_impact(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    # Bare battlefield: the default arc lands on the ground.
+    assert page.evaluate("() => window.__ARCHER.state.trajectoryImpact")["kind"] == "ground"
+    # Park an inert ogre across the arc (the default aim crosses z=10 at
+    # y≈2.2, inside the ogre's 2.5-tall hit spheres): the lane now dies on
+    # the ogre and the marker turns into the enemy cue.
+    page.evaluate("() => window.__ARCHER.spawnEnemy('ogre', 0, 10, true)")
+    page.wait_for_function(
+        "() => window.__ARCHER.state.trajectoryImpact"
+        " && window.__ARCHER.state.trajectoryImpact.kind === 'enemy'",
+        timeout=2000,
+    )
+    state = page.evaluate("() => window.__ARCHER.state")
+    imp = state["trajectoryImpact"]
+    assert abs(imp["z"] - 10) < 3
+    # The lane stopped at the ogre instead of running through to the ground.
+    assert state["trajectory"][-1]["y"] > 0.5
+    _shot(page, "trajectory-hit-marker")
 
 
 def test_click_locks_pointer_then_fires(server_url, page):

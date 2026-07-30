@@ -379,6 +379,31 @@ export class TrajectoryHint {
     }));
     this.line.visible = false;
     game.scene.add(this.line);
+    // Gentle impact cue at the lane's end: a soft bullseye (dot + thin ring)
+    // where the previewed shot lands, warm-tinted when it would strike an
+    // enemy. Billboarded to the shooter — a flat ground decal is viewed
+    // nearly edge-on from the low perch and vanishes — and drawn
+    // reticle-style (no depth test) so the ground never buries the ring's
+    // lower half. Hidden when the arc runs out its vertex budget in the air.
+    this.markerMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 0.35,
+      side: THREE.DoubleSide, depthWrite: false, depthTest: false,
+    });
+    this.marker = new THREE.Group();
+    const dot = new THREE.Mesh(new THREE.CircleGeometry(0.06, 16), this.markerMat);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.16, 0.22, 24), this.markerMat);
+    dot.renderOrder = ring.renderOrder = 2;
+    this.marker.add(dot, ring);
+    this.marker.visible = false;
+    this.impactKind = null; // 'ground' | 'obstacle' | 'enemy' | null (in air)
+    game.scene.add(this.marker);
+  }
+
+  // e2e handle: where (and on what) the previewed shot lands; null in air.
+  impact() {
+    if (!this.marker.visible) return null;
+    const { x, y, z } = this.marker.position;
+    return { kind: this.impactKind, x, y, z };
   }
 
   // e2e handle: world positions of the arc's sample points.
@@ -393,9 +418,30 @@ export class TrajectoryHint {
     return out;
   }
 
+  // First enemy sphere (head or body — the same spheres a live arrow tests)
+  // touched by chord [a, b], as the closest chord point; null if clear.
+  enemyHit(a, b) {
+    const enemies = this.game.enemies;
+    if (!enemies) return null;
+    const R = CONFIG.arrow.radius;
+    let best = null;
+    for (const e of enemies.list) {
+      for (const [c, r] of [
+        [enemies.headCenter(e), e.c.headRadius],
+        [enemies.bodyCenter(e), enemies.bodyRadius(e)],
+      ]) {
+        const q = segClosest(a, b, c);
+        if (q.distanceTo(c) >= r + R) continue;
+        const d = q.distanceToSquared(a);
+        if (!best || d < best.d) best = { q, d };
+      }
+    }
+    return best && best.q;
+  }
+
   update(player, active) {
     this.line.visible = active;
-    if (!active) return;
+    if (!active) { this.marker.visible = false; this.impactKind = null; return; }
     const speed = CONFIG.bow.minSpeed
       + (CONFIG.bow.maxSpeed - CONFIG.bow.minSpeed) * player.power;
     const p = player.aimOrigin();
@@ -416,18 +462,24 @@ export class TrajectoryHint {
     const perVert = 4;
     let n = 1;
     let landed = false;
+    let kind = null;
     while (n < this.n && !landed) {
       prev.copy(p);
       for (let k = 0; k < perVert; k++) {
         v.y += CONFIG.arrow.gravity * step;
         p.addScaledVector(v, step);
-        if (p.y <= 0.05) { landed = true; break; } // same plane arrows die on
+        if (p.y <= 0.05) { landed = true; kind = 'ground'; break; } // same plane arrows die on
       }
       // The preview dies where the arrow would. One obstacle check per vertex
       // chord, not per substep: the arc sags ~3 cm across a chord, invisible
       // at dash width, and it cuts the scans 4×.
       const hit = obstacleHit(prev, p, this.game.obstacles, CONFIG.arrow.radius);
-      if (hit) { p.copy(hit); landed = true; }
+      if (hit) { p.copy(hit); landed = true; kind = 'obstacle'; }
+      // Enemies end the lane too — checked on the already-clipped chord, so
+      // a foe peeking in front of cover wins and one hiding behind it never
+      // registers, matching the live arrow's block-then-hit order.
+      const foe = this.enemyHit(prev, p);
+      if (foe) { p.copy(foe); landed = true; kind = 'enemy'; }
       const blend = Math.max(0, 1 - (n * perVert * step) / SPAWN_BLEND);
       attr.setXYZ(n++, p.x + spawnOffset.x * blend,
         Math.max(p.y + spawnOffset.y * blend, 0.05), p.z + spawnOffset.z * blend);
@@ -437,5 +489,18 @@ export class TrajectoryHint {
     // Dash phase accumulates along the polyline; recompute per frame or the
     // dashes smear as the arc moves with the aim.
     this.line.computeLineDistances();
+    this.impactKind = landed ? kind : null;
+    this.marker.visible = landed;
+    if (!landed) return;
+    const m = this.marker;
+    m.position.set(attr.getX(n - 1), attr.getY(n - 1), attr.getZ(n - 1));
+    m.quaternion.copy(player.camera.quaternion);
+    // Grow gently with range so the cue stays legible downrange — at 40 m
+    // an unscaled ring is a couple of pixels — without shouting up close.
+    const dist = player.camera.getWorldPosition(new THREE.Vector3())
+      .distanceTo(m.position);
+    m.scale.setScalar(1 + dist * 0.02);
+    this.markerMat.color.setHex(kind === 'enemy' ? 0xff9977 : 0xffffff);
+    this.markerMat.opacity = kind === 'enemy' ? 0.5 : 0.35;
   }
 }

@@ -35,8 +35,14 @@ type — first-person shots fly straight away from the eye, so without the
 trail the arrow reads as a shrinking dot instead of an arc. There is no
 crosshair: the sight is a gentle dashed trajectory lane anchored at the bow,
 shown at every power level while aiming; it integrates at the arrow's own
-frame step and ends at the impact point — the ground, or the first
-blocking obstacle. Only deliberate fire
+frame step and ends at the impact point — the ground, the first blocking
+obstacle, or the first enemy in the arc's path (the same head/body spheres a
+live arrow tests, checked behind cover exactly like the arrow's
+block-then-hit order). A soft bullseye marks that endpoint — billboarded to
+the shooter, drawn reticle-style over the scenery, gently scaled up with
+range so it stays legible downrange, and warm-tinted when the previewed
+shot would strike an enemy; a lane that runs out its vertex budget still in
+the air shows no marker. Only deliberate fire
 inputs shoot: a click while pointer-locked on desktop, the 🏹 button on
 touch. Stray clicks or taps elsewhere on the screen never loose an arrow.
 

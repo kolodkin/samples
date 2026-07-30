@@ -375,6 +375,7 @@ window.__ARCHER = {
         trailPoints: a.trail.geometry.drawRange.count,
       })),
       trajectory: trajectoryHint.snapshot(),
+      trajectoryImpact: trajectoryHint.impact(),
       enemyCount: game.enemies.list.length,
       enemies: game.enemies.list.map((e) => ({
         type: e.type, x: e.mesh.position.x, z: e.mesh.position.z,
