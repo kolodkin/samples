@@ -379,6 +379,26 @@ export class TrajectoryHint {
     }));
     this.line.visible = false;
     game.scene.add(this.line);
+    // Gentle impact cue at the lane's end: a small warm point light hovering
+    // just off the surface, so only the hit zone itself warms up — the patch
+    // of ground, the tree bark, or the spot on the enemy the arrow would
+    // strike — with nothing drawn over the scene. Local by construction
+    // (distance-limited, quadratic falloff) and channel-free: the freeze and
+    // burn status tints ride the emissive channel, which a light never
+    // touches. Hidden when the arc runs out its vertex budget in the air.
+    this.glow = new THREE.PointLight(0xffaa66, 1.2, 2.2, 2);
+    this.glow.visible = false;
+    this.impactKind = null; // 'ground' | 'obstacle' | 'enemy' | null (in air)
+    this.impactPoint = new THREE.Vector3();
+    this.target = null; // enemy the lane currently ends on (e2e handle)
+    game.scene.add(this.glow);
+  }
+
+  // e2e handle: where (and on what) the previewed shot lands; null in air.
+  impact() {
+    if (!this.impactKind) return null;
+    const { x, y, z } = this.impactPoint;
+    return { kind: this.impactKind, x, y, z };
   }
 
   // e2e handle: world positions of the arc's sample points.
@@ -393,9 +413,36 @@ export class TrajectoryHint {
     return out;
   }
 
+  // First enemy sphere (head or body — the same spheres a live arrow tests)
+  // touched by chord [a, b], as { q: closest chord point, e: the enemy };
+  // null if clear.
+  enemyHit(a, b) {
+    const enemies = this.game.enemies;
+    if (!enemies) return null;
+    const R = CONFIG.arrow.radius;
+    let best = null;
+    for (const e of enemies.list) {
+      for (const [c, r] of [
+        [enemies.headCenter(e), e.c.headRadius],
+        [enemies.bodyCenter(e), enemies.bodyRadius(e)],
+      ]) {
+        const q = segClosest(a, b, c);
+        if (q.distanceTo(c) >= r + R) continue;
+        const d = q.distanceToSquared(a);
+        if (!best || d < best.d) best = { q, d, e };
+      }
+    }
+    return best;
+  }
+
   update(player, active) {
     this.line.visible = active;
-    if (!active) return;
+    if (!active) {
+      this.glow.visible = false;
+      this.impactKind = null;
+      this.target = null;
+      return;
+    }
     const speed = CONFIG.bow.minSpeed
       + (CONFIG.bow.maxSpeed - CONFIG.bow.minSpeed) * player.power;
     const p = player.aimOrigin();
@@ -416,18 +463,25 @@ export class TrajectoryHint {
     const perVert = 4;
     let n = 1;
     let landed = false;
+    let kind = null;
+    let target = null;
     while (n < this.n && !landed) {
       prev.copy(p);
       for (let k = 0; k < perVert; k++) {
         v.y += CONFIG.arrow.gravity * step;
         p.addScaledVector(v, step);
-        if (p.y <= 0.05) { landed = true; break; } // same plane arrows die on
+        if (p.y <= 0.05) { landed = true; kind = 'ground'; break; } // same plane arrows die on
       }
       // The preview dies where the arrow would. One obstacle check per vertex
       // chord, not per substep: the arc sags ~3 cm across a chord, invisible
       // at dash width, and it cuts the scans 4×.
       const hit = obstacleHit(prev, p, this.game.obstacles, CONFIG.arrow.radius);
-      if (hit) { p.copy(hit); landed = true; }
+      if (hit) { p.copy(hit); landed = true; kind = 'obstacle'; }
+      // Enemies end the lane too — checked on the already-clipped chord, so
+      // a foe peeking in front of cover wins and one hiding behind it never
+      // registers, matching the live arrow's block-then-hit order.
+      const foe = this.enemyHit(prev, p);
+      if (foe) { p.copy(foe.q); landed = true; kind = 'enemy'; target = foe.e; }
       const blend = Math.max(0, 1 - (n * perVert * step) / SPAWN_BLEND);
       attr.setXYZ(n++, p.x + spawnOffset.x * blend,
         Math.max(p.y + spawnOffset.y * blend, 0.05), p.z + spawnOffset.z * blend);
@@ -437,5 +491,27 @@ export class TrajectoryHint {
     // Dash phase accumulates along the polyline; recompute per frame or the
     // dashes smear as the arc moves with the aim.
     this.line.computeLineDistances();
+    this.impactKind = landed ? kind : null;
+    this.impactPoint.set(attr.getX(n - 1), attr.getY(n - 1), attr.getZ(n - 1));
+    this.target = kind === 'enemy' ? target : null;
+    this.glow.visible = landed;
+    if (!landed) return;
+    // A grazing light shows nothing: hover it above a ground hit so the
+    // patch is lit from overhead, and toward the eye on an enemy or
+    // obstacle so the strike spot is lit from the shooter's side rather
+    // than from inside the mesh. The vertical hover leaves the ground
+    // light ~0.5 m off its surface while the eye-side hover sits ~0.35 m
+    // off the struck body, so the enemy/obstacle case needs more candela
+    // to warm its spot as visibly as the ground patch.
+    this.glow.position.copy(this.impactPoint);
+    if (kind === 'ground') {
+      this.glow.position.y += 0.5;
+      this.glow.intensity = 1.2;
+    } else {
+      const toEye = player.camera.getWorldPosition(new THREE.Vector3())
+        .sub(this.impactPoint).normalize();
+      this.glow.position.addScaledVector(toEye, 0.6);
+      this.glow.intensity = 8;
+    }
   }
 }

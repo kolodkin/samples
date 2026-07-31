@@ -375,10 +375,12 @@ window.__ARCHER = {
         trailPoints: a.trail.geometry.drawRange.count,
       })),
       trajectory: trajectoryHint.snapshot(),
+      trajectoryImpact: trajectoryHint.impact(),
       enemyCount: game.enemies.list.length,
       enemies: game.enemies.list.map((e) => ({
         type: e.type, x: e.mesh.position.x, z: e.mesh.position.z,
         hp: e.hp, state: e.state, frozen: e.frozen > 0, burning: e.burn > 0,
+        highlighted: e === trajectoryHint.target,
         hasCover: !!e.cover,
         // Character-animation state (see models.js): walk/idle blend
         // weight, mixer clock, and whether the attack clip is playing.

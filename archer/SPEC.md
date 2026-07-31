@@ -35,8 +35,16 @@ type — first-person shots fly straight away from the eye, so without the
 trail the arrow reads as a shrinking dot instead of an arc. There is no
 crosshair: the sight is a gentle dashed trajectory lane anchored at the bow,
 shown at every power level while aiming; it integrates at the arrow's own
-frame step and ends at the impact point — the ground, or the first
-blocking obstacle. Only deliberate fire
+frame step and ends at the impact point — the ground, the first blocking
+obstacle, or the first enemy in the arc's path (the same head/body spheres a
+live arrow tests, checked behind cover exactly like the arrow's
+block-then-hit order). The endpoint is cued by warming the hit zone
+itself: a small distance-limited warm point light hovers just off the
+surface, so only the patch of ground, tree bark, or the spot on the enemy
+the arrow would strike lights up — nothing is drawn over the scene, and
+the freeze/burn status tints (which ride the emissive channel) are
+untouched. A lane that runs out its vertex budget still in the air shows
+no cue. Only deliberate fire
 inputs shoot: a click while pointer-locked on desktop, the 🏹 button on
 touch. Stray clicks or taps elsewhere on the screen never loose an arrow.
 
