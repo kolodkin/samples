@@ -504,6 +504,10 @@ export class TrajectoryHint {
     // off the struck body, so the enemy/obstacle case needs more candela
     // to warm its spot as visibly as the ground patch.
     this.glow.position.copy(this.impactPoint);
+    // Terrain hits (ground or obstacle) warm up yellow-white; only a lane
+    // ending on an enemy keeps the red-hot tint, so the hotpoint's color
+    // alone says whether the previewed shot connects.
+    this.glow.color.setHex(kind === 'enemy' ? 0xffaa66 : 0xffffdd);
     if (kind === 'ground') {
       this.glow.position.y += 0.5;
       this.glow.intensity = 1.2;
