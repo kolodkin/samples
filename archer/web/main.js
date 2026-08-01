@@ -375,16 +375,22 @@ window.__ARCHER = {
         trailPoints: a.trail.geometry.drawRange.count,
       })),
       trajectory: trajectoryHint.snapshot(),
+      trajectoryImpact: trajectoryHint.impact(),
       enemyCount: game.enemies.list.length,
       enemies: game.enemies.list.map((e) => ({
         type: e.type, x: e.mesh.position.x, z: e.mesh.position.z,
         hp: e.hp, state: e.state, frozen: e.frozen > 0, burning: e.burn > 0,
+        highlighted: e === trajectoryHint.target,
         hasCover: !!e.cover,
         // Character-animation state (see models.js): walk/idle blend
         // weight, mixer clock, and whether the attack clip is playing.
         walkWeight: e.walkAmp,
         animTime: e.mesh.userData.anim.mixer.time,
         attacking: !!e.mesh.userData.anim.attack?.isRunning(),
+      })),
+      projectiles: game.enemies.projectiles.map((p) => ({
+        x: p.mesh.position.x, y: p.mesh.position.y, z: p.mesh.position.z,
+        spawnX: p.spawn.x, spawnY: p.spawn.y, spawnZ: p.spawn.z,
       })),
       radar: radarBlips(game),
       wave: game.waves.waveIndex,
@@ -416,10 +422,30 @@ window.__ARCHER = {
   giveAmmo: (type, n) => { game.stats.ammo[type] += n; game.syncUI(); },
   selectAmmo,
   setDropChance: (c) => { CONFIG.drops.chance = c; },
+  setProjectileSpeed: (v) => { CONFIG.enemies.skeleton.projectileSpeed = v; },
   setHealChance: (c) => { CONFIG.drops.heal.chance = c; },
   setFreezeBurstChance: (c) => { CONFIG.arrow.types.freezing.burst.chance = c; },
   killAll: () => {
     for (const e of [...game.enemies.list]) game.enemies.damage(e, 1e9);
+  },
+  // e2e helper: highest world-space vertex of enemy i's rendered model in
+  // its current pose — the top of the head the player actually sees.
+  // Skinning applied on the CPU: bones carry most of these rigs' transforms,
+  // so unskinned bounds land nowhere near the visible figure.
+  enemyVisualTop(i) {
+    const mesh = game.enemies.list[i].mesh;
+    mesh.updateMatrixWorld(true);
+    const v = new THREE.Vector3();
+    let top = -Infinity;
+    mesh.traverse((o) => {
+      if (!o.isMesh) return;
+      const pos = o.geometry.attributes.position;
+      for (let j = 0; j < pos.count; j++) {
+        o.getVertexPosition(j, v).applyMatrix4(o.matrixWorld);
+        if (v.y > top) top = v.y;
+      }
+    });
+    return top;
   },
   skipToWave: (n) => { game.waves.skipToWave(n); },
   start: (i = 0) => startGame(i),

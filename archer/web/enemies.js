@@ -225,7 +225,7 @@ export class EnemySystem {
     const target = new THREE.Vector3(playerPos.x, 0, playerPos.z);
     if (e.type === 'goblin') {
       const dir = new THREE.Vector3(playerPos.x - pos.x, 0, playerPos.z - pos.z).normalize();
-      target.addScaledVector(perpXZ(dir), Math.sin(e.bobT * 0.9) * 0.5 * flatDist);
+      target.addScaledVector(perpXZ(dir), Math.sin(e.bobT * 0.9) * 0.3 * flatDist);
     }
     this.moveToward(e, target, dt, this.speedOf(e));
   }
@@ -318,8 +318,17 @@ export class EnemySystem {
     return c.addScaledVector(perpXZ(away), side * (cover.radius + 0.5));
   }
 
+  // Where a shot leaves the model: the crossbow riding the hand socket
+  // (models.js stashes it as `muzzle`), in the pose the mixer last set —
+  // mid-Throw when shoot() fires. Falls back to the head sphere if a
+  // future archer model ships without a hand socket.
+  muzzlePoint(e) {
+    const m = e.mesh.userData.muzzle;
+    return m ? m.getWorldPosition(new THREE.Vector3()) : this.headCenter(e);
+  }
+
   shoot(e, playerPos) {
-    const from = this.headCenter(e);
+    const from = this.muzzlePoint(e);
     const dir = new THREE.Vector3().subVectors(playerPos, from);
     const dist = dir.length();
     dir.normalize();
@@ -338,7 +347,10 @@ export class EnemySystem {
     mesh.castShadow = true; // the racing ground shadow telegraphs the arc
     mesh.position.copy(from);
     this.game.scene.add(mesh);
-    this.projectiles.push({ mesh, vel: dir.multiplyScalar(e.c.projectileSpeed), age: 0 });
+    this.projectiles.push({
+      mesh, vel: dir.multiplyScalar(e.c.projectileSpeed), age: 0,
+      spawn: from.clone(), // e2e: bolts are too fast to observe at frame 0
+    });
   }
 
   updateProjectiles(dt, playerPos) {

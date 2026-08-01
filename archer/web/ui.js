@@ -107,7 +107,6 @@ function Hud({ s, actions }) {
         `)}
       </div>
       ${s.touch && html`<${TouchControls} actions=${actions} />`}
-      <div class="crosshair"><div class="power-ring" /></div>
     </div>`;
 }
 

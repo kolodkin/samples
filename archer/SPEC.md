@@ -19,8 +19,8 @@ This spec covers behavior the numbers don't show.
 | Touch: 🏹 button | Shoot at the set power |
 | Touch: ❚❚ button | Pause |
 
-Shot power is a persistent setting (it survives firing); the crosshair ring,
-the 🏹 button ring, and the bow-string pull all show the current level.
+Shot power is a persistent setting (it survives firing); the 🏹 button ring
+and the bow-string pull show the current level.
 Firing plays a release cycle on the bow viewmodel (`CONFIG.bow.shot`): the
 string snaps forward and the nocked arrow vanishes (it became the
 projectile), the bow sits empty for a beat, then a fresh arrow appears and
@@ -32,11 +32,19 @@ and converges onto the aim line over ~0.12 s (`SPAWN_BLEND` in
 `web/arrows.js`); physics always runs on the aim line, so accuracy is
 unaffected. Every arrow also drags a fading tracer trail colored by its
 type — first-person shots fly straight away from the eye, so without the
-trail the arrow reads as a shrinking dot instead of an arc. The
-dotted trajectory hint is visible below 85% power and fades as power rises,
-so full-power shots stay skill-based; it integrates at the arrow's own
-frame step and ends at the impact point — the ground, or the first
-blocking obstacle. Only deliberate fire
+trail the arrow reads as a shrinking dot instead of an arc. There is no
+crosshair: the sight is a gentle dashed trajectory lane anchored at the bow,
+shown at every power level while aiming; it integrates at the arrow's own
+frame step and ends at the impact point — the ground, the first blocking
+obstacle, or the first enemy in the arc's path (the same head/body spheres a
+live arrow tests, checked behind cover exactly like the arrow's
+block-then-hit order). The endpoint is cued by warming the hit zone
+itself: a small distance-limited warm point light hovers just off the
+surface, so only the patch of ground, tree bark, or the spot on the enemy
+the arrow would strike lights up — nothing is drawn over the scene, and
+the freeze/burn status tints (which ride the emissive channel) are
+untouched. A lane that runs out its vertex budget still in the air shows
+no cue. Only deliberate fire
 inputs shoot: a click while pointer-locked on desktop, the 🏹 button on
 touch. Stray clicks or taps elsewhere on the screen never loose an arrow.
 
@@ -156,7 +164,10 @@ store.
   would shuttle between trees permanently hidden and stall the wave); it
   commits to the exposed side. With no workable cover and no line of fire
   from where it stands, it keeps advancing until a shot line opens.
-  Projectiles drop at 4 m/s² with compensated aim, so long shots arc
+  Bolts loose from the crossbow itself (the hand socket's world position,
+  mid-Throw pose — mirroring the player's arrows spawning at the nocked
+  tip), not from the head hit sphere. Projectiles drop at 4 m/s² with
+  compensated aim, so long shots arc
   visibly; like player arrows they use segment-vs-sphere collision, so
   they cannot tunnel through the player even at low frame rates.
 - Walkers collide with obstacles: after each AI step,
@@ -243,11 +254,13 @@ All gameplay randomness flows through one seeded mulberry32 stream
 `window.__ARCHER` (defined in `web/main.js`) exposes `ready`, a `state`
 snapshot (screen, hp, score, wave, enemies, pickups, obstacles, best,
 yaw/pitch/touch/power, selected/mode, nocked/canShoot, arrows with type,
-physics vs visual positions and trail length), and test hooks: `fireAt()`
+physics vs visual positions and trail length, skeleton projectiles with
+current and spawn positions), and test hooks: `fireAt()`
 (gravity-compensated),
 `spawnEnemy()` (optional `inert` flag disables the AI), `skipToWave()`,
 `killAll()`, `giveAmmo()`, `selectAmmo()`, `setDropChance()`, `setHealChance()`,
-`setFreezeBurstChance()`,
+`setFreezeBurstChance()`, `setProjectileSpeed()` (slow skeleton bolts so a
+screenshot can catch one in flight),
 `setObstacles()` (replace the collision-obstacle list to build exact cover
 layouts; stage meshes stay), `setPlayerHp()`, `start()`,
 `nextStage()`, `retryStage()`, `visiblePixelCount()`. Tests boot with

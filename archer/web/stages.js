@@ -160,10 +160,14 @@ function makeIcePillar(rng) {
 }
 
 function makeVolcanoObstacle(rng) {
-  // Obsidian crag: dark glass, ember glow seeping from the facets.
+  // Obsidian crag: dark glass, a faint ember seep in the facets. Both stay
+  // near-black against the lit ash sky so the crags read as silhouettes.
+  // The seep is dim because it no longer has to carry a near-black stage:
+  // at its old strength it out-shouted the lighting and washed the crags
+  // salmon, flattening them into the ground.
   return makeSpire(rng, {
     hMin: 2.2, hMax: 4.2, topMin: 0.4, topMax: 0.8,
-    dark: 0x17121a, light: 0x3d3242, emissive: 0x551d05, amp: 0.16,
+    dark: 0x1e1a24, light: 0x453a4e, emissive: 0x240c02, amp: 0.16,
   });
 }
 
@@ -198,12 +202,14 @@ const THEMES = {
   },
   volcano: {
     // Ember dusk: the fog band glows redder than the sky, so the horizon
-    // reads as a lava glow line.
-    sky: 0x3a201c, fog: [0x4a2419, 30, 110],
-    groundColors: [0x241d1b, 0x54402f],
+    // reads as a lava glow line. The ash haze is lit rather than black —
+    // the sky doubles as the hemisphere fill color, so darkening it past
+    // this point drags the whole battlefield down with it.
+    sky: 0x9d6a63, fog: [0xd07440, 45, 145],
+    groundColors: [0x4d3a30, 0x916c4c],
     terrain: { seed: 55, freq: 0.05, colorFreq: 0.06, hillHeight: 7 },
-    sun: 0xff9a52, sunIntensity: 1.2, ambient: 0x553333,
-    obstacleCount: 16, obstacle: makeVolcanoObstacle, perch: 0x3a3236,
+    sun: 0xffb173, sunIntensity: 1.45, ambient: 0x8a6357,
+    obstacleCount: 16, obstacle: makeVolcanoObstacle, perch: 0x9a8f96,
   },
 };
 

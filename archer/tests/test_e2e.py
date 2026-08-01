@@ -115,7 +115,7 @@ def test_each_stage_builds(server_url, page):
 def test_perch_visible_underfoot(server_url, page):
     # The platform under the archer must read as a platform: the pixel at the
     # player's feet (the perch top cap) differs from the open terrain nearby.
-    for name in ("forest", "desert", "iceberg"):
+    for name in ("forest", "desert", "iceberg", "volcano"):
         page.goto(server_url + f"/?autostart=1&seed=3&stage={name}&waves=0")
         _wait_ready(page)
         perch = page.evaluate("() => window.__ARCHER.pixelAt(0.5, 0.97)")
@@ -174,7 +174,36 @@ def test_trajectory_hint_ends_at_ground_impact(server_url, page):
     # The landing dot sits near the analytic impact point.
     assert abs(dots[-1]["z"] - -8.8) < 2
     assert abs(dots[-1]["x"]) < 0.1
+    # The gentle impact marker sits on the lane's landing dot.
+    imp = page.evaluate("() => window.__ARCHER.state.trajectoryImpact")
+    assert imp["kind"] == "ground"
+    assert imp["y"] <= 0.06
+    assert abs(imp["z"] - dots[-1]["z"]) < 0.01
     _shot(page, "trajectory-hint")
+
+
+def test_trajectory_hint_marks_enemy_impact(server_url, page):
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    # Bare battlefield: the default arc lands on the ground.
+    assert page.evaluate("() => window.__ARCHER.state.trajectoryImpact")["kind"] == "ground"
+    # Park an inert ogre across the arc (the default aim crosses z=10 at
+    # y≈2.2, inside the ogre's 2.5-tall hit spheres): the lane now dies on
+    # the ogre and the marker turns into the enemy cue.
+    page.evaluate("() => window.__ARCHER.spawnEnemy('ogre', 0, 10, true)")
+    page.wait_for_function(
+        "() => window.__ARCHER.state.trajectoryImpact"
+        " && window.__ARCHER.state.trajectoryImpact.kind === 'enemy'",
+        timeout=5000,
+    )
+    state = page.evaluate("() => window.__ARCHER.state")
+    imp = state["trajectoryImpact"]
+    assert abs(imp["z"] - 10) < 3
+    # The lane stopped at the ogre instead of running through to the ground.
+    assert state["trajectory"][-1]["y"] > 0.5
+    # The cue is the ogre itself: warmed by the aim highlight.
+    assert state["enemies"][0]["highlighted"] is True
+    _shot(page, "trajectory-hit-marker")
 
 
 def test_click_locks_pointer_then_fires(server_url, page):
@@ -299,6 +328,44 @@ def test_headshot_double_damage_and_bonus(server_url, page):
     assert page.evaluate("() => window.__ARCHER.state.score") == 150
 
 
+def test_headshot_lands_at_the_visible_head(server_url, page):
+    # Regression for the glTF model swap: aiming at the head the player
+    # SEES must strike the config head sphere. The spheres are fixed at
+    # c.height, so this holds only while each model is scaled to its
+    # skinned standing height — the unskinned bind-pose box that models.js
+    # once measured rendered the goblin ~2× and the ogre ~2.6× oversized,
+    # parking the visible head metres above the hitbox: every aimed
+    # headshot whiffed.
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
+    page.evaluate("() => window.__ARCHER.setObstacles([])")
+    page.evaluate("() => window.__ARCHER.setDropChance(0)")
+    # (type, hp, config headRadius). Aim one head-radius below the model's
+    # visible top: the middle of the face on all three figures.
+    for etype, hp, head_r in (("goblin", 40, 0.28),
+                              ("skeleton", 60, 0.26),
+                              ("ogre", 220, 0.45)):
+        page.evaluate(f"() => window.__ARCHER.spawnEnemy('{etype}', 0, 26, true)")
+        page.wait_for_timeout(400)  # idle pose settles
+        top = page.evaluate("() => window.__ARCHER.enemyVisualTop(0)")
+        page.evaluate(f"() => window.__ARCHER.fireAt(0, {top - head_r}, 26)")
+        page.wait_for_function("() => window.__ARCHER.state.arrowCount === 0", timeout=5000)
+        state = page.evaluate("() => window.__ARCHER.state")
+        # A normal arrow to the head deals 34*2=68: it one-shots the goblin
+        # (40) and skeleton (60) — a body hit (34) would not — and leaves
+        # the ogre at exactly 220-68.
+        if etype == "ogre":
+            assert state["enemies"][0]["hp"] == 220 - 68, (
+                f"ogre visible-head shot at y={top - head_r:.2f} "
+                f"dealt {220 - state['enemies'][0]['hp']} damage, expected 68")
+        else:
+            assert state["enemyCount"] == 0, (
+                f"{etype} (hp {hp}) survived a visible-head shot at "
+                f"y={top - head_r:.2f} (model top {top:.2f})")
+        page.evaluate("() => window.__ARCHER.killAll()")
+
+
 def test_goblin_advances_hits_once_and_despawns(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
@@ -353,7 +420,7 @@ def test_goblin_walks_around_obstacle_not_through(server_url, page):
     _wait_ready(page)
     page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
     # One fat trunk dead on the line from the spawn to the player (0, 3.2, 34).
-    # The goblin's zigzag weave (~±0.8 m) cannot sidestep a 1.5 m radius, so
+    # The goblin's zigzag weave (~±0.5 m) cannot sidestep a 1.5 m radius, so
     # any interior frame means it walked through. Track the deepest
     # penetration every frame: our rAF callback registers after the game
     # loop, so it samples post-tick positions.
@@ -490,6 +557,31 @@ def test_skeleton_shoots_the_player(server_url, page):
     # pass (slower still with the skinned characters), and the dt clamp
     # (0.05 s) makes game time run slower than wall time below 20 fps.
     page.wait_for_function("() => window.__ARCHER.state.hp < 100", timeout=90000)
+
+
+def test_skeleton_bolt_leaves_the_crossbow(server_url, page):
+    # Bolts spawn at the crossbow socketed in the hand bone, not at the head
+    # hit-sphere center. With no obstacles the archer engages standing still
+    # at its spawn point, so its head center is exactly (0, 1.6, 26) — the
+    # hand offset shows up as a nonzero distance from that point. The bolt
+    # is slowed to 6 m/s so the screenshot catches it in flight beside the
+    # archer (at the stock 20 m/s it is meters downrange by the first poll
+    # that sees it; the recorded spawn keeps the assertion exact either way).
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
+    page.evaluate("() => window.__ARCHER.setObstacles([])")
+    page.evaluate("() => window.__ARCHER.setProjectileSpeed(6)")
+    page.evaluate("() => window.__ARCHER.spawnEnemy('skeleton', 0, 26)")
+    bolt = page.wait_for_function(
+        "() => window.__ARCHER.state.projectiles[0] ?? null", timeout=45000
+    ).json_value()
+    _shot(page, "skeleton-shooting")
+    d = (
+        bolt["spawnX"] ** 2 + (bolt["spawnY"] - 1.6) ** 2 + (bolt["spawnZ"] - 26) ** 2
+    ) ** 0.5
+    # Clearly off the head center, but still within arm's reach of the model.
+    assert 0.15 < d < 1.5
 
 
 # Animated character models (web/models.js): every enemy is a rigged CC0
