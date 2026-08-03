@@ -23,8 +23,8 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000;
   background: rgba(10, 14, 20, 0.65); color: #f2ede2; pointer-events: auto;
 }
 .screen h1 { font-size: 56px; letter-spacing: 0.12em; margin: 0; }
-.screen p { margin: 0; opacity: 0.85; }
-.screen .controls { font-weight: 600; opacity: 1; }
+.screen p { margin: 0; opacity: 0.85; font-size: 20px; }
+.screen .controls { font-weight: 600; opacity: 1; font-size: 28px; }
 .screen button {
   font-size: 20px; padding: 10px 34px; margin-top: 10px; cursor: pointer;
   background: #ffd257; border: none; border-radius: 6px; font-weight: 700;
@@ -93,6 +93,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000;
   .power-btn { width: 48px; height: 48px; font-size: 24px; }
   .slot { padding: 8px 10px; }
   .screen h1 { font-size: 40px; }
-  .screen p { padding: 0 20px; }
+  .screen p { padding: 0 20px; font-size: 16px; }
+  .screen .controls { font-size: 16px; }
 }
 
