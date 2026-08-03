@@ -48,3 +48,12 @@ READMEs are included in the docs site via `docs/example_projects.md` using `pymd
 ## SPEC.md (optional)
 
 Add a `SPEC.md` next to `README.md` when a project has technical details worth recording but that don't fit the minimal README convention — e.g. operations catalog, measurement methodology, per-library optimizations, schema choices, performance tradeoffs. Keep README minimal; let SPEC.md carry depth.
+
+## Response Style (shortify)
+
+Apply devpowers shortify principles to your own chat responses:
+
+- Cut wordiness: no filler ("It is important to note that", "In order to"), no restating the question, no summarizing what you just said.
+- Kill redundancy: say each thing once; don't echo code or file content already shown.
+- Prefer short bullet lists over paragraphs for enumerable facts.
+- Skip preamble and closing pleasantries; lead with the answer.
