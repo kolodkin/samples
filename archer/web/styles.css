@@ -24,7 +24,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000;
 }
 .screen h1 { font-size: 56px; letter-spacing: 0.12em; margin: 0; }
 .screen p { margin: 0; opacity: 0.85; }
-.screen .controls { font-size: 28px; font-weight: 600; opacity: 1; }
+.screen .controls { font-weight: 600; opacity: 1; }
 .screen button {
   font-size: 20px; padding: 10px 34px; margin-top: 10px; cursor: pointer;
   background: #ffd257; border: none; border-radius: 6px; font-weight: 700;
@@ -94,6 +94,5 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000;
   .slot { padding: 8px 10px; }
   .screen h1 { font-size: 40px; }
   .screen p { padding: 0 20px; }
-  .screen .controls { font-size: 22px; }
 }
 
