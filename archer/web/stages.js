@@ -236,7 +236,7 @@ export function buildStage(name, rng) {
   // the ground would make the platform invisible underfoot. Slightly
   // translucent so the battlefield stays visible through the platform edge.
   const perch = new THREE.Mesh(
-    new THREE.CylinderGeometry(2.2, 3.0, py - 1, 8),
+    new THREE.CylinderGeometry(1.4, 2.0, py - 1, 8),
     new THREE.MeshLambertMaterial({ color: theme.perch, transparent: true, opacity: 0.65 }),
   );
   perch.position.set(px, (py - 1) / 2, pz);
