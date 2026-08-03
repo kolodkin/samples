@@ -1,12 +1,23 @@
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
 import { hash2, fbm, spread, seedFrom, setShadows, texturedMesh } from './relief.js';
+import { createRng } from './rng.js';
 
 export const STAGE_ORDER = ['meadow', 'forest', 'desert', 'iceberg', 'volcano'];
 
 const { clamp, smoothstep } = THREE.MathUtils;
 
 const MICRO_RELIEF = 0.12;
+
+// Terrain displacement at (x, z): flat micro-relief inside the play area,
+// hills rising beyond it. Shared by the ground mesh and by flank props,
+// whose bases must follow the rise.
+function groundHeight(t, x, z, flatExtent, hillExtent) {
+  const edge = smoothstep(Math.max(Math.abs(x), Math.abs(z)), flatExtent, hillExtent);
+  const hill = edge > 0 ? spread(fbm(x * t.freq, z * t.freq, t.seed), 1.8) * t.hillHeight : 0;
+  const micro = edge < 1 ? (spread(fbm(x * 0.3, z * 0.3, t.seed + 7), 2.5) - 0.5) * 2 * MICRO_RELIEF : 0;
+  return micro * (1 - edge) + hill * edge;
+}
 
 function makeGround(theme, size) {
   // Gameplay assumes a flat y=0 battlefield (arrows, walkers, melee/cover —
@@ -29,9 +40,7 @@ function makeGround(theme, size) {
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), z = pos.getZ(i);
     const edge = smoothstep(Math.max(Math.abs(x), Math.abs(z)), flatExtent, hillExtent);
-    const hill = edge > 0 ? spread(fbm(x * t.freq, z * t.freq, t.seed), 1.8) * t.hillHeight : 0;
-    const micro = edge < 1 ? (spread(fbm(x * 0.3, z * 0.3, t.seed + 7), 2.5) - 0.5) * 2 * MICRO_RELIEF : 0;
-    pos.setY(i, micro * (1 - edge) + hill * edge);
+    pos.setY(i, groundHeight(t, x, z, flatExtent, hillExtent));
     // Two-tone patches around the theme ground color; hill crests pull
     // toward the light tone so the perimeter relief reads through the fog.
     const patch = spread(fbm(x * t.colorFreq, z * t.colorFreq, t.seed + 31), 2.5);
@@ -280,15 +289,44 @@ export function buildStage(name, rng) {
   // Obstacles scattered over the battlefield, clear of the player perch.
   const obstacles = [];
   const swayers = [];
-  for (let i = 0; i < theme.obstacleCount; i++) {
-    const x = rng.range(-36, 36);
-    const z = rng.range(-30, 22);
-    const { mesh, radius, height, sway } = theme.obstacle(rng);
-    mesh.position.set(x, 0, z);
+  function placeObstacle(maker, x, z, y) {
+    const { mesh, radius, height, sway } = maker();
+    mesh.position.set(x, y, z);
     setShadows(mesh);
     if (sway) swayers.push(sway);
     group.add(mesh);
-    obstacles.push({ x, z, radius, height });
+    // Collision cylinders are based at y=0 (geom.js), so a raised base
+    // extends the cylinder up to the prop's visible top.
+    obstacles.push({ x, z, radius, height: height + y });
+  }
+  for (let i = 0; i < theme.obstacleCount; i++) {
+    const x = rng.range(-36, 36);
+    const z = rng.range(-30, 22);
+    placeObstacle(() => theme.obstacle(rng), x, z, 0);
+  }
+
+  // Flank dressing: the FOV is vertical, so a widescreen desktop sees
+  // roughly 3x the horizontal ground of a portrait phone, and the core
+  // scatter above (bounded to the play arena) leaves the extra width bare.
+  // Dress the side bands out to the hill rise with the same props — real
+  // obstacles (arrows lobbed there still block), but outside the enemy
+  // spawn spread so gameplay is untouched. Drawn from a side stream seeded
+  // off values already drawn, NEVER from the shared gameplay stream:
+  // buildStage runs twice at boot (title backdrop, then startGame), so any
+  // extra draw here would shift the second build's core layout — which
+  // tests pin — and every gameplay draw after it. Bases follow the
+  // terrain, sunk a touch so facet interpolation never leaves a gap.
+  const flatExtent = CONFIG.arena.size / 2;
+  const hillExtent = size / 2 - 2;
+  const flankRng = createRng(seedFrom(obstacles[0].x + obstacles[obstacles.length - 1].z * 7));
+  const flankCount = Math.max(2, Math.round(theme.obstacleCount * 0.2));
+  for (const side of [-1, 1]) {
+    for (let i = 0; i < flankCount; i++) {
+      const x = side * flankRng.range(37, 48);
+      const z = flankRng.range(-36, 28);
+      const y = groundHeight(theme.terrain, x, z, flatExtent, hillExtent) - 0.15;
+      placeObstacle(() => theme.obstacle(flankRng), x, z, y);
+    }
   }
 
   // Per-frame ambient motion, owned by the stage: gentle canopy sway on two
