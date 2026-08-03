@@ -112,6 +112,20 @@ def test_each_stage_builds(server_url, page):
         _shot(page, f"stage-{name}")
 
 
+def test_stage_layout_dresses_widescreen_flanks(server_url, page):
+    # The camera FOV is vertical, so a widescreen desktop sees ~3x the
+    # horizontal ground of a portrait phone. The core scatter is bounded to
+    # the play arena (|x| <= 36); without flank dressing the extra width
+    # shows bare ground. Every stage must place props beyond that bound on
+    # BOTH sides.
+    for name in ("meadow", "forest", "desert", "iceberg", "volcano"):
+        page.goto(server_url + f"/?autostart=1&seed=3&stage={name}&waves=0")
+        _wait_ready(page)
+        xs = [o["x"] for o in page.evaluate("() => window.__ARCHER.state.obstacles")]
+        assert max(xs) > 36, f"{name}: right flank bare (max x {max(xs):.1f})"
+        assert min(xs) < -36, f"{name}: left flank bare (min x {min(xs):.1f})"
+
+
 def test_perch_visible_underfoot(server_url, page):
     # The platform under the archer must read as a platform: the pixel at the
     # player's feet (the perch top cap) differs from the open terrain nearby.
