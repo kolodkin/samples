@@ -123,8 +123,11 @@ function Screens({ s, actions }) {
   if (s.screen === 'title') {
     return html`
       <${Screen} testid="title-screen" title="ARCHER">
-        <p>Click to take aim, then click to shoot. Set power with the +/− buttons (or +/− keys). The ✨ Auto slot rides your aim — land a hit and the next shot spends your best special, miss three times in a row and it drops back to the free arrow; click a quiver slot (or press 1–${SLOTS.length}) to choose the arrow yourself.</p>
-        <p>On touch: drag to aim, the 🏹 button shoots.</p>
+        <p class="controls" data-testid="controls">
+          touch/mobile: drag to aim, 🏹 shoots<br />
+          mouse/desktop: click to aim, click to shoot
+        </p>
+        <p>Power: +/− buttons (or keys). ✨ Auto picks your best arrow — pick a slot (or 1–${SLOTS.length}) to choose yourself.</p>
         <p data-testid="best">Best: ${s.best.score} pts, stage ${s.best.stage}/${s.totalStages}</p>
         <button data-testid="start-btn" onClick=${actions.start}>Start</button>
       <//>`;
