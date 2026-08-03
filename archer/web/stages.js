@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
 import { hash2, fbm, spread, seedFrom, setShadows, texturedMesh } from './relief.js';
+import { createRng } from './rng.js';
 
 export const STAGE_ORDER = ['meadow', 'forest', 'desert', 'iceberg', 'volcano'];
 
@@ -288,8 +289,8 @@ export function buildStage(name, rng) {
   // Obstacles scattered over the battlefield, clear of the player perch.
   const obstacles = [];
   const swayers = [];
-  function placeObstacle(x, z, y) {
-    const { mesh, radius, height, sway } = theme.obstacle(rng);
+  function placeObstacle(maker, x, z, y) {
+    const { mesh, radius, height, sway } = maker();
     mesh.position.set(x, y, z);
     setShadows(mesh);
     if (sway) swayers.push(sway);
@@ -299,7 +300,9 @@ export function buildStage(name, rng) {
     obstacles.push({ x, z, radius, height: height + y });
   }
   for (let i = 0; i < theme.obstacleCount; i++) {
-    placeObstacle(rng.range(-36, 36), rng.range(-30, 22), 0);
+    const x = rng.range(-36, 36);
+    const z = rng.range(-30, 22);
+    placeObstacle(() => theme.obstacle(rng), x, z, 0);
   }
 
   // Flank dressing: the FOV is vertical, so a widescreen desktop sees
@@ -307,18 +310,22 @@ export function buildStage(name, rng) {
   // scatter above (bounded to the play arena) leaves the extra width bare.
   // Dress the side bands out to the hill rise with the same props — real
   // obstacles (arrows lobbed there still block), but outside the enemy
-  // spawn spread so gameplay is untouched. Placed AFTER the core loop so
-  // per-seed core layouts (which tests pin) never shift; bases follow the
+  // spawn spread so gameplay is untouched. Drawn from a side stream seeded
+  // off values already drawn, NEVER from the shared gameplay stream:
+  // buildStage runs twice at boot (title backdrop, then startGame), so any
+  // extra draw here would shift the second build's core layout — which
+  // tests pin — and every gameplay draw after it. Bases follow the
   // terrain, sunk a touch so facet interpolation never leaves a gap.
   const flatExtent = CONFIG.arena.size / 2;
   const hillExtent = size / 2 - 2;
+  const flankRng = createRng(seedFrom(obstacles[0].x + obstacles[obstacles.length - 1].z * 7));
   const flankCount = Math.max(2, Math.round(theme.obstacleCount * 0.2));
   for (const side of [-1, 1]) {
     for (let i = 0; i < flankCount; i++) {
-      const x = side * rng.range(37, 48);
-      const z = rng.range(-36, 28);
+      const x = side * flankRng.range(37, 48);
+      const z = flankRng.range(-36, 28);
       const y = groundHeight(theme.terrain, x, z, flatExtent, hillExtent) - 0.15;
-      placeObstacle(x, z, y);
+      placeObstacle(() => theme.obstacle(flankRng), x, z, y);
     }
   }
 

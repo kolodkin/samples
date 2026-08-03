@@ -227,9 +227,13 @@ bounded to the play arena (|x| ≤ 36); on its own it leaves the desktop
 view's flanks bare. `buildStage()` therefore dresses the side bands
 (37 ≤ |x| ≤ 48, out to the hill rise) with extra props from the same
 theme maker — real collision obstacles (a lobbed arrow still blocks),
-but outside the enemy spawn spread so gameplay is untouched. They are
-placed AFTER the core loop, so per-seed core layouts (which tests pin)
-never shift; their bases follow the terrain rise (`groundHeight()`,
+but outside the enemy spawn spread so gameplay is untouched. They draw
+from a side rng stream seeded off values already drawn — never from the
+shared gameplay stream, which `buildStage()` cannot take extra draws
+from: it runs twice at boot (title backdrop, then `startGame`), so an
+extra draw in the first build would shift the second build's core
+layout (which tests pin) and every gameplay draw after it. Their bases
+follow the terrain rise (`groundHeight()`,
 shared with the ground mesh), and their collision cylinders — based at
 y=0 in `geom.js` — are extended by the base height to reach the visible
 top.
