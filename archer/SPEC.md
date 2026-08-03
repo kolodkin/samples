@@ -221,6 +221,19 @@ it. Terrain noise is hash-based on vertex position and deliberately does
 NOT draw from the seeded rng stream, so per-seed obstacle layouts (which
 tests pin) are unaffected.
 
+The camera FOV is vertical, so a widescreen desktop sees roughly 3x the
+horizontal ground of a portrait phone. The core obstacle scatter is
+bounded to the play arena (|x| ≤ 36); on its own it leaves the desktop
+view's flanks bare. `buildStage()` therefore dresses the side bands
+(37 ≤ |x| ≤ 48, out to the hill rise) with extra props from the same
+theme maker — real collision obstacles (a lobbed arrow still blocks),
+but outside the enemy spawn spread so gameplay is untouched. They are
+placed AFTER the core loop, so per-seed core layouts (which tests pin)
+never shift; their bases follow the terrain rise (`groundHeight()`,
+shared with the ground mesh), and their collision cylinders — based at
+y=0 in `geom.js` — are extended by the base height to reach the visible
+top.
+
 Props and the player's gear share the same low-poly texturing recipe via
 `web/relief.js` (`texturedMesh()`: hash-noise vertex relief + two-tone
 mottling + flat shading): tree bark and boughs, cactus ribs, sandstone
