@@ -235,8 +235,10 @@ export function buildStage(name, rng) {
   // player ever sees from up there, so it keeps the perch color — matching
   // the ground would make the platform invisible underfoot. Slightly
   // translucent so the battlefield stays visible through the platform edge.
+  // Top radius must stay above ~1.52: at the 70° base FOV the underfoot
+  // pixel sampled by test_perch_visible_underfoot lands that far out.
   const perch = new THREE.Mesh(
-    new THREE.CylinderGeometry(1.4, 2.0, py - 1, 8),
+    new THREE.CylinderGeometry(1.6, 2.0, py - 1, 8),
     new THREE.MeshLambertMaterial({ color: theme.perch, transparent: true, opacity: 0.65 }),
   );
   perch.position.set(px, (py - 1) / 2, pz);
