@@ -160,9 +160,11 @@ store.
   obstacle on the player line, peeks to shoot, hides again (cover/peek
   point selection: `pickCover()`/`coverPoint()` in `web/enemies.js`).
   Cover is only accepted if at least one peek point has a line of fire to
-  the player (neighboring obstacles can bury both peek lanes — the archer
-  would shuttle between trees permanently hidden and stall the wave); it
-  commits to the exposed side. With no workable cover and no line of fire
+  the player with `PEEK_LOS_PAD` metres to spare (neighboring obstacles
+  can bury both peek lanes — the archer would shuttle between trees
+  permanently hidden and stall the wave; and a line that merely grazes a
+  neighbor is as good as buried, since the walker never occupies the
+  exact peek point); it commits to the exposed side. With no workable cover and no line of fire
   from where it stands, it keeps advancing until a shot line opens.
   Bolts loose from the crossbow itself (the hand socket's world position,
   mid-Throw pose — mirroring the player's arrows spawning at the nocked
@@ -183,8 +185,24 @@ store.
   (`EnemySystem.steerAround()`): when the lane a few metres ahead is
   blocked (`firstBlockingObstacle()` in `web/geom.js`), they follow the
   blocking obstacle's tangent with a light outward bias, and the detour
-  side sticks until the lane clears so a wall is followed to its end
-  rather than re-decided (and reversed) in every pocket along it. Applies
+  side sticks so a wall is followed to its end rather than re-decided
+  (and reversed) in every pocket along it. Two deadlock guards on that
+  commitment, both reproduced on live forest layouts at 60 Hz steps
+  (regression layouts pinned in the trap e2e tests): the side only
+  expires after the lane has stayed clear for a beat
+  (`STEER_CLEAR_TIME`) — mid-detour the lane samples clear for single
+  frames when the wall's next tree sits just past the lookahead, and
+  re-deciding the side each such frame shuttles a walker between two
+  trees forever — and a walker that meant to walk but netted almost no
+  ground over a `STEER_STUCK_WINDOW` (a committed tangent driving into a
+  hugged neighbor that the push-out cancels, pinning it mid-wedge) flips
+  its detour side and rounds the other way, then prefers the flipped side
+  on re-commits for `STEER_PREFER_TIME` so a fresh nearest-tangent pick
+  doesn't walk it straight back into the wedge it just escaped. A pocket
+  walled on both sides (three-tree cul-de-sac) pins either way, so
+  `STEER_RETREAT_AFTER` consecutive pinned windows escalate: the walker
+  backs straight out of the pocket mouth for `STEER_RETREAT_TIME`, then
+  re-approaches on the preferred side. Applies
   to melee advance and every skeleton `moveToward()` alike; the push-out
   stays as the collision safety net.
 - Melee ignores the perch elevation: attacks reach the player from the

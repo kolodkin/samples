@@ -489,6 +489,70 @@ def test_goblin_routes_around_a_wall_of_obstacles(server_url, page):
     assert page.evaluate("() => window.__ARCHER.state.hp") == 10000 - 10
 
 
+# The two walker-trap regressions below pin layouts lifted from live runs
+# (seed-9 and seed-129 forest scatters) where an advancing skeleton wedged
+# behind a tree pair forever, permanently hidden — the wave could not be
+# cleared and the game was stuck. Success criterion for both: the enemy
+# eventually holds a position with a clear XZ line from the player, i.e. it
+# is hittable (mirrors the buried-peek test's predicate). Both traps are
+# step-length-sensitive — a 60 Hz device locks in while SwiftShader's long
+# clamped frames jostle free — so the tests pin the 60 Hz step (setFixedDt).
+
+EXPOSED_PREDICATE = """() => {
+  const P = { x: 0, z: 34 };
+  const e = window.__ARCHER.state.enemies[0];
+  const dx = e.x - P.x, dz = e.z - P.z;
+  return !window.__ARCHER.state.obstacles.some((o) => {
+    const t = Math.max(0, Math.min(1,
+      ((o.x - P.x) * dx + (o.z - P.z) * dz) / (dx * dx + dz * dz)));
+    return Math.hypot(P.x + t * dx - o.x, P.z + t * dz - o.z) < o.radius;
+  });
+}"""
+
+
+def test_skeleton_escapes_a_tree_pair_across_its_lane(server_url, page):
+    # Regression: two trees whose padded edges sat right at the steering
+    # lookahead horizon made the lane sample clear for a frame between
+    # blocks; each clear frame reset the committed detour side and the
+    # re-decision flipped it, so the skeleton shuttled left-right between
+    # the trees forever, hidden from the player — the wave never cleared.
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
+    page.evaluate(
+        """() => {
+          window.__ARCHER.setFixedDt(1 / 60);
+          window.__ARCHER.setObstacles([
+            { x: -14.97, z: -1.23, radius: 1.5, height: 6 },
+            { x: -12.58, z: -2.09, radius: 1.5, height: 6 },
+          ]);
+          window.__ARCHER.spawnEnemy('skeleton', -17, -10);
+        }"""
+    )
+    page.wait_for_function(EXPOSED_PREDICATE, timeout=90000)
+
+
+def test_skeleton_is_not_pinned_in_a_tree_wedge(server_url, page):
+    # Regression: hugging one tree of a wedge while the desired lane's
+    # first blocker was the *other* tree, the committed tangent pointed
+    # straight into the hugged tree — the push-out cancelled every step
+    # and the skeleton jittered in place forever, hidden from the player.
+    page.goto(server_url + BOOT)
+    _wait_ready(page)
+    page.evaluate("() => window.__ARCHER.setPlayerHp(10000)")
+    page.evaluate(
+        """() => {
+          window.__ARCHER.setFixedDt(1 / 60);
+          window.__ARCHER.setObstacles([
+            { x: 6.37, z: 10.24, radius: 1.5, height: 6 },
+            { x: 10.95, z: 5.43, radius: 1.5, height: 6 },
+          ]);
+          window.__ARCHER.spawnEnemy('skeleton', 9, 1);
+        }"""
+    )
+    page.wait_for_function(EXPOSED_PREDICATE, timeout=90000)
+
+
 def test_player_death_shows_game_over(server_url, page):
     page.goto(server_url + BOOT)
     _wait_ready(page)
