@@ -12,28 +12,19 @@ const PROJ_RADIUS = 0.09; // skeleton projectile: mesh size and collision pad
 // Walker steering (steerAround): lane lookahead (m); clearance margin over
 // the push-out resting distance (pushOutOfObstacles parks a hugging walker
 // at exactly obstacle.radius + bodyRadius); outward bias that keeps a
-// detour from grazing back into the circle it rounds; how long (s) the
-// lane must stay clear before the committed detour side is forgotten.
+// detour from grazing back into the circle it rounds.
 const STEER_LOOKAHEAD = 4;
 const STEER_CLEARANCE = 0.1;
 const STEER_OUT_BIAS = 0.25;
+// Deadlock guards on the committed detour side (rationale in SPEC.md,
+// Enemies): sustained-clear time (s) before the side expires; the pinned
+// test window (s) and the net-travel fraction under which it trips; how
+// long (s) a stuck flip's side is preferred on re-commits; consecutive
+// pinned windows before a cul-de-sac retreat, and its length (s).
 const STEER_CLEAR_TIME = 0.5;
-// Wedge-pin escape (see update()): a walker counts as pinned when its net
-// displacement over a STUCK_WINDOW falls under STUCK_RATIO of the distance
-// it meant to walk in it; it then flips its detour side and tries the
-// other way around. Windowed on purpose — a pinned walker still creeps
-// free for single clean frames, which a per-frame test keeps resetting on.
 const STEER_STUCK_WINDOW = 1.0;
 const STEER_STUCK_RATIO = 0.4; // wall-following nets well above this; shuttles net below
-// After a stuck flip the flipped side is preferred on re-commits for a few
-// seconds: the escape crosses clear ground, the commitment expires, and a
-// fresh nearest-tangent pick would send the walker straight back into the
-// wedge it just escaped — a limit cycle through the flip.
 const STEER_PREFER_TIME = 4;
-// Cul-de-sac escalation: pinned with walls on BOTH sides (three-tree
-// pocket), flipping just pins the other way — after RETREAT_AFTER
-// consecutive stuck windows the walker backs straight out of the pocket
-// mouth for RETREAT_TIME before re-approaching on the preferred side.
 const STEER_RETREAT_AFTER = 2;
 const STEER_RETREAT_TIME = 0.8;
 
@@ -130,16 +121,12 @@ export class EnemySystem {
 
   speedOf(e) { return e.c.speed * CONFIG.stages[this.game.stage].speedMult; }
 
-  // No pathfinding: the slide push-out alone deadlocks in the concave
-  // pocket between adjacent obstacles, so a walker whose lane is blocked
-  // follows the blocking obstacle's tangent instead; detourSide sticks so
-  // a wall is followed to its end (see SPEC.md). The side only expires
-  // after the lane has stayed clear for STEER_CLEAR_TIME: mid-detour the
-  // lane samples clear for single frames when the wall's next obstacle
-  // sits just past the lookahead, and re-deciding the side on each such
-  // frame flip-flops a walker in place between two trees forever (a
-  // deadlock reproduced on live forest layouts at 60 Hz steps — see the
-  // trap regression tests).
+  // No pathfinding: a walker whose lane is blocked follows the blocking
+  // obstacle's tangent instead, and detourSide sticks so a wall is
+  // followed to its end. Expiring the side takes a sustained clear lane —
+  // on single clear frames mid-detour a re-decision flip-flops a walker
+  // in place between two trees forever (see SPEC.md and the trap
+  // regression tests).
   steerAround(e, dir, dist, dt) {
     const pos = e.mesh.position;
     const o = firstBlockingObstacle(
@@ -168,9 +155,9 @@ export class EnemySystem {
     if (dist < 0.05) return;
     dir.normalize();
     let step;
-    if (e.retreatT > 0) { // backing out of a cul-de-sac (see update())
+    if (e.retreatT > 0) { // backing out of a cul-de-sac (see trackWedgePin)
       e.retreatT -= dt;
-      step = dir.clone().negate();
+      step = dir.negate();
     } else {
       step = this.steerAround(e, dir, dist, dt);
     }
@@ -178,6 +165,36 @@ export class EnemySystem {
     pos.addScaledVector(step, len);
     e.moved += len; // feeds the walk cycle (animateRig)
     e.mesh.rotation.y = Math.atan2(step.x, step.z);
+  }
+
+  // Wedge-pin escape: a committed tangent can drive into a hugged neighbor
+  // the desired lane never crosses — the push-out cancels the step and the
+  // walker jitters in place forever. Wanting to walk but netting almost no
+  // ground over a window is the one reliable signature; a pinned walker
+  // flips its detour side, and repeated pins back it out of the pocket
+  // (see SPEC.md and the trap regression tests).
+  trackWedgePin(e, dt) {
+    e.sidePreferT = Math.max(0, e.sidePreferT - dt);
+    e.wantedAcc += e.moved;
+    e.windowT += dt;
+    if (e.windowT < STEER_STUCK_WINDOW) return;
+    const net = e.anchor.distanceTo(e.mesh.position);
+    if (e.detourSide && e.wantedAcc > 0.1 && net < e.wantedAcc * STEER_STUCK_RATIO) {
+      e.stuckStreak += 1;
+      e.detourSide = -e.detourSide;
+      e.laneClear = 0;
+      e.sidePrefer = e.detourSide;
+      e.sidePreferT = STEER_PREFER_TIME;
+      if (e.stuckStreak >= STEER_RETREAT_AFTER) {
+        e.retreatT = STEER_RETREAT_TIME;
+        e.stuckStreak = 0;
+      }
+    } else {
+      e.stuckStreak = 0;
+    }
+    e.anchor.copy(e.mesh.position);
+    e.windowT = 0;
+    e.wantedAcc = 0;
   }
 
   update(dt) {
@@ -204,35 +221,7 @@ export class EnemySystem {
         // Walkers cannot clip through obstacles; the footprint is the
         // body circle (not the fatter bodyRadius() arrow hit-sphere).
         pushOutOfObstacles(e.mesh.position, e.c.bodyRadius, this.game.obstacles);
-        // Wedge-pin escape: a committed tangent can drive into a hugged
-        // neighbor the desired lane never crosses — the push-out cancels
-        // the step and the walker jitters in place forever (the second
-        // live-layout deadlock; see the trap regression tests). Wanting
-        // to walk but getting nowhere is the one reliable signature, so
-        // a walker pinned through a STEER_STUCK_WINDOW rounds the other
-        // way.
-        e.sidePreferT = Math.max(0, e.sidePreferT - dt);
-        e.wantedAcc += e.moved;
-        e.windowT += dt;
-        if (e.windowT >= STEER_STUCK_WINDOW) {
-          const net = e.anchor.distanceTo(e.mesh.position);
-          if (e.detourSide && e.wantedAcc > 0.1 && net < e.wantedAcc * STEER_STUCK_RATIO) {
-            e.stuckStreak += 1;
-            e.detourSide = -e.detourSide;
-            e.laneClear = 0;
-            e.sidePrefer = e.detourSide;
-            e.sidePreferT = STEER_PREFER_TIME;
-            if (e.stuckStreak >= STEER_RETREAT_AFTER) {
-              e.retreatT = STEER_RETREAT_TIME;
-              e.stuckStreak = 0;
-            }
-          } else {
-            e.stuckStreak = 0;
-          }
-          e.anchor.copy(e.mesh.position);
-          e.windowT = 0;
-          e.wantedAcc = 0;
-        }
+        this.trackWedgePin(e, dt); // measures the post-push position
       }
       this.animateRig(e, dt, playerPos);
     }

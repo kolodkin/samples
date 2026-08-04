@@ -423,10 +423,9 @@ window.__ARCHER = {
   giveAmmo: (type, n) => { game.stats.ammo[type] += n; game.syncUI(); },
   selectAmmo,
   setDropChance: (c) => { CONFIG.drops.chance = c; },
-  // Pin the simulation timestep (null restores wall-clock dt). Walker-trap
-  // regressions are step-length-sensitive: SwiftShader's slow frames take
-  // strides that jostle a walker out of deadlocks a real 60 Hz device
-  // locks into, so those tests must run the 60 Hz step explicitly.
+  // Pin the simulation timestep (null restores wall-clock dt) — the
+  // walker-trap regressions are step-length-sensitive (see their comment
+  // block in tests/test_e2e.py).
   setFixedDt: (v) => { fixedDt = v; },
   setProjectileSpeed: (v) => { CONFIG.enemies.skeleton.projectileSpeed = v; },
   setHealChance: (c) => { CONFIG.drops.heal.chance = c; },
