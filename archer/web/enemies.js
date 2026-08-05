@@ -16,6 +16,22 @@ const PROJ_RADIUS = 0.09; // skeleton projectile: mesh size and collision pad
 const STEER_LOOKAHEAD = 4;
 const STEER_CLEARANCE = 0.1;
 const STEER_OUT_BIAS = 0.25;
+// Deadlock guards on the committed detour side (rationale in SPEC.md,
+// Enemies): sustained-clear time (s) before the side expires; the pinned
+// test window (s) and the net-travel fraction under which it trips; how
+// long (s) a stuck flip's side is preferred on re-commits; consecutive
+// pinned windows before a cul-de-sac retreat, and its length (s).
+const STEER_CLEAR_TIME = 0.5;
+const STEER_STUCK_WINDOW = 1.0;
+const STEER_STUCK_RATIO = 0.4; // wall-following nets well above this; shuttles net below
+const STEER_PREFER_TIME = 4;
+const STEER_RETREAT_AFTER = 2;
+const STEER_RETREAT_TIME = 0.8;
+
+// Cover acceptance margin (m): a peek line that only grazes a neighbor
+// obstacle is no cover — the walker never occupies the exact peek point,
+// so a zero-margin line leaves the archer camping effectively buried.
+const PEEK_LOS_PAD = 0.3;
 
 export class EnemySystem {
   constructor(game) {
@@ -33,7 +49,10 @@ export class EnemySystem {
     const e = {
       type, c, mesh, hp: c.hp, state: 'advance', inert,
       frozen: 0, burn: 0, burnSpreadTimer: 0,
-      coverTimer: 0, cover: null, hasShot: false, detourSide: 0,
+      coverTimer: 0, cover: null, hasShot: false,
+      detourSide: 0, laneClear: 0, sidePrefer: 0, sidePreferT: 0,
+      stuckStreak: 0, retreatT: 0,
+      windowT: 0, wantedAcc: 0, anchor: new THREE.Vector3(x, 0, z),
       peekSide: this.game.rng.random() < 0.5 ? -1 : 1,
       bobT: this.game.rng.range(0, Math.PI * 2),
       walkAmp: 0, aimBlend: 0, moved: 0,
@@ -102,20 +121,28 @@ export class EnemySystem {
 
   speedOf(e) { return e.c.speed * CONFIG.stages[this.game.stage].speedMult; }
 
-  // No pathfinding: the slide push-out alone deadlocks in the concave
-  // pocket between adjacent obstacles, so a walker whose lane is blocked
-  // follows the blocking obstacle's tangent instead; detourSide sticks
-  // until the lane clears, so a wall is followed to its end (see SPEC.md).
-  steerAround(e, dir, dist) {
+  // No pathfinding: a walker whose lane is blocked follows the blocking
+  // obstacle's tangent instead, and detourSide sticks so a wall is
+  // followed to its end. Expiring the side takes a sustained clear lane —
+  // on single clear frames mid-detour a re-decision flip-flops a walker
+  // in place between two trees forever (see SPEC.md and the trap
+  // regression tests).
+  steerAround(e, dir, dist, dt) {
     const pos = e.mesh.position;
     const o = firstBlockingObstacle(
       pos, dir, Math.min(STEER_LOOKAHEAD, dist),
       e.c.bodyRadius + STEER_CLEARANCE, this.game.obstacles,
     );
-    if (!o) { e.detourSide = 0; return dir; }
+    if (!o) {
+      e.laneClear += dt;
+      if (e.laneClear >= STEER_CLEAR_TIME) e.detourSide = 0;
+      return dir;
+    }
+    e.laneClear = 0;
     const radial = new THREE.Vector3(pos.x - o.x, 0, pos.z - o.z).normalize();
     if (!e.detourSide) { // turn toward the nearer tangent, then commit
-      e.detourSide = radial.x * dir.z - radial.z * dir.x >= 0 ? 1 : -1;
+      e.detourSide = e.sidePreferT > 0 ? e.sidePrefer
+        : (radial.x * dir.z - radial.z * dir.x >= 0 ? 1 : -1);
     }
     return perpXZ(radial).multiplyScalar(e.detourSide)
       .addScaledVector(radial, STEER_OUT_BIAS).normalize();
@@ -127,11 +154,47 @@ export class EnemySystem {
     const dist = dir.length();
     if (dist < 0.05) return;
     dir.normalize();
-    const step = this.steerAround(e, dir, dist);
+    let step;
+    if (e.retreatT > 0) { // backing out of a cul-de-sac (see trackWedgePin)
+      e.retreatT -= dt;
+      step = dir.negate();
+    } else {
+      step = this.steerAround(e, dir, dist, dt);
+    }
     const len = Math.min(dist, speed * dt);
     pos.addScaledVector(step, len);
     e.moved += len; // feeds the walk cycle (animateRig)
     e.mesh.rotation.y = Math.atan2(step.x, step.z);
+  }
+
+  // Wedge-pin escape: a committed tangent can drive into a hugged neighbor
+  // the desired lane never crosses — the push-out cancels the step and the
+  // walker jitters in place forever. Wanting to walk but netting almost no
+  // ground over a window is the one reliable signature; a pinned walker
+  // flips its detour side, and repeated pins back it out of the pocket
+  // (see SPEC.md and the trap regression tests).
+  trackWedgePin(e, dt) {
+    e.sidePreferT = Math.max(0, e.sidePreferT - dt);
+    e.wantedAcc += e.moved;
+    e.windowT += dt;
+    if (e.windowT < STEER_STUCK_WINDOW) return;
+    const net = e.anchor.distanceTo(e.mesh.position);
+    if (e.detourSide && e.wantedAcc > 0.1 && net < e.wantedAcc * STEER_STUCK_RATIO) {
+      e.stuckStreak += 1;
+      e.detourSide = -e.detourSide;
+      e.laneClear = 0;
+      e.sidePrefer = e.detourSide;
+      e.sidePreferT = STEER_PREFER_TIME;
+      if (e.stuckStreak >= STEER_RETREAT_AFTER) {
+        e.retreatT = STEER_RETREAT_TIME;
+        e.stuckStreak = 0;
+      }
+    } else {
+      e.stuckStreak = 0;
+    }
+    e.anchor.copy(e.mesh.position);
+    e.windowT = 0;
+    e.wantedAcc = 0;
   }
 
   update(dt) {
@@ -158,6 +221,7 @@ export class EnemySystem {
         // Walkers cannot clip through obstacles; the footprint is the
         // body circle (not the fatter bodyRadius() arrow hit-sphere).
         pushOutOfObstacles(e.mesh.position, e.c.bodyRadius, this.game.obstacles);
+        this.trackWedgePin(e, dt); // measures the post-push position
       }
       this.animateRig(e, dt, playerPos);
     }
@@ -292,19 +356,21 @@ export class EnemySystem {
   }
 
   // First peek side of `cover` (preferring the archer's preset one) whose
-  // peek point still sees the player; 0 when both are buried.
+  // peek point still sees the player with PEEK_LOS_PAD to spare; 0 when
+  // both are buried.
   exposedPeekSide(e, cover, playerPos) {
     for (const side of [e.peekSide, -e.peekSide]) {
-      if (this.hasLineOfFire(e, this.peekPoint(cover, side, playerPos), playerPos)) return side;
+      if (this.hasLineOfFire(e, this.peekPoint(cover, side, playerPos), playerPos,
+        PEEK_LOS_PAD)) return side;
     }
     return 0;
   }
 
   // The one "can a shot get through from here" test for cover decisions:
   // sight line from the archer's head over `point` to the player.
-  hasLineOfFire(e, point, playerPos) {
+  hasLineOfFire(e, point, playerPos, pad = 0) {
     const head = new THREE.Vector3(point.x, e.c.height, point.z);
-    return !obstacleHit(head, playerPos, this.game.obstacles);
+    return !obstacleHit(head, playerPos, this.game.obstacles, pad);
   }
 
   coverPoint(cover, playerPos) {
