@@ -324,8 +324,9 @@ for (const type of ['touchend', 'touchcancel']) {
 
 let last = performance.now();
 let framesRendered = 0;
+let fixedDt = null; // e2e: pin the simulation step (see setFixedDt)
 function tick(now) {
-  const dt = Math.min(0.05, (now - last) / 1000);
+  const dt = fixedDt ?? Math.min(0.05, (now - last) / 1000);
   last = now;
   if (game.screen === 'playing') {
     game.player.update(dt);
@@ -422,6 +423,10 @@ window.__ARCHER = {
   giveAmmo: (type, n) => { game.stats.ammo[type] += n; game.syncUI(); },
   selectAmmo,
   setDropChance: (c) => { CONFIG.drops.chance = c; },
+  // Pin the simulation timestep (null restores wall-clock dt) — the
+  // walker-trap regressions are step-length-sensitive (see their comment
+  // block in tests/test_e2e.py).
+  setFixedDt: (v) => { fixedDt = v; },
   setProjectileSpeed: (v) => { CONFIG.enemies.skeleton.projectileSpeed = v; },
   setHealChance: (c) => { CONFIG.drops.heal.chance = c; },
   setFreezeBurstChance: (c) => { CONFIG.arrow.types.freezing.burst.chance = c; },
