@@ -1444,6 +1444,7 @@ def test_title_screen_and_start_button(server_url, page):
     page.goto(server_url + "/?seed=1&waves=0")  # no autostart: land on the title
     _wait_ready(page)
     expect(page.get_by_test_id("title-screen")).to_be_visible()
+    expect(page.get_by_test_id("credits")).to_contain_text("Quaternius & KayKit — CC0")
     _shot(page, "title-screen")
     page.get_by_test_id("start-btn").click()
     page.wait_for_function("() => window.__ARCHER.state.screen === 'playing'", timeout=5000)

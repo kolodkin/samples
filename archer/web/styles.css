@@ -25,6 +25,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000;
 .screen h1 { font-size: 56px; letter-spacing: 0.12em; margin: 0; }
 .screen p { margin: 0; opacity: 0.85; font-size: 20px; }
 .screen .controls { font-weight: 600; opacity: 1; font-size: 28px; }
+.screen .credits { font-size: 14px; opacity: 0.55; }
 .screen button {
   font-size: 20px; padding: 10px 34px; margin-top: 10px; cursor: pointer;
   background: #ffd257; border: none; border-radius: 6px; font-weight: 700;
