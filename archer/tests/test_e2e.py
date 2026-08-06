@@ -1446,6 +1446,10 @@ def test_title_screen_and_start_button(server_url, page):
     expect(page.get_by_test_id("title-screen")).to_be_visible()
     expect(page.get_by_test_id("credits")).to_contain_text("Quaternius & KayKit — CC0")
     _shot(page, "title-screen")
+    # Portrait phone: the compact @media styles kick in below 520px width.
+    page.set_viewport_size({"width": 390, "height": 844})
+    expect(page.get_by_test_id("credits")).to_be_visible()
+    _shot(page, "title-screen-mobile")
     page.get_by_test_id("start-btn").click()
     page.wait_for_function("() => window.__ARCHER.state.screen === 'playing'", timeout=5000)
     expect(page.get_by_test_id("hud")).to_be_visible()
