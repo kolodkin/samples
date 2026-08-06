@@ -97,30 +97,51 @@ ogre `1.9` (body centre). Volcano bursts aim at the pack's leading edge at
 
 ## Camera motion
 
-Headless Chromium renders at **~15 fps**, so a mouse-move step is only visible
-as camera motion if it lands in its own rendered frame:
+Headless Chromium renders slowly — measure it, don't assume. An empty stage
+runs ~15 fps; a full field of animated monsters has been as low as **4.7 fps**
+(~214 ms per frame) since the pathfinding and flank-obstacle work landed.
+Measure before a session:
 
 ```python
-FRAME = 68  # ms — one rendered frame at ~15 fps
+fps = page.evaluate("""() => new Promise(res => { let n = 0; const t0 = performance.now();
+  const tick = () => { n++; if (performance.now() - t0 < 3000) requestAnimationFrame(tick);
+                       else res(n / 3); };
+  requestAnimationFrame(tick); })""")
 ```
 
-Steps spaced closer than that pile into a single frame and read as a **teleport**
-— this was the source of every "glitch" in review. Rules that fixed it:
+A mouse-move step only becomes visible camera motion if it lands in its own
+rendered frame; steps closer together pile into one frame and read as a
+**teleport** — the source of every "glitch" in review. `FRAME = 68` is the
+step spacing, but what actually governs smoothness is how many rendered frames
+the whole turn spans and how far the camera moves in each.
 
-- Every pan is stepped at `FRAME` spacing, never faster.
+**The rule that survives fps changes:**
+
+```
+turn_wall_duration × speed_factor ≈ 300 ms on screen
+```
+
+300 ms is the figure that was signed off. Turn duration is `steps × FRAME`, so
+when the capture gets slower (forcing a higher speed-up to hold the runtime),
+add steps to compensate — don't just re-encode faster, or the turns snap again.
+Worked example: at 12 steps a turn is 816 ms of wall clock; encoded at 2.7×
+that is 302 ms on screen. At 9 steps (610 ms) the matching speed-up is 2.0×.
+
+Other rules:
+
 - Steps are **eased** (smoothstep `t²(3-2t)`), so a turn accelerates out of rest
   and settles onto the target. A linear pan of the same duration still reads as
   a machine snapping between angles.
 - Corrections are spread over 2–3 steps, never dumped into one event, and
   residuals under ~1.5 px are dropped entirely.
-- Target-to-target turns use 9 steps (~610 ms); the **opening** pan uses 18 and
-  is preceded by a still hold, because it is the first thing the viewer sees.
+- The **opening** pan gets double the steps and a still hold before it, because
+  it is the first thing the viewer sees with no context.
 
 ## Pacing
 
 The bow's own cadence is fast — `bow.shot` is snap 0.024 + reload 0.12 + nock
 0.06 ≈ **0.2 s**. Any longer gap between shots is script overhead, not the game.
-At 15 fps each `page.evaluate` costs a frame, so:
+Every `page.evaluate` costs a rendered frame, which is expensive at 5–15 fps, so:
 
 - Fetch enemies + yaw + pitch + ready flag in **one** round trip per shot.
 - Sample enemy velocity **once per stage**, not per shot — every walker closes
@@ -137,23 +158,33 @@ goblin). Spawn around `z = 1..12` and let them close.
 ## Encode
 
 Raw capture is a 1280×720 VP8 `.webm`. Speed-up is essential — the headless
-capture runs slow — but 2× is the practical floor if the eased turns are to keep
-their weight; faster erases them.
+capture runs slow — but pick the factor from the turn-duration rule above, not
+by taste, and add pan steps if a slower capture forces a higher factor.
+
+Trim per stage rather than dropping shots from the script. The recorder logs
+`CUTS` (the timestamp of every in-place stage switch) alongside `SHOTS`, so the
+boundaries come from the run itself instead of being hunted frame by frame:
 
 ```python
-SEGS = [(5.4, 15.9), (18.9, 28.0), (31.1, 41.0), (44.1, 53.9), (57.7, 71.9)]
+SEGS = [(cut + open_hold, last_shot + tail)
+        for cut, last_shot in zip(CUTS, LAST_SHOT_PER_STAGE)]
+# open_hold ~2.6 s on the first stage (settle before the opening pan), ~0.6 s after
+# each cut; tail ~1.6 s to let an impact read, ~3 s for the volcano bursts.
 ```
 
-Trim per stage rather than dropping shots from the script: each segment runs
-from the stage cut through the third shot's impact. Splices land on stage
-boundaries, so they read as the hard cuts already in the clip. Verify each
-boundary frame — it must be a settled frame of the new stage, not mid-pan.
+Each segment runs from just after the stage cut through the last kept shot's
+impact. Splices land on stage boundaries, so they read as the hard cuts already
+in the clip. Spot-check a boundary frame — it must be a settled frame of the new
+stage, not mid-pan.
+
+Drop shots per stage (three → two) to hit a length target; that is cheaper than
+re-recording and leaves the motion untouched. Target ~26 s.
 
 ```bash
-# concat the segments, then 2x
+# concat the segments, then speed up (setpts=1/factor, e.g. 0.37 for 2.7x)
 ffmpeg -i raw.webm -filter_complex \
-  "[0:v]trim=5.4:15.9,setpts=PTS-STARTPTS[s0]; ... \
-   [s0][s1][s2][s3][s4]concat=n=5:v=1:a=0[cat];[cat]setpts=0.5*PTS[out]" \
+  "[0:v]trim=12.27:26.02,setpts=PTS-STARTPTS[s0]; ... \
+   [s0][s1][s2][s3][s4]concat=n=5:v=1:a=0[cat];[cat]setpts=0.37*PTS[out]" \
   -map "[out]" -r 30 -c:v libx264 -preset slow -crf 21 \
   -pix_fmt yuv420p -movflags +faststart -an archer-gameplay.mp4
 
@@ -165,7 +196,7 @@ ffmpeg -i archer-gameplay.mp4 -i palette.png -lavfi \
   archer-gameplay.gif
 ```
 
-Target: ~27 s, GIF ≈ 3.7 MB at 520 px / 12 fps, MP4 ≈ 2.2 MB.
+Target: ~26 s, GIF ≈ 3.7 MB at 520 px / 12 fps, MP4 ≈ 2.4 MB.
 
 ## Posting note
 
