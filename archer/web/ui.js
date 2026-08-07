@@ -129,6 +129,7 @@ function Screens({ s, actions }) {
         <p>Power: +/− buttons (or keys). ✨ Auto picks your best arrow — pick a slot (or 1–${SLOTS.length}) to choose yourself.</p>
         <p data-testid="best">Best: ${s.best.score} pts, stage ${s.best.stage}/${s.totalStages}</p>
         <button data-testid="start-btn" onClick=${actions.start}>Start</button>
+        <p class="credits" data-testid="credits">Monsters by Quaternius & KayKit — CC0</p>
       <//>`;
   }
   if (s.screen === 'paused') {
