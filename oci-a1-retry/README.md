@@ -10,3 +10,5 @@ cp config.env.example config.env   # fill in your OCIDs
 # or schedule it instead (exit code 2 = still out of capacity):
 # */5 * * * * flock -n /tmp/oci-a1.lock /path/to/create-instance.sh --once >> ~/oci-a1.log 2>&1
 ```
+
+No always-on machine? `.github/workflows/oci-a1-retry.yml` runs it from GitHub Actions every 15 minutes (8 attempts per run); the required repository secrets are listed in the workflow header. Scheduled workflows only fire on the repo's default branch.

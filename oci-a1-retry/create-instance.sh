@@ -94,6 +94,11 @@ if [ "${1:-}" = "--once" ]; then
   exit $?
 fi
 
+# MAX_ATTEMPTS=0 (default) loops forever; a positive value exits 2 when spent,
+# so a bounded runner (e.g. a GitHub Actions job) can make several attempts per
+# invocation and let the scheduler drive the long game.
+MAX_ATTEMPTS="${MAX_ATTEMPTS:-0}"
+
 attempt=0
 while :; do
   attempt=$((attempt + 1))
@@ -102,5 +107,9 @@ while :; do
   rc=$?
   [ $rc -eq 0 ] && exit 0
   [ $rc -eq 1 ] && exit 1
+  if [ "$MAX_ATTEMPTS" -gt 0 ] && [ "$attempt" -ge "$MAX_ATTEMPTS" ]; then
+    log "still out of capacity after $attempt attempts, giving up for now"
+    exit 2
+  fi
   sleep "$RETRY_SECONDS"
 done

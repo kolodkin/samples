@@ -1,0 +1,77 @@
+# Periodically tries to create the Always Free A1 instance until OCI has
+# capacity. Each run makes up to 8 attempts (one per minute), then yields to
+# the next scheduled run. Once the instance exists, runs become instant no-ops
+# — disable the workflow at that point.
+#
+# Required repository secrets (Settings > Secrets and variables > Actions):
+#   OCI_USER_OCID            user OCID (My profile)
+#   OCI_TENANCY_OCID         tenancy OCID
+#   OCI_KEY_FINGERPRINT      API key fingerprint shown in the console
+#   OCI_PRIVATE_KEY          full PEM content of the API private key
+#   OCI_REGION               e.g. il-jerusalem-1
+#   OCI_COMPARTMENT_OCID     target compartment (tenancy OCID works)
+#   OCI_AVAILABILITY_DOMAIN  e.g. Xxxx:IL-JERUSALEM-1-AD-1
+#   OCI_SUBNET_OCID          subnet to attach the VNIC to
+#   OCI_IMAGE_OCID           aarch64 image OCID
+#   OCI_SSH_PUBLIC_KEY       content of your ssh public key
+name: OCI A1 instance retry
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'   # best-effort; GitHub may delay or skip firings
+  workflow_dispatch:
+
+concurrency:
+  group: oci-a1-retry
+  cancel-in-progress: false
+
+jobs:
+  launch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install OCI CLI
+        run: pip install --quiet oci-cli
+
+      - name: Configure OCI auth
+        env:
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_KEY_FINGERPRINT: ${{ secrets.OCI_KEY_FINGERPRINT }}
+          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+        run: |
+          mkdir -p ~/.oci
+          printf '%s\n' "$OCI_PRIVATE_KEY" > ~/.oci/key.pem
+          cat > ~/.oci/config <<EOF
+          [DEFAULT]
+          user=$OCI_USER_OCID
+          tenancy=$OCI_TENANCY_OCID
+          region=$OCI_REGION
+          fingerprint=$OCI_KEY_FINGERPRINT
+          key_file=$HOME/.oci/key.pem
+          EOF
+          chmod 600 ~/.oci/config ~/.oci/key.pem
+          oci iam region list --output table > /dev/null
+
+      - name: Attempt instance launch
+        env:
+          COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          AVAILABILITY_DOMAIN: ${{ secrets.OCI_AVAILABILITY_DOMAIN }}
+          SUBNET_OCID: ${{ secrets.OCI_SUBNET_OCID }}
+          IMAGE_OCID: ${{ secrets.OCI_IMAGE_OCID }}
+          OCI_SSH_PUBLIC_KEY: ${{ secrets.OCI_SSH_PUBLIC_KEY }}
+          SSH_PUB_KEY_FILE: /tmp/ssh_key.pub
+          MAX_ATTEMPTS: 8
+          RETRY_SECONDS: 60
+        run: |
+          printf '%s\n' "$OCI_SSH_PUBLIC_KEY" > "$SSH_PUB_KEY_FILE"
+          rc=0
+          ./oci-a1-retry/create-instance.sh || rc=$?
+          if [ "$rc" -eq 2 ]; then
+            echo "::notice::Still out of capacity — next scheduled run will retry."
+            exit 0
+          fi
+          exit "$rc"
