@@ -1,7 +1,7 @@
 OCI A1 Instance Retry
 ---
 
-Works around Oracle Cloud's "Out of capacity for shape VM.Standard.A1.Flex" error on Always Free accounts by retrying `oci compute instance launch` until a capacity slot frees up, sweeping every availability domain on each attempt. It needs no configuration beyond an authenticated OCI CLI — the compartment comes from the CLI config's tenancy, and the availability domains, subnet and newest matching image are discovered at run time; `config.env` exists only to override those (see `config.env.example`). The script is idempotent, so if an instance with the configured display name already exists it exits without creating a duplicate.
+Works around Oracle Cloud's "Out of capacity for shape VM.Standard.A1.Flex" error on Always Free accounts by retrying `oci compute instance launch` until a capacity slot frees up, sweeping every availability domain on each attempt. It needs no configuration beyond an authenticated OCI CLI — the compartment comes from the CLI config's tenancy, and the availability domains, subnet and newest matching image are discovered at run time; `config.env` exists only to override those (see `config.env.example`). It asks for 1 OCPU / 6 GB by default — half the Always Free allowance, which slots into fragmented capacity far more often than the full 2 OCPUs / 12 GB, and the instance can be resized up later. The script is idempotent, so if an instance with the configured display name already exists it exits without creating a duplicate.
 
 ```bash
 ./create-instance.sh               # retry loop, one sweep every 90s

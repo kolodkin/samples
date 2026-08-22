@@ -24,8 +24,10 @@ if [ -f "$CONFIG" ]; then
 fi
 
 SHAPE="${SHAPE:-VM.Standard.A1.Flex}"
-OCPUS="${OCPUS:-2}"                 # Always Free A1 limit is now 2 OCPUs / 12 GB
-MEMORY_GB="${MEMORY_GB:-12}"
+# Half the Always Free A1 quota (2 OCPUs / 12 GB): a smaller request fits into
+# fragmented capacity far more often, and the instance can be resized up later.
+OCPUS="${OCPUS:-1}"
+MEMORY_GB="${MEMORY_GB:-6}"
 BOOT_VOLUME_GB="${BOOT_VOLUME_GB:-50}"
 DISPLAY_NAME="${DISPLAY_NAME:-a1-free}"
 RETRY_SECONDS="${RETRY_SECONDS:-90}"

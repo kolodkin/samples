@@ -63,8 +63,8 @@ jobs:
       - name: Attempt instance launch
         env:
           OCI_SSH_PUBLIC_KEY: ${{ vars.OCI_SSH_PUBLIC_KEY }}
-          OCPUS: ${{ vars.OCPUS || 2 }}
-          MEMORY_GB: ${{ vars.MEMORY_GB || 12 }}
+          OCPUS: ${{ vars.OCPUS || 1 }}
+          MEMORY_GB: ${{ vars.MEMORY_GB || 6 }}
           DISPLAY_NAME: ${{ vars.DISPLAY_NAME || 'a1-free' }}
           MAX_ATTEMPTS: 8
           RETRY_SECONDS: 60
