@@ -3,17 +3,17 @@
 # the next scheduled run. Once the instance exists, runs become instant no-ops
 # — disable the workflow at that point.
 #
-# Required repository secrets (Settings > Secrets and variables > Actions):
-#   OCI_USER_OCID            user OCID (My profile)
-#   OCI_TENANCY_OCID         tenancy OCID
-#   OCI_KEY_FINGERPRINT      API key fingerprint shown in the console
-#   OCI_PRIVATE_KEY          full PEM content of the API private key
-#   OCI_REGION               e.g. il-jerusalem-1
-#   OCI_COMPARTMENT_OCID     target compartment (tenancy OCID works)
-#   OCI_AVAILABILITY_DOMAIN  e.g. Xxxx:IL-JERUSALEM-1-AD-1
-#   OCI_SUBNET_OCID          subnet to attach the VNIC to
-#   OCI_IMAGE_OCID           aarch64 image OCID
-#   OCI_SSH_PUBLIC_KEY       content of your ssh public key
+# Only two repository secrets are needed
+# (Settings > Secrets and variables > Actions > Secrets):
+#   OCI_PRIVATE_KEY   full PEM content of the API signing key
+#   OCI_USER_OCID     your user OCID (My profile) — an identifier, but this
+#                     repo is public, so keep it out of the source
+#   OCI_TENANCY_OCID  your tenancy OCID (profile menu > Tenancy)
+#
+# The key fingerprint is derived from the private key, the region is set below,
+# and compartment / availability domains / subnet / image are discovered from
+# the tenancy at run time. Optional repository *variables* override defaults:
+# OCI_REGION, OCI_SSH_PUBLIC_KEY, OCPUS, MEMORY_GB, DISPLAY_NAME.
 name: OCI A1 instance retry
 
 on:
@@ -39,35 +39,41 @@ jobs:
         env:
           OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
           OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
-          OCI_KEY_FINGERPRINT: ${{ secrets.OCI_KEY_FINGERPRINT }}
           OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
-          OCI_REGION: ${{ secrets.OCI_REGION }}
+          OCI_REGION: ${{ vars.OCI_REGION || 'il-jerusalem-1' }}
         run: |
+          set -euo pipefail
           mkdir -p ~/.oci
           printf '%s\n' "$OCI_PRIVATE_KEY" > ~/.oci/key.pem
+          # The console shows this fingerprint, but it is just an MD5 of the
+          # public half — deriving it keeps one more value out of the secrets.
+          fingerprint=$(openssl rsa -in ~/.oci/key.pem -pubout -outform DER 2>/dev/null \
+            | openssl dgst -md5 -c | sed 's/.*= //')
           cat > ~/.oci/config <<EOF
           [DEFAULT]
           user=$OCI_USER_OCID
           tenancy=$OCI_TENANCY_OCID
           region=$OCI_REGION
-          fingerprint=$OCI_KEY_FINGERPRINT
+          fingerprint=$fingerprint
           key_file=$HOME/.oci/key.pem
           EOF
           chmod 600 ~/.oci/config ~/.oci/key.pem
-          oci iam region list --output table > /dev/null
+          oci iam region list > /dev/null   # fails loudly on bad credentials
 
       - name: Attempt instance launch
         env:
-          COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
-          AVAILABILITY_DOMAIN: ${{ secrets.OCI_AVAILABILITY_DOMAIN }}
-          SUBNET_OCID: ${{ secrets.OCI_SUBNET_OCID }}
-          IMAGE_OCID: ${{ secrets.OCI_IMAGE_OCID }}
-          OCI_SSH_PUBLIC_KEY: ${{ secrets.OCI_SSH_PUBLIC_KEY }}
-          SSH_PUB_KEY_FILE: /tmp/ssh_key.pub
+          OCI_SSH_PUBLIC_KEY: ${{ vars.OCI_SSH_PUBLIC_KEY }}
+          OCPUS: ${{ vars.OCPUS || 2 }}
+          MEMORY_GB: ${{ vars.MEMORY_GB || 12 }}
+          DISPLAY_NAME: ${{ vars.DISPLAY_NAME || 'a1-free' }}
           MAX_ATTEMPTS: 8
           RETRY_SECONDS: 60
         run: |
-          printf '%s\n' "$OCI_SSH_PUBLIC_KEY" > "$SSH_PUB_KEY_FILE"
+          # Falls back to oci-a1-retry/authorized_key.pub when the variable is unset.
+          if [ -n "$OCI_SSH_PUBLIC_KEY" ]; then
+            printf '%s\n' "$OCI_SSH_PUBLIC_KEY" > /tmp/ssh_key.pub
+            export SSH_PUB_KEY_FILE=/tmp/ssh_key.pub
+          fi
           rc=0
           ./oci-a1-retry/create-instance.sh || rc=$?
           if [ "$rc" -eq 2 ]; then
