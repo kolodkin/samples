@@ -109,7 +109,9 @@ instance_exists() {
 # Launches into one AD. 0 = created, 2 = retryable (no capacity), 1 = fatal.
 attempt_launch() {
   local ad="$1" out rc
-  out=$(oci compute instance launch \
+  # --no-retry: the CLI otherwise retries the out-of-capacity 500 internally
+  # with backoff (minutes of silence); this loop is the retry strategy.
+  out=$(oci compute instance launch --no-retry \
     --compartment-id "$COMPARTMENT_OCID" \
     --availability-domain "$ad" \
     --subnet-id "$SUBNET_OCID" \
@@ -130,10 +132,12 @@ attempt_launch() {
 
   case "$out" in
     *"Out of capacity"*|*"Out of host capacity"*|*InternalError*)
-      log "  $ad: out of capacity"
+      log "  $ad: out of capacity, response:"
+      log "$out"
       return 2 ;;
     *TooManyRequests*)
-      log "  $ad: rate limited (429)"
+      log "  $ad: rate limited (429), response:"
+      log "$out"
       return 2 ;;
     *LimitExceeded*)
       log "service limit exceeded — you already use your Always Free A1 quota"
@@ -181,5 +185,6 @@ while :; do
     log "still out of capacity after $attempt attempts, giving up for now"
     exit 2
   fi
+  log "retrying in ${RETRY_SECONDS}s..."
   sleep "$RETRY_SECONDS"
 done
