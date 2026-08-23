@@ -10,4 +10,3 @@ Works around Oracle Cloud's "Out of capacity for shape VM.Standard.A1.Flex" erro
 # */5 * * * * flock -n /tmp/oci-a1.lock /path/to/create-instance.sh --once >> ~/oci-a1.log 2>&1
 ```
 
-No always-on machine? `.github/workflows/oci-a1-retry.yml` runs it from GitHub Actions every 15 minutes (8 attempts per run). It needs three repository secrets — `OCI_PRIVATE_KEY`, `OCI_USER_OCID`, `OCI_TENANCY_OCID` — and derives the key fingerprint from the private key. Scheduled workflows only fire on the repo's default branch.

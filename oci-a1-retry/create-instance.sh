@@ -32,8 +32,8 @@ BOOT_VOLUME_GB="${BOOT_VOLUME_GB:-50}"
 DISPLAY_NAME="${DISPLAY_NAME:-a1-free}"
 RETRY_SECONDS="${RETRY_SECONDS:-90}"
 # MAX_ATTEMPTS=0 loops forever; a positive value exits 2 once spent, so a
-# bounded runner (a GitHub Actions job) can make a few attempts per invocation
-# and let the scheduler drive the long game.
+# scheduled runner can make a few attempts per invocation and let the
+# scheduler drive the long game.
 MAX_ATTEMPTS="${MAX_ATTEMPTS:-0}"
 OS_NAME="${OS_NAME:-Canonical Ubuntu}"
 OS_VERSION="${OS_VERSION:-24.04}"
