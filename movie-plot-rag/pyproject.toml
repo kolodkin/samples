@@ -1,0 +1,26 @@
+[project]
+name = "movie-plot-rag"
+version = "0.1.0"
+description = "RAG + embeddings example: semantic movie search with ClickHouse as the vector store"
+requires-python = ">=3.10"
+
+dependencies = [
+    # [distributed] brings the PostgreSQL (asyncpg/psycopg2) + ClickHouse-server
+    # (clickhouse-connect) drivers the default distributed backend needs;
+    # [ai] brings litellm for the optional generation step.
+    "aaiclick[distributed,ai]",
+    "sentence-transformers>=3.0.0",
+    # Declared explicitly so the [tool.uv.sources] CPU-index pin below applies
+    # (uv sources only cover the project's own declared dependencies).
+    "torch>=2.1.0",
+]
+
+# CPU-only torch keeps the install a few hundred MB instead of multi-GB CUDA
+# wheels — this example only ever embeds ~1k short texts.
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
