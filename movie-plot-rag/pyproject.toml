@@ -8,7 +8,9 @@ dependencies = [
     # [distributed] brings the PostgreSQL (asyncpg/psycopg2) + ClickHouse-server
     # (clickhouse-connect) drivers the default distributed backend needs;
     # [ai] brings litellm for the optional generation step.
-    "aaiclick[distributed,ai]",
+    # >=0.0.21: earlier versions' embedded-chdb url() shim did not follow the
+    # Hugging Face 302 redirect, so the loader only worked on a real server.
+    "aaiclick[distributed,ai]>=0.0.21",
     "sentence-transformers>=3.0.0",
     # Declared explicitly so the [tool.uv.sources] CPU-index pin below applies
     # (uv sources only cover the project's own declared dependencies).
