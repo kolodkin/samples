@@ -10,8 +10,8 @@ aaiclick, with ClickHouse as the vector store:
 - Vector Storage (embeddings as Array(Float32) columns in ClickHouse)
 - Semantic Search (brute-force cosineDistance ORDER BY ... LIMIT k — exact
   top-k, no index needed at this scale)
-- Optional Generation (top-k plots fed to an LLM via aaiclick.ai's LiteLLM
-  provider; retrieval works fully offline without it)
+- Generation (top-k plots fed to an LLM via aaiclick.ai's provider, which
+  answers strictly from the retrieved context — the R, A and G of RAG)
 
 Data source: HenryWaltson/TMDB-IMDB-Movies-Dataset (Hugging Face Parquet) —
 TMDB plot synopses cross-referenced with IMDb vote counts.
@@ -27,8 +27,11 @@ Usage:
     # worker — handy for debugging. `setup` creates that local backend; add
     # --force if an older aaiclick left a local.db whose schema predates this
     # version (it refuses to reuse one, and --force is a no-op when current):
-    python -m aaiclick setup [--force]
+    python -m aaiclick setup [--force] --ai
     python -m movie_plot_rag --run --params '{"corpus_size": 300}'
+
+    Either way an AI provider must be reachable — `setup --ai` pulls the
+    configured Ollama model when a local server is running.
 
 Environment variables (the AI pair is aaiclick's own, shared by every
 project that uses ``aaiclick.ai``):
@@ -60,29 +63,32 @@ from .models import CorpusStats, EmbeddingInfo, GenerationResult, RagAnswer
 from .report import generate_report
 
 _AI_UNAVAILABLE_MSG = (
-    "generate=True (--generate) needs an AI provider aaiclick can reach. "
-    "Either set AAICLICK_AI_API_KEY with AAICLICK_AI_MODEL naming a hosted "
-    "model (e.g. anthropic/claude-opus-5), or start a local Ollama server and "
-    "run `python -m aaiclick setup --ai` to pull the default "
-    "ollama/llama3.1:8b."
+    "This pipeline generates grounded answers, so it needs an AI provider "
+    "aaiclick can reach. Either start a local Ollama server and run "
+    "`python -m aaiclick setup --ai` to pull the default ollama/llama3.1:8b "
+    "(no API key needed), or set AAICLICK_AI_API_KEY with AAICLICK_AI_MODEL "
+    "naming a hosted model (e.g. anthropic/claude-opus-5)."
 )
 
 
-def _require_ai_provider_if_generating(generate: bool) -> None:
-    """Fail fast on ``generate=True`` with no reachable AI provider.
+def _require_ai_provider() -> None:
+    """Fail fast when no AI provider is reachable.
 
     ``ai_available()`` covers both shapes aaiclick supports — a hosted model
     needs ``AAICLICK_AI_API_KEY``; an Ollama model needs the local server up
     with the model pulled — so this no longer hard-codes one vendor's key.
 
     Checked from both ``main()`` (CLI registration, fast feedback) and the
-    ``@job`` body (authoritative — workers and catalog re-runs bypass main).
+    ``@job`` body (authoritative — workers and catalog re-runs bypass main),
+    so a missing provider costs a second at registration rather than a
+    minute of embedding followed by a failed generation step.
+
     Imported lazily: ``aaiclick.ai.config`` pulls in litellm, which every
     other task in this pipeline can do without.
     """
     from aaiclick.ai.config import ai_available
 
-    if generate and not ai_available():
+    if not ai_available():
         raise ValueError(_AI_UNAVAILABLE_MSG)
 
 
@@ -256,7 +262,9 @@ async def generate_answers(results: Object) -> GenerationResult:
 
     For each query, the top-k retrieved movies are passed as context to
     aaiclick.ai's LiteLLM provider, which answers strictly from that context.
-    Only registered when the job runs with ``generate=True``.
+    Always runs — grounded answers are the point of the pipeline, so a
+    provider failure fails the job rather than yielding a retrieval-only
+    report.
 
     ``get_ai_provider()`` reads ``AAICLICK_AI_MODEL`` / ``AAICLICK_AI_API_KEY``,
     so this project configures its model exactly like every other aaiclick
@@ -282,7 +290,7 @@ async def generate_answers(results: Object) -> GenerationResult:
         )
         answers.append(RagAnswer(query=query, answer=answer.strip()))
 
-    return GenerationResult(status="generated", model=get_configured_model(), answers=answers)
+    return GenerationResult(model=get_configured_model(), answers=answers)
 
 
 # =============================================================================
@@ -294,35 +302,31 @@ async def generate_answers(results: Object) -> GenerationResult:
 def movie_plot_rag_pipeline(
     corpus_size: int = 1000,
     top_k: int = 3,
-    generate: bool = False,
 ):
     """
     Movie Plot RAG Pipeline.
 
     Loads TMDB plot synopses, curates a corpus of well-known movies inside
-    ClickHouse, embeds the plots locally, answers natural-language queries
-    with cosine similarity in SQL, and optionally grounds LLM answers in the
-    retrieved plots.
+    ClickHouse, embeds the plots locally, retrieves per query with cosine
+    similarity in SQL, and grounds an LLM answer in what came back.
+
+    Requires a reachable AI provider: the generation step is part of the
+    pipeline, not an add-on, so registration fails fast without one.
 
     DAG Structure::
 
         load_movie_pool ─┬─► curate_corpus ─┬─► profile_corpus
                          │                  └─► embed_plots ─┬─► measure_embeddings
-                         │                                   └─► search ─► generate_answers (opt)
+                         │                                   └─► search ─► generate_answers
                          └──────────────────────────────────────────────────┐
                                                                             ▼
         All terminal tasks fan in to generate_report.
 
     Args:
         corpus_size: Movies kept in the embedded corpus (top by vote count).
-        top_k: Retrieved movies per query — the ``k`` of RAG. Cheap to
-            change for retrieval (the cost is embedding the query, not
-            the ``LIMIT``); it earns its keep under ``generate``, where
-            it sizes the context handed to the LLM.
-        generate: Opt in to the LLM answer step. Registration then fails
-            fast unless ``ai_available()`` finds a usable provider — a hosted
-            model with ``AAICLICK_AI_API_KEY``, or a reachable Ollama server
-            holding the configured model.
+        top_k: Retrieved movies per query — the ``k`` of RAG. Nearly free
+            on the retrieval side (the cost is embedding the query, not the
+            ``LIMIT``); what it really sizes is the context handed to the LLM.
     """
     pool = load_movie_pool()
     corpus = curate_corpus(pool=pool, corpus_size=corpus_size)
@@ -331,8 +335,8 @@ def movie_plot_rag_pipeline(
     embedding_info = measure_embeddings(embedded=embedded)
     results = search(embedded=embedded, top_k=top_k)
 
-    _require_ai_provider_if_generating(generate)
-    generation = generate_answers(results=results) if generate else None
+    _require_ai_provider()
+    generation = generate_answers(results=results)
 
     return generate_report(
         corpus=corpus,
@@ -352,7 +356,7 @@ async def main(**kwargs):
     ``corpus_size``, ``generate``) so the shell runner can pass tuning via
     ``--params``.
     """
-    _require_ai_provider_if_generating(bool(kwargs.get("generate")))
+    _require_ai_provider()
     created_job = await movie_plot_rag_pipeline(**kwargs)
     print(f"Registered job: {created_job.name} (ID: {created_job.id})")
     return created_job

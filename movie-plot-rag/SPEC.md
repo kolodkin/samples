@@ -32,17 +32,24 @@ load_movie_pool ─► curate_corpus ─┬─► profile_corpus ─────
 - **Query vectors as SQL literals.** Each 384-float query embedding is
   rendered into the `Computed` expression — no parameter binding needed, and
   the whole retrieval stays a single readable SQL scan.
-- **Generation is opt-in, and configured the framework's way.** Retrieval
-  works with no key and no network (after the first model download). The
-  generation step goes through `aaiclick.ai.config.get_ai_provider()`, so the
-  model and key come from `AAICLICK_AI_MODEL` / `AAICLICK_AI_API_KEY` — the
-  same pair every aaiclick project uses — rather than a config surface
-  invented for this one. `--generate` fails fast at registration when
-  `ai_available()` finds no usable provider, which covers both shapes: a
-  hosted model missing its key, or an Ollama model whose server is down or
-  whose weights were never pulled (`python -m aaiclick setup --ai`). Both
-  `aaiclick.ai` imports are function-local, keeping litellm off the import
-  path of the seven tasks that never touch it.
+- **Generation is mandatory, and configured the framework's way.** This is
+  a RAG sample, so the G is not an add-on: `generate_answers` always runs and
+  a provider failure fails the job, rather than quietly yielding a
+  retrieval-only report. The step goes through
+  `aaiclick.ai.config.get_ai_provider()`, so model and key come from
+  `AAICLICK_AI_MODEL` / `AAICLICK_AI_API_KEY` — the pair every aaiclick
+  project uses — rather than a config surface invented for this one.
+  `ai_available()` gates registration, covering both shapes: a hosted model
+  missing its key, or an Ollama model whose server is down or whose weights
+  were never pulled (`python -m aaiclick setup --ai`). That check costs a
+  second at registration instead of a minute of embedding followed by a dead
+  end. Both `aaiclick.ai` imports are function-local, keeping litellm off the
+  import path of the seven tasks that never touch it.
+- **Local model by default.** `ollama/llama3.1:8b` needs no API key, so the
+  full RAG loop runs offline once the weights are pulled; a hosted model is a
+  two-env-var swap. Answer quality tracks the model — a small local model
+  will sometimes justify a lower-ranked hit — but the grounding contract
+  (answer only from the retrieved plots) is the same either way.
 - **CPU-only torch.** `[tool.uv.sources]` pins torch to the PyTorch CPU
   index, keeping the install at a few hundred MB; embedding ~1k short texts
   takes seconds on CPU.

@@ -1,13 +1,13 @@
 Movie Plot RAG
 ---
 
-RAG + embeddings pipeline using ClickHouse as the vector store: loads TMDB plot synopses (cross-referenced with IMDb vote counts) from a Hugging Face Parquet dump, curates the top ~1,000 best-known movies in SQL, embeds every plot locally with `sentence-transformers/all-MiniLM-L6-v2` (384-dim, no API key), stores the vectors as an `Array(Float32)` column, and answers natural-language "vibe" queries ("a toy comes alive when the humans leave the room") with exact brute-force `cosineDistance` top-k retrieval in SQL. Pass `--generate` to also ground LLM answers in the retrieved plots via aaiclick's own AI provider (`AAICLICK_AI_MODEL` / `AAICLICK_AI_API_KEY`, or a local Ollama server); retrieval itself runs fully offline.
+RAG + embeddings pipeline using ClickHouse as the vector store: loads TMDB plot synopses (cross-referenced with IMDb vote counts) from a Hugging Face Parquet dump, curates the top ~1,000 best-known movies in SQL, embeds every plot locally with `sentence-transformers/all-MiniLM-L6-v2` (384-dim, no API key), stores the vectors as an `Array(Float32)` column, and answers natural-language "vibe" queries ("a toy comes alive when the humans leave the room") with exact brute-force `cosineDistance` top-k retrieval in SQL. Every retrieval then feeds an LLM through aaiclick's own AI provider, which answers strictly from the plots that came back — retrieval, augmentation and generation, not retrieval with a bolt-on. The default `ollama/llama3.1:8b` needs no API key, just a local Ollama server; point `AAICLICK_AI_MODEL` / `AAICLICK_AI_API_KEY` at a hosted model instead if you prefer.
 
 ```bash
-# Auto-provision the databases locally, retrieval only
+# Auto-provision ClickHouse + PostgreSQL and pull the local Ollama model
 ./movie-plot-rag.sh --local-setup
 
-# Smaller corpus, more hits per query, plus grounded LLM answers
+# Smaller corpus, more retrieved plots per answer, against a hosted model
 AAICLICK_AI_MODEL=anthropic/claude-opus-5 AAICLICK_AI_API_KEY=... \
-  ./movie-plot-rag.sh --local-setup --movies 500 --top-k 5 --generate
+  ./movie-plot-rag.sh --local-setup --movies 500 --top-k 5
 ```

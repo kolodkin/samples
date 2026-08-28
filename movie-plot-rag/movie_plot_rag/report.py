@@ -52,7 +52,7 @@ class ReportContent:
     corpus_md: str
     embedded_md: str
     query_mds: dict[str, str]
-    generation: GenerationResult | None
+    generation: GenerationResult
 
 
 def _print_report(content: ReportContent) -> None:
@@ -93,19 +93,10 @@ def _print_report(content: ReportContent) -> None:
 
     print("### Generated Answers\n")
     generation = content.generation
-    if generation is None:
-        print("- Skipped: run with `--generate`. Needs an AI provider aaiclick can")
-        print("  reach — `AAICLICK_AI_API_KEY` with a hosted `AAICLICK_AI_MODEL`, or a")
-        print("  local Ollama server (`python -m aaiclick setup --ai`).")
-    elif generation.status == "generated":
-        print(f"Model: `{generation.model}`\n")
-        for answer in generation.answers:
-            print(f'**"{answer.query}"**\n')
-            print(f"{answer.answer}\n")
-    else:
-        print(f"- Status: {generation.status}")
-        if generation.reason:
-            print(f"- Reason: {generation.reason}")
+    print(f"Model: `{generation.model}`\n")
+    for answer in generation.answers:
+        print(f'**"{answer.query}"**\n')
+        print(f"{answer.answer}\n")
 
 
 @task
@@ -116,7 +107,7 @@ async def generate_report(
     stats: CorpusStats,
     embedding_info: EmbeddingInfo,
     top_k: int,
-    generation: GenerationResult | None = None,
+    generation: GenerationResult,
 ) -> dict:
     """Combine all pipeline outputs into a unified RAG report."""
     corpus_md = (
@@ -168,5 +159,5 @@ async def generate_report(
         "corpus_size": stats.corpus_size,
         "embedding_dims": embedding_info.dims,
         "queries": len(QUERIES),
-        "generation_status": generation.status if generation is not None else "skipped",
+        "generation_model": generation.model,
     }

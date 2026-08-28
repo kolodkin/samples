@@ -3,17 +3,19 @@
 # store the vectors in ClickHouse, answer natural-language queries with
 # cosine-similarity SQL, and optionally ground LLM answers in the results.
 #
-# Usage: ./movie-plot-rag.sh [--movies N] [--top-k N] [--generate] [--local-setup]
+# Usage: ./movie-plot-rag.sh [--movies N] [--top-k N] [--local-setup]
+#
+# Generation is part of the pipeline, so an AI provider must be reachable:
+# a local Ollama server holding AAICLICK_AI_MODEL (default ollama/llama3.1:8b,
+# no API key), or AAICLICK_AI_API_KEY set for a hosted model.
 #
 # Options:
 #   --movies N     Corpus size — top-N movies by IMDb vote count (default: 1000)
 #   --top-k N      Retrieved movies per query (default: 3)
-#   --generate     Run the LLM answer step (default: off; needs an AI provider
-#                  aaiclick can reach — AAICLICK_AI_API_KEY with a hosted
-#                  AAICLICK_AI_MODEL, or a local Ollama server)
-#   --local-setup  Auto-provision ClickHouse + PostgreSQL locally via apt
-#                  (default: off). Without it, the databases are assumed to
-#                  already exist at AAICLICK_CH_URL / AAICLICK_SQL_URL.
+#   --local-setup  Auto-provision ClickHouse + PostgreSQL locally via apt, and
+#                  pull the configured Ollama model (default: off). Without it,
+#                  the databases are assumed to already exist at
+#                  AAICLICK_CH_URL / AAICLICK_SQL_URL.
 
 set -e
 
@@ -46,18 +48,13 @@ while [ $# -gt 0 ]; do
             KWARGS+=(--set "top_k=$2")
             shift 2
             ;;
-        --generate)
-            echo "LLM answer generation enabled..."
-            KWARGS+=(--set "generate=true")
-            shift
-            ;;
         --local-setup)
             LOCAL_SETUP=1
             shift
             ;;
         *)
             echo "Unknown flag: $1" >&2
-            echo "Usage: $0 [--movies N] [--top-k N] [--generate] [--local-setup]" >&2
+            echo "Usage: $0 [--movies N] [--top-k N] [--local-setup]" >&2
             exit 1
             ;;
     esac
@@ -69,6 +66,10 @@ if [ -n "${LOCAL_SETUP:-}" ]; then
         echo "Provisioning distributed backend (ClickHouse + PostgreSQL)..."
         "$REPO_ROOT/scripts/setup_clickhouse"
         "$REPO_ROOT/scripts/setup_postgres"
+        # Pull the configured Ollama model too. Best-effort: it needs an Ollama
+        # server already running, and the registration guard below is what
+        # authoritatively reports a missing provider.
+        $PYTHON -m aaiclick setup --ai || true
         echo
     else
         echo "WARNING: scripts/setup_{clickhouse,postgres} not found — assuming a" >&2

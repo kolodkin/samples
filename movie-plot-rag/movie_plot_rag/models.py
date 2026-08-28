@@ -21,7 +21,5 @@ class RagAnswer(BaseModel):
 
 
 class GenerationResult(BaseModel):
-    status: str  # "generated" | "skipped"
-    model: str | None = None
-    reason: str | None = None
-    answers: list[RagAnswer] = []
+    model: str
+    answers: list[RagAnswer]
