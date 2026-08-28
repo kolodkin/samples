@@ -21,6 +21,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
 PYTHON="${PYTHON:-uv run python}"
+ENTRYPOINT="movie_plot_rag.movie_plot_rag_pipeline"
 
 # Distributed backend (default): real ClickHouse server + PostgreSQL
 # orchestration — the right fit for the worker-process execution model below.
@@ -33,21 +34,22 @@ WORKER_LOG="tmp/movie_plot_rag_worker.log"
 export AAICLICK_REPORT_FILE="tmp/movie_plot_rag_report.md"
 mkdir -p tmp "$AAICLICK_LOG_DIR"
 
-# Parse flags
-PARAMS_PARTS=()
+# Pipeline kwargs are passed straight through as `run-job --set KEY=VALUE`
+# (JSON-typed), so no JSON string assembly is needed here.
+SET_ARGS=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --movies)
-            PARAMS_PARTS+=("\"corpus_size\": $2")
+            SET_ARGS+=(--set "corpus_size=$2")
             shift 2
             ;;
         --top-k)
-            PARAMS_PARTS+=("\"top_k\": $2")
+            SET_ARGS+=(--set "top_k=$2")
             shift 2
             ;;
         --generate)
             echo "LLM answer generation enabled..."
-            PARAMS_PARTS+=('"generate": true')
+            SET_ARGS+=(--set "generate=true")
             shift
             ;;
         --local-setup)
@@ -75,82 +77,46 @@ if [ -n "${LOCAL_SETUP:-}" ]; then
     fi
 fi
 
-PARAMS_ARG=""
-if [ ${#PARAMS_PARTS[@]} -gt 0 ]; then
-    PARAMS_ARG="{$(IFS=, ; echo "${PARAMS_PARTS[*]}")}"
-fi
-
 echo "## Movie Plot RAG Pipeline"
 echo
 
-# Step 1: Register the job and capture its ID
-echo "Registering job..."
-if [ -n "$PARAMS_ARG" ]; then
-    REGISTER_OUTPUT=$($PYTHON -m movie_plot_rag --params "$PARAMS_ARG")
-else
-    REGISTER_OUTPUT=$($PYTHON -m movie_plot_rag)
-fi
-echo "$REGISTER_OUTPUT"
-JOB_ID=$(echo "$REGISTER_OUTPUT" | grep -oP 'ID: \K[0-9]+')
-echo
+# Workers execute the DAG's tasks; both are stopped by the EXIT trap so a
+# failed run never leaves them behind.
+cleanup() {
+    kill $WORKER_PID $BACKGROUND_PID 2>/dev/null || true
+    wait $WORKER_PID $BACKGROUND_PID 2>/dev/null || true
+}
+trap cleanup EXIT
 
-# Step 2: Start background cleanup worker
-echo "Starting background cleanup worker..."
-$PYTHON -m aaiclick background start &
+echo "Starting workers..."
+$PYTHON -m aaiclick background start > /dev/null 2>&1 &
 BACKGROUND_PID=$!
-echo "Background worker started (PID: $BACKGROUND_PID)"
-echo
-
-# Step 3: Start execution worker in background, capturing output to log file
-echo "Starting worker..."
 $PYTHON -m aaiclick execution-worker start > "$WORKER_LOG" 2>&1 &
 WORKER_PID=$!
-echo "Worker started (PID: $WORKER_PID)"
+echo "Workers started (execution: $WORKER_PID, background: $BACKGROUND_PID)"
 echo
 
-# Step 4: Poll job status until completed or failed
-echo "Waiting for pipeline execution..."
-MAX_WAIT=600
-ELAPSED=0
-while [ $ELAPSED -lt $MAX_WAIT ]; do
-    sleep 5
-    ELAPSED=$((ELAPSED + 5))
-    JOB_STATUS=$($PYTHON -m aaiclick job get "$JOB_ID" 2>/dev/null | grep "Status:" | awk '{print $2}')
-    if [ "$JOB_STATUS" = "COMPLETED" ] || [ "$JOB_STATUS" = "FAILED" ]; then
-        break
-    fi
-done
-echo
+# `run-job --progress` registers the job, streams per-task progress, blocks
+# until it reaches a terminal status, and exits non-zero if it failed — so no
+# job-id scraping, no poll loop, and no status branching is needed here.
+STATUS=0
+$PYTHON -m aaiclick run-job "$ENTRYPOINT" "${SET_ARGS[@]}" --progress || STATUS=$?
 
-# Step 5: Show job stats
-echo "Job stats:"
-$PYTHON -m aaiclick job stats "$JOB_ID"
-echo
-
-# Step 6: Stop workers
-echo "Stopping workers..."
-kill $WORKER_PID 2>/dev/null || true
-kill $BACKGROUND_PID 2>/dev/null || true
-wait $WORKER_PID 2>/dev/null || true
-wait $BACKGROUND_PID 2>/dev/null || true
-
-# Step 7: Display worker log, then report
 echo
 echo "### Worker Log"
 echo
 cat "$WORKER_LOG"
-echo
-echo "### RAG Report"
-echo
-cat "$AAICLICK_REPORT_FILE"
 
-echo
-if [ "$JOB_STATUS" = "COMPLETED" ]; then
+if [ $STATUS -eq 0 ]; then
+    echo
+    echo "### RAG Report"
+    echo
+    cat "$AAICLICK_REPORT_FILE"
+    echo
     echo "Pipeline completed successfully."
-elif [ "$JOB_STATUS" = "FAILED" ]; then
-    echo "Pipeline FAILED."
-    exit 1
 else
-    echo "Pipeline timed out (status: ${JOB_STATUS:-unknown})."
-    exit 1
+    echo
+    echo "Pipeline FAILED (see task errors above)."
 fi
+
+exit $STATUS

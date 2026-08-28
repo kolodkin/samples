@@ -17,11 +17,14 @@ Data source: HenryWaltson/TMDB-IMDB-Movies-Dataset (Hugging Face Parquet) —
 TMDB plot synopses cross-referenced with IMDb vote counts.
 
 Usage:
-    # Register job (requires PostgreSQL or SQLite orchestration backend)
-    python -m movie_plot_rag
+    # With a worker running, run the pipeline and block on its progress
+    # (requires PostgreSQL or SQLite orchestration backend):
+    python -m aaiclick execution-worker start &
+    python -m aaiclick run-job movie_plot_rag.movie_plot_rag_pipeline \
+        --set corpus_size=300 --progress
 
-    # Then run worker to execute
-    python -m aaiclick execution-worker start
+    # Or execute the whole DAG in-process, no worker — handy for debugging:
+    python -m movie_plot_rag --run --params '{"corpus_size": 300}'
 
 Environment variables:
     ANTHROPIC_API_KEY         — enables the generation step (with generate=True)

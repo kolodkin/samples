@@ -40,3 +40,9 @@ load_movie_pool ─► curate_corpus ─┬─► profile_corpus ─────
 - **CPU-only torch.** `[tool.uv.sources]` pins torch to the PyTorch CPU
   index, keeping the install at a few hundred MB; embedding ~1k short texts
   takes seconds on CPU.
+- **Thin shell runner.** `movie-plot-rag.sh` starts the workers and hands off
+  to `aaiclick run-job <entrypoint> --set K=V --progress`, which registers the
+  job, streams per-task progress, blocks until it is terminal, and exits
+  non-zero on failure. That removes the job-id scraping, poll loop, and status
+  branching a runner otherwise needs; flags map straight to `--set` pairs
+  rather than being assembled into a JSON string. Requires aaiclick >= 0.0.22.

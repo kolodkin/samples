@@ -20,7 +20,7 @@ resolution-markers = [
 
 [[package]]
 name = "aaiclick"
-version = "0.0.21"
+version = "0.0.22"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiosqlite" },
@@ -36,9 +36,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "sqlmodel" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a0/db/e4f6845f2457d4f4e61659543ad02f628e478c1cec9f026ff93701b0a008/aaiclick-0.0.21.tar.gz", hash = "sha256:64b40404c7ef35c33c10fd1d7b6a1e4fdec49b973daf4295c43cf48f064dfe27", size = 1759188, upload-time = "2026-08-27T16:01:05.008Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/31/03/97a54079e76d9de8578551d033a3de2241794e896dfb46836ad449dd7282/aaiclick-0.0.22.tar.gz", hash = "sha256:a9eba8cf954f031d0014dc495ee78da7f62bcac12a0c911f909b2b32006afc3f", size = 1766638, upload-time = "2026-08-28T09:20:12.662Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d1/84/0f7c5017213b544e9c0ca5a9ed771b7240f19b03b501fa7d91ecfc987ec7/aaiclick-0.0.21-py3-none-any.whl", hash = "sha256:1386cae5664ad4a8e14c9c206b71f52b1d5538e0fb6a20d7afc3a2b195aca6f5", size = 1399836, upload-time = "2026-08-27T16:01:03.282Z" },
+    { url = "https://files.pythonhosted.org/packages/8a/c8/05d9345f4d2a81cb62ad9c680e356256ac16cfdf9a105c0682bf57f99643/aaiclick-0.0.22-py3-none-any.whl", hash = "sha256:1acebd10235f7e1c339359f444ec0e7176932d902793b2b6d263229247e912de", size = 1408318, upload-time = "2026-08-28T09:20:10.382Z" },
 ]
 
 [package.optional-dependencies]
@@ -1627,7 +1627,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aaiclick", extras = ["distributed", "ai"], specifier = ">=0.0.21" },
+    { name = "aaiclick", extras = ["distributed", "ai"], specifier = ">=0.0.22" },
     { name = "sentence-transformers", specifier = ">=3.0.0" },
     { name = "torch", specifier = ">=2.1.0", index = "https://download.pytorch.org/whl/cpu" },
 ]
