@@ -12,10 +12,10 @@
 # Options:
 #   --movies N     Corpus size — top-N movies by IMDb vote count (default: 1000)
 #   --top-k N      Retrieved movies per query (default: 3)
-#   --local-setup  Auto-provision ClickHouse + PostgreSQL locally via apt, and
-#                  pull the configured Ollama model (default: off). Without it,
-#                  the databases are assumed to already exist at
-#                  AAICLICK_CH_URL / AAICLICK_SQL_URL.
+#   --local-setup  Auto-provision ClickHouse + PostgreSQL locally via apt
+#                  (default: off). Without it, the databases are assumed to
+#                  already exist at AAICLICK_CH_URL / AAICLICK_SQL_URL.
+#                  Unrelated to the AI provider, which is needed either way.
 
 set -e
 
@@ -66,10 +66,6 @@ if [ -n "${LOCAL_SETUP:-}" ]; then
         echo "Provisioning distributed backend (ClickHouse + PostgreSQL)..."
         "$REPO_ROOT/scripts/setup_clickhouse"
         "$REPO_ROOT/scripts/setup_postgres"
-        # Pull the configured Ollama model too. Best-effort: it needs an Ollama
-        # server already running, and the registration guard below is what
-        # authoritatively reports a missing provider.
-        $PYTHON -m aaiclick setup --ai || true
         echo
     else
         echo "WARNING: scripts/setup_{clickhouse,postgres} not found — assuming a" >&2

@@ -41,7 +41,7 @@ load_movie_pool ─► curate_corpus ─┬─► profile_corpus ─────
   project uses — rather than a config surface invented for this one.
   `ai_available()` gates registration, covering both shapes: a hosted model
   missing its key, or an Ollama model whose server is down or whose weights
-  were never pulled (`python -m aaiclick setup --ai`). That check costs a
+  were never pulled (`ollama pull ...`). That check costs a
   second at registration instead of a minute of embedding followed by a dead
   end. Both `aaiclick.ai` imports are function-local, keeping litellm off the
   import path of the seven tasks that never touch it.

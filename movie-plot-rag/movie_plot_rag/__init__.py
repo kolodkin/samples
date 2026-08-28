@@ -30,8 +30,10 @@ Usage:
     python -m aaiclick setup [--force] --ai
     python -m movie_plot_rag --run --params '{"corpus_size": 300}'
 
-    Either way an AI provider must be reachable — `setup --ai` pulls the
-    configured Ollama model when a local server is running.
+    Both paths need a reachable AI provider. `--ai` is worth adding to the
+    setup above because that path uses the local backend anyway; on the
+    distributed path just have the model pulled (`ollama pull ...`) or a
+    hosted key set.
 
 Environment variables (the AI pair is aaiclick's own, shared by every
 project that uses ``aaiclick.ai``):
@@ -64,10 +66,10 @@ from .report import generate_report
 
 _AI_UNAVAILABLE_MSG = (
     "This pipeline generates grounded answers, so it needs an AI provider "
-    "aaiclick can reach. Either start a local Ollama server and run "
-    "`python -m aaiclick setup --ai` to pull the default ollama/llama3.1:8b "
-    "(no API key needed), or set AAICLICK_AI_API_KEY with AAICLICK_AI_MODEL "
-    "naming a hosted model (e.g. anthropic/claude-opus-5)."
+    "aaiclick can reach. Either run a local Ollama server holding the "
+    "model (`ollama pull llama3.1:8b` for the default — no API key "
+    "needed), or set AAICLICK_AI_API_KEY with AAICLICK_AI_MODEL naming "
+    "a hosted model (e.g. anthropic/claude-opus-5)."
 )
 
 
