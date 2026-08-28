@@ -23,7 +23,11 @@ Usage:
     python -m aaiclick run-job movie_plot_rag.movie_plot_rag_pipeline \
         --set corpus_size=300 --progress
 
-    # Or execute the whole DAG in-process, no worker — handy for debugging:
+    # Or execute the whole DAG in-process against embedded chdb + SQLite, no
+    # worker — handy for debugging. `setup` creates that local backend; add
+    # --force if an older aaiclick left a local.db whose schema predates this
+    # version (it refuses to reuse one, and --force is a no-op when current):
+    python -m aaiclick setup [--force]
     python -m movie_plot_rag --run --params '{"corpus_size": 300}'
 
 Environment variables:
