@@ -11,7 +11,7 @@ from aaiclick.data.models import ColumnInfo, Computed
 from aaiclick.data.object import Object
 from aaiclick.orchestration import task
 
-from .constants import CORPUS_COLUMNS, EMBEDDED_COLUMNS, QUERIES, TMDB_URL
+from .constants import CORPUS_COLUMNS, EMBEDDED_COLUMNS, MIN_VOTES, QUERIES, TMDB_URL
 from .models import CorpusStats, EmbeddingInfo, GenerationResult
 
 # Renders the first few vector components so the report shows embeddings are
@@ -64,7 +64,7 @@ def _print_report(content: ReportContent) -> None:
 
     print("### Corpus\n")
     print(f"URL: {TMDB_URL}")
-    print(f"Pool (≥ {_fmt(stats.min_votes)} votes, usable synopsis): {_fmt(stats.pool_size)} movies")
+    print(f"Pool (≥ {_fmt(MIN_VOTES)} votes, usable synopsis): {_fmt(stats.pool_size)} movies")
     print(f"Corpus (top by IMDb vote count): {_fmt(stats.corpus_size)} movies")
     print(f"Average plot length: {_fmt(stats.avg_plot_chars)} characters\n")
 

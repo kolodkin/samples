@@ -7,7 +7,6 @@ class CorpusStats(BaseModel):
     pool_size: int
     corpus_size: int
     avg_plot_chars: float
-    min_votes: int
 
 
 class EmbeddingInfo(BaseModel):

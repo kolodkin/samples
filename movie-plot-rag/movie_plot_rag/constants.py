@@ -12,8 +12,16 @@ TMDB_URL = os.environ.get(
     "https://huggingface.co/api/datasets/HenryWaltson/TMDB-IMDB-Movies-Dataset/parquet/default/train/0.parquet",
 )
 
+# Minimum IMDb vote count for the load-time pool filter. Not a pipeline
+# parameter: it only bounds how much of the upstream dump is materialized —
+# `corpus_size` is what actually selects the top-N.
+MIN_VOTES = 500
+
 # Local embedding model — free, offline after the first ~90 MB download.
 EMBEDDING_MODEL = os.environ.get("MOVIE_RAG_EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+
+# Encoder batch size — an implementation detail of the embedding step.
+EMBED_BATCH_SIZE = 64
 
 # LiteLLM model string for the optional answer-generation step.
 LLM_MODEL = os.environ.get("MOVIE_RAG_LLM_MODEL", "anthropic/claude-opus-5")

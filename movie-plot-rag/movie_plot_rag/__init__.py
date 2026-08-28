@@ -46,7 +46,15 @@ from aaiclick.data.models import Computed, FieldSpec, GB_ANY
 from aaiclick.data.object import Object
 from aaiclick.orchestration import job, task
 
-from .constants import EMBEDDING_MODEL, LLM_MODEL, POOL_COLUMNS, QUERIES, TMDB_URL
+from .constants import (
+    EMBED_BATCH_SIZE,
+    EMBEDDING_MODEL,
+    LLM_MODEL,
+    MIN_VOTES,
+    POOL_COLUMNS,
+    QUERIES,
+    TMDB_URL,
+)
 from .models import CorpusStats, EmbeddingInfo, GenerationResult, RagAnswer
 from .report import generate_report
 
@@ -90,11 +98,11 @@ def _load_encoder():
 
 
 @task
-async def load_movie_pool(min_votes: int = 500) -> Object:
+async def load_movie_pool() -> Object:
     """Load the TMDB/IMDb Parquet dump, pre-filtered at insert time.
 
     ClickHouse's ``url()`` table function streams the upstream file but only
-    writes rows with a usable synopsis and at least ``min_votes`` IMDb votes —
+    writes rows with a usable synopsis and at least ``MIN_VOTES`` IMDb votes —
     the ~190 MB upstream file lands as a few MB locally. Hugging Face
     302-redirects to a CDN host, so ``max_http_get_redirects`` is raised.
     """
@@ -104,7 +112,7 @@ async def load_movie_pool(min_votes: int = 500) -> Object:
         format="Parquet",
         column_types=POOL_COLUMNS,
         ch_settings={"max_http_get_redirects": 10},
-        where=f"numVotes >= {int(min_votes)} AND length(overview) >= 100 AND length(title) > 0",
+        where=f"numVotes >= {MIN_VOTES} AND length(overview) >= 100 AND length(title) > 0",
     )
 
 
@@ -135,7 +143,7 @@ async def curate_corpus(pool: Object, corpus_size: int = 1000) -> Object:
 
 
 @task
-async def profile_corpus(pool: Object, corpus: Object, min_votes: int) -> CorpusStats:
+async def profile_corpus(pool: Object, corpus: Object) -> CorpusStats:
     """Small summary stats — all aggregation runs inside ClickHouse."""
     pool_size = await (await pool["tconst"].count()).data()
     corpus_size = await (await corpus["tconst"].count()).data()
@@ -145,12 +153,11 @@ async def profile_corpus(pool: Object, corpus: Object, min_votes: int) -> Corpus
         pool_size=pool_size,
         corpus_size=corpus_size,
         avg_plot_chars=float(avg_chars or 0.0),
-        min_votes=min_votes,
     )
 
 
 @task
-async def embed_plots(corpus: Object, batch_size: int = 64) -> Object:
+async def embed_plots(corpus: Object) -> Object:
     """Embed every plot locally and store vectors next to the metadata.
 
     This is the one step where data leaves ClickHouse: the corpus is small
@@ -164,7 +171,7 @@ async def embed_plots(corpus: Object, batch_size: int = 64) -> Object:
 
     encoder = _load_encoder()
     started = time.perf_counter()
-    vectors = encoder.encode(texts, batch_size=batch_size, normalize_embeddings=True)
+    vectors = encoder.encode(texts, batch_size=EMBED_BATCH_SIZE, normalize_embeddings=True)
     print(f"Embedded {len(texts)} plots in {time.perf_counter() - started:.1f}s ({EMBEDDING_MODEL})")
 
     records = [
@@ -270,7 +277,6 @@ async def generate_answers(results: Object) -> GenerationResult:
 
 @job("movie_plot_rag")
 def movie_plot_rag_pipeline(
-    min_votes: int = 500,
     corpus_size: int = 1000,
     top_k: int = 3,
     generate: bool = False,
@@ -293,16 +299,15 @@ def movie_plot_rag_pipeline(
         All terminal tasks fan in to generate_report.
 
     Args:
-        min_votes: Minimum IMDb vote count for the load-time filter.
         corpus_size: Movies kept in the embedded corpus (top by vote count).
         top_k: Retrieved movies per query.
         generate: Opt in to the LLM answer step. With the default
             ``anthropic/*`` model, ``ANTHROPIC_API_KEY`` is then *required* —
             registration fails fast if it is unset.
     """
-    pool = load_movie_pool(min_votes=min_votes)
+    pool = load_movie_pool()
     corpus = curate_corpus(pool=pool, corpus_size=corpus_size)
-    stats = profile_corpus(pool=pool, corpus=corpus, min_votes=min_votes)
+    stats = profile_corpus(pool=pool, corpus=corpus)
     embedded = embed_plots(corpus=corpus)
     embedding_info = measure_embeddings(embedded=embedded)
     results = search(embedded=embedded, top_k=top_k)
