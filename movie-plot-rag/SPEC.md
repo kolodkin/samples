@@ -32,11 +32,17 @@ load_movie_pool ─► curate_corpus ─┬─► profile_corpus ─────
 - **Query vectors as SQL literals.** Each 384-float query embedding is
   rendered into the `Computed` expression — no parameter binding needed, and
   the whole retrieval stays a single readable SQL scan.
-- **Generation is opt-in and degrades gracefully.** Retrieval works with no
-  key and no network (after the first model download). `--generate` fails
-  fast at registration when the `anthropic/*` default model has no
-  `ANTHROPIC_API_KEY`; any LiteLLM model string works via
-  `MOVIE_RAG_LLM_MODEL` (e.g. `ollama/llama3.1:8b`).
+- **Generation is opt-in, and configured the framework's way.** Retrieval
+  works with no key and no network (after the first model download). The
+  generation step goes through `aaiclick.ai.config.get_ai_provider()`, so the
+  model and key come from `AAICLICK_AI_MODEL` / `AAICLICK_AI_API_KEY` — the
+  same pair every aaiclick project uses — rather than a config surface
+  invented for this one. `--generate` fails fast at registration when
+  `ai_available()` finds no usable provider, which covers both shapes: a
+  hosted model missing its key, or an Ollama model whose server is down or
+  whose weights were never pulled (`python -m aaiclick setup --ai`). Both
+  `aaiclick.ai` imports are function-local, keeping litellm off the import
+  path of the seven tasks that never touch it.
 - **CPU-only torch.** `[tool.uv.sources]` pins torch to the PyTorch CPU
   index, keeping the install at a few hundred MB; embedding ~1k short texts
   takes seconds on CPU.

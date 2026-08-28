@@ -94,8 +94,9 @@ def _print_report(content: ReportContent) -> None:
     print("### Generated Answers\n")
     generation = content.generation
     if generation is None:
-        print("- Skipped: run with `--generate` (requires `ANTHROPIC_API_KEY`, or a local")
-        print("  model via `MOVIE_RAG_LLM_MODEL`, e.g. `ollama/llama3.1:8b`)")
+        print("- Skipped: run with `--generate`. Needs an AI provider aaiclick can")
+        print("  reach — `AAICLICK_AI_API_KEY` with a hosted `AAICLICK_AI_MODEL`, or a")
+        print("  local Ollama server (`python -m aaiclick setup --ai`).")
     elif generation.status == "generated":
         print(f"Model: `{generation.model}`\n")
         for answer in generation.answers:

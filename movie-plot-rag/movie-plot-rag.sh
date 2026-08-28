@@ -8,9 +8,9 @@
 # Options:
 #   --movies N     Corpus size — top-N movies by IMDb vote count (default: 1000)
 #   --top-k N      Retrieved movies per query (default: 3)
-#   --generate     Run the LLM answer step (default: off; requires
-#                  ANTHROPIC_API_KEY, or MOVIE_RAG_LLM_MODEL pointed at a
-#                  local model such as ollama/llama3.1:8b)
+#   --generate     Run the LLM answer step (default: off; needs an AI provider
+#                  aaiclick can reach — AAICLICK_AI_API_KEY with a hosted
+#                  AAICLICK_AI_MODEL, or a local Ollama server)
 #   --local-setup  Auto-provision ClickHouse + PostgreSQL locally via apt
 #                  (default: off). Without it, the databases are assumed to
 #                  already exist at AAICLICK_CH_URL / AAICLICK_SQL_URL.

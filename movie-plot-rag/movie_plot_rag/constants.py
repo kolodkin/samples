@@ -23,9 +23,6 @@ EMBEDDING_MODEL = os.environ.get("MOVIE_RAG_EMBEDDING_MODEL", "sentence-transfor
 # Encoder batch size — an implementation detail of the embedding step.
 EMBED_BATCH_SIZE = 64
 
-# LiteLLM model string for the optional answer-generation step.
-LLM_MODEL = os.environ.get("MOVIE_RAG_LLM_MODEL", "anthropic/claude-opus-5")
-
 # Natural-language "vibe" searches — none share keywords with the plots they
 # should retrieve, which is exactly what embeddings solve over exact matching.
 QUERIES = [

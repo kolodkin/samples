@@ -30,18 +30,20 @@ Usage:
     python -m aaiclick setup [--force]
     python -m movie_plot_rag --run --params '{"corpus_size": 300}'
 
-Environment variables:
-    ANTHROPIC_API_KEY         — enables the generation step (with generate=True)
-    MOVIE_RAG_LLM_MODEL       — LiteLLM model string (default anthropic/claude-opus-5;
-                                e.g. ollama/llama3.1:8b needs no API key)
+Environment variables (the AI pair is aaiclick's own, shared by every
+project that uses ``aaiclick.ai``):
+    AAICLICK_AI_MODEL         — LiteLLM model string for the generation step
+                                (default ollama/llama3.1:8b — no key, but needs
+                                a local Ollama server)
+    AAICLICK_AI_API_KEY       — API key, required for hosted models
     MOVIE_RAG_EMBEDDING_MODEL — sentence-transformers model name
     MOVIE_RAG_TMDB_URL        — override the corpus Parquet URL
 """
 
-import os
 import time
 
 from aaiclick import ORIENT_DICT, create_object_from_url, create_object_from_value
+from aaiclick.ai.ollama import get_configured_model
 from aaiclick.data.models import Computed, FieldSpec, GB_ANY
 from aaiclick.data.object import Object
 from aaiclick.orchestration import job, task
@@ -49,7 +51,6 @@ from aaiclick.orchestration import job, task
 from .constants import (
     EMBED_BATCH_SIZE,
     EMBEDDING_MODEL,
-    LLM_MODEL,
     MIN_VOTES,
     POOL_COLUMNS,
     QUERIES,
@@ -58,21 +59,31 @@ from .constants import (
 from .models import CorpusStats, EmbeddingInfo, GenerationResult, RagAnswer
 from .report import generate_report
 
-_LLM_KEY_REQUIRED_MSG = (
-    "generate=True (--generate) with an anthropic/* model requires the "
-    "ANTHROPIC_API_KEY environment variable to be set "
-    "(or point MOVIE_RAG_LLM_MODEL at a local model, e.g. ollama/llama3.1:8b)"
+_AI_UNAVAILABLE_MSG = (
+    "generate=True (--generate) needs an AI provider aaiclick can reach. "
+    "Either set AAICLICK_AI_API_KEY with AAICLICK_AI_MODEL naming a hosted "
+    "model (e.g. anthropic/claude-opus-5), or start a local Ollama server and "
+    "run `python -m aaiclick setup --ai` to pull the default "
+    "ollama/llama3.1:8b."
 )
 
 
-def _require_llm_key_if_generating(generate: bool) -> None:
-    """Fail fast on ``generate=True`` without credentials.
+def _require_ai_provider_if_generating(generate: bool) -> None:
+    """Fail fast on ``generate=True`` with no reachable AI provider.
+
+    ``ai_available()`` covers both shapes aaiclick supports — a hosted model
+    needs ``AAICLICK_AI_API_KEY``; an Ollama model needs the local server up
+    with the model pulled — so this no longer hard-codes one vendor's key.
 
     Checked from both ``main()`` (CLI registration, fast feedback) and the
     ``@job`` body (authoritative — workers and catalog re-runs bypass main).
+    Imported lazily: ``aaiclick.ai.config`` pulls in litellm, which every
+    other task in this pipeline can do without.
     """
-    if generate and LLM_MODEL.startswith("anthropic/") and not os.environ.get("ANTHROPIC_API_KEY"):
-        raise ValueError(_LLM_KEY_REQUIRED_MSG)
+    from aaiclick.ai.config import ai_available
+
+    if generate and not ai_available():
+        raise ValueError(_AI_UNAVAILABLE_MSG)
 
 
 def _sql_quote(text: str) -> str:
@@ -246,10 +257,14 @@ async def generate_answers(results: Object) -> GenerationResult:
     For each query, the top-k retrieved movies are passed as context to
     aaiclick.ai's LiteLLM provider, which answers strictly from that context.
     Only registered when the job runs with ``generate=True``.
-    """
-    from aaiclick.ai.provider import AIProvider
 
-    provider = AIProvider(model=LLM_MODEL)
+    ``get_ai_provider()`` reads ``AAICLICK_AI_MODEL`` / ``AAICLICK_AI_API_KEY``,
+    so this project configures its model exactly like every other aaiclick
+    one. Imported lazily to keep litellm off the other tasks' import path.
+    """
+    from aaiclick.ai.config import get_ai_provider
+
+    provider = get_ai_provider()
     rows = await results.data(orient=ORIENT_DICT)
 
     by_query: dict[str, list[str]] = {}
@@ -267,7 +282,7 @@ async def generate_answers(results: Object) -> GenerationResult:
         )
         answers.append(RagAnswer(query=query, answer=answer.strip()))
 
-    return GenerationResult(status="generated", model=LLM_MODEL, answers=answers)
+    return GenerationResult(status="generated", model=get_configured_model(), answers=answers)
 
 
 # =============================================================================
@@ -304,9 +319,10 @@ def movie_plot_rag_pipeline(
             change for retrieval (the cost is embedding the query, not
             the ``LIMIT``); it earns its keep under ``generate``, where
             it sizes the context handed to the LLM.
-        generate: Opt in to the LLM answer step. With the default
-            ``anthropic/*`` model, ``ANTHROPIC_API_KEY`` is then *required* —
-            registration fails fast if it is unset.
+        generate: Opt in to the LLM answer step. Registration then fails
+            fast unless ``ai_available()`` finds a usable provider — a hosted
+            model with ``AAICLICK_AI_API_KEY``, or a reachable Ollama server
+            holding the configured model.
     """
     pool = load_movie_pool()
     corpus = curate_corpus(pool=pool, corpus_size=corpus_size)
@@ -315,7 +331,7 @@ def movie_plot_rag_pipeline(
     embedding_info = measure_embeddings(embedded=embedded)
     results = search(embedded=embedded, top_k=top_k)
 
-    _require_llm_key_if_generating(generate)
+    _require_ai_provider_if_generating(generate)
     generation = generate_answers(results=results) if generate else None
 
     return generate_report(
@@ -336,7 +352,7 @@ async def main(**kwargs):
     ``corpus_size``, ``generate``) so the shell runner can pass tuning via
     ``--params``.
     """
-    _require_llm_key_if_generating(bool(kwargs.get("generate")))
+    _require_ai_provider_if_generating(bool(kwargs.get("generate")))
     created_job = await movie_plot_rag_pipeline(**kwargs)
     print(f"Registered job: {created_job.name} (ID: {created_job.id})")
     return created_job
