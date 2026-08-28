@@ -28,7 +28,7 @@ Usage:
     # --force if an older aaiclick left a local.db whose schema predates this
     # version (it refuses to reuse one, and --force is a no-op when current):
     python -m aaiclick setup [--force] --ai
-    python -m movie_plot_rag --run --params '{"corpus_size": 300}'
+    python -m movie_plot_rag --params '{"corpus_size": 300}'
 
     Both paths need a reachable AI provider. `--ai` is worth adding to the
     setup above because that path uses the local backend anyway; on the
@@ -375,11 +375,13 @@ def movie_plot_rag_pipeline(
 
 
 async def main(**kwargs):
-    """Register the movie plot RAG pipeline job.
+    """Register the pipeline job and return it.
 
-    ``**kwargs`` are forwarded to ``movie_plot_rag_pipeline`` (e.g.
-    ``corpus_size``, ``top_k``) so the shell runner can pass tuning via
-    ``--set`` / ``--params``.
+    Kept as the seam ``__main__`` uses to get a job it can hand to
+    ``ajob_test`` for an inline run; the shell runner registers through
+    ``aaiclick run-job`` instead and never calls this. ``**kwargs`` are
+    forwarded to ``movie_plot_rag_pipeline`` (e.g. ``corpus_size``,
+    ``top_k``).
     """
     _require_ai_provider()
     created_job = await movie_plot_rag_pipeline(**kwargs)

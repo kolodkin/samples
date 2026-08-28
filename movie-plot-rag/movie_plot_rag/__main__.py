@@ -1,11 +1,13 @@
-"""Entry point for `python -m movie_plot_rag`.
+"""Entry point for `python -m movie_plot_rag` — run the DAG in one process.
 
-Accepts ``--params '<JSON object>'`` to override pipeline kwargs (e.g.
-``--params '{"corpus_size": 200, "top_k": 5}'``). With ``--run``, the job is
-registered AND executed inline via ``ajob_test`` — the whole DAG in one
-process, which ``aaiclick run-job`` cannot do since it always dispatches to
-a worker. That is the reason this entry point still exists; plain
-registration is better served by ``run-job``.
+``ajob_test`` executes every task inline, so breakpoints work and there is no
+worker log to tail. That is the one thing ``aaiclick run-job`` cannot do: it
+records the job and a worker executes it. Real runs should go through
+``run-job`` (see the package docstring), which is why this entry point does
+not offer a register-only mode.
+
+Accepts ``--params '<JSON object>'`` to override pipeline kwargs, e.g.
+``--params '{"corpus_size": 200, "top_k": 5}'``.
 """
 
 import argparse
@@ -17,30 +19,22 @@ from aaiclick.orchestration import ajob_test
 from . import main
 
 
-def _parse_argv() -> tuple[dict, bool]:
-    parser = argparse.ArgumentParser(prog="python -m movie_plot_rag")
+def _parse_params() -> dict:
+    parser = argparse.ArgumentParser(
+        prog="python -m movie_plot_rag",
+        description="Execute the movie plot RAG pipeline inline, without a worker.",
+    )
     parser.add_argument(
         "--params",
         default="{}",
         help='JSON object of pipeline kwargs, e.g. \'{"corpus_size": 200, "top_k": 5}\'',
     )
-    parser.add_argument(
-        "--run",
-        action="store_true",
-        help="Register the job AND execute it inline via ajob_test (skip worker).",
-    )
-    args = parser.parse_args()
-    return json.loads(args.params), args.run
+    return json.loads(parser.parse_args().params)
 
 
-async def _register_and_run(**kwargs):
-    created_job = await main(**kwargs)
-    await ajob_test(created_job)
+async def _run_inline(**kwargs) -> None:
+    await ajob_test(await main(**kwargs))
 
 
 if __name__ == "__main__":
-    params, run = _parse_argv()
-    if run:
-        asyncio.run(_register_and_run(**params))
-    else:
-        asyncio.run(main(**params))
+    asyncio.run(_run_inline(**_parse_params()))
