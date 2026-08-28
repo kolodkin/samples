@@ -300,7 +300,10 @@ def movie_plot_rag_pipeline(
 
     Args:
         corpus_size: Movies kept in the embedded corpus (top by vote count).
-        top_k: Retrieved movies per query.
+        top_k: Retrieved movies per query — the ``k`` of RAG. Cheap to
+            change for retrieval (the cost is embedding the query, not
+            the ``LIMIT``); it earns its keep under ``generate``, where
+            it sizes the context handed to the LLM.
         generate: Opt in to the LLM answer step. With the default
             ``anthropic/*`` model, ``ANTHROPIC_API_KEY`` is then *required* —
             registration fails fast if it is unset.
