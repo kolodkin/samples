@@ -271,6 +271,16 @@ async def generate_answers(results: Object) -> GenerationResult:
     ``get_ai_provider()`` reads ``AAICLICK_AI_MODEL`` / ``AAICLICK_AI_API_KEY``,
     so this project configures its model exactly like every other aaiclick
     one. Imported lazily to keep litellm off the other tasks' import path.
+
+    The prompt is balanced on a knife edge worth understanding. A top-k scan
+    always returns something, so a query with no good answer in the corpus
+    invites the model to invent a justification for its nearest neighbour —
+    hence the explicit permission to answer "none matches". But leaning on
+    that permission makes the model reject genuine hits, because it starts
+    looking for the query's words in the plot text and the queries here are
+    deliberately paraphrases. So declining is confined to "about something
+    else entirely", and the system prompt says outright that a match is
+    judged by meaning rather than shared wording.
     """
     from aaiclick.ai.config import get_ai_provider
 
@@ -286,9 +296,20 @@ async def generate_answers(results: Object) -> GenerationResult:
     answers = []
     for query, hits in by_query.items():
         answer = await provider.query(
-            prompt=f'Which of these movies best matches the search "{query}", and why? Answer in 2-3 sentences.',
+            prompt=(
+                f'Which of these movies best matches the search "{query}"? Name it and '
+                "explain why in 2-3 sentences, citing what its plot summary actually "
+                "says. Only if every one of them is about something else entirely, say "
+                "that none matches rather than forcing a pick."
+            ),
             context="Retrieved movies (ranked by embedding similarity):\n" + "\n".join(hits),
-            system="You are a movie search assistant. Ground your answer only in the provided retrieved movies.",
+            system=(
+                "You are a movie search assistant. Ground your answer in the plot "
+                "summaries provided rather than in other things you know about these "
+                "films. Judge a match by meaning, not by shared wording — the search is "
+                "a paraphrase, so the right film usually describes the same story in "
+                "different words."
+            ),
         )
         answers.append(RagAnswer(query=query, answer=answer.strip()))
 
@@ -317,10 +338,10 @@ def movie_plot_rag_pipeline(
 
     DAG Structure::
 
-        load_movie_pool ─┬─► curate_corpus ─┬─► profile_corpus
-                         │                  └─► embed_plots ─┬─► measure_embeddings
-                         │                                   └─► search ─► generate_answers
-                         └──────────────────────────────────────────────────┐
+        load_movie_pool ─┬► curate_corpus ─┬► profile_corpus
+                         │                  └► embed_plots ─┬► measure_embeddings
+                         │                                   └► search ─► generate_answers
+                         └────────────────────────────────────────────────┐
                                                                             ▼
         All terminal tasks fan in to generate_report.
 
@@ -355,8 +376,8 @@ async def main(**kwargs):
     """Register the movie plot RAG pipeline job.
 
     ``**kwargs`` are forwarded to ``movie_plot_rag_pipeline`` (e.g.
-    ``corpus_size``, ``generate``) so the shell runner can pass tuning via
-    ``--params``.
+    ``corpus_size``, ``top_k``) so the shell runner can pass tuning via
+    ``--set`` / ``--params``.
     """
     _require_ai_provider()
     created_job = await movie_plot_rag_pipeline(**kwargs)
