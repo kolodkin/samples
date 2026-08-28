@@ -1,12 +1,12 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # GitHub Exposure Scanner: enumerate an org's public repos, mirror-clone each,
 # scan their full git history for leaked secrets, score exposure, and print a
 # redacted report. Each finding is attributed to the commit that introduced it
 # and flagged live-at-HEAD or historical-only.
 #
-# Usage: ./github-exposure-scanner.sh [--targets "org,org/repo,..."] \
-#          [--max-repos N] [--max-file-kb N] [--head-only] [--max-repo-mb N] \
-#          [--max-commits N] [--max-blobs N] [--clone-timeout N] [--airtable]
+# Usage: ./github-exposure-scanner.sh [--targets "org,org/repo,..."] [--max-repos N]
+#          [--max-file-kb N] [--head-only] [--max-repo-mb N] [--max-commits N]
+#          [--max-blobs N] [--clone-timeout N] [--airtable]
 #
 # Options:
 #   --targets LIST     Comma-separated orgs and/or org/repo targets
@@ -19,12 +19,8 @@
 #   --max-commits N    Cap history walk to N oldest commits (0 = all)
 #   --max-blobs N      Cap history scan to N unique blobs (0 = all)
 #   --clone-timeout N  Per-repo clone timeout in seconds (default: 300)
-#   --airtable         Publish findings + summary to Airtable (default: off;
-#                      requires AIRTABLE_API_KEY + AIRTABLE_BASE_ID)
-#
-# Requires a distributed aaiclick backend (PostgreSQL + ClickHouse server)
-# reachable at AAICLICK_SQL_URL / AAICLICK_CH_URL — provided by CI as service
-# containers, or point those vars at an existing cluster.
+#   --airtable         Publish findings + summary to Airtable (requires
+#                      AIRTABLE_API_KEY + AIRTABLE_BASE_ID)
 #
 # Environment:
 #   GITHUB_TOKEN  — raises the GitHub API rate limit (public data still works
@@ -33,152 +29,63 @@
 #                   "org|repo" or bare "org" entries (e.g. "acme|widgets,octocat").
 #                   An explicit --targets on the command line overrides it.
 
-set -e
-
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$SCRIPT_DIR"
+set -euo pipefail
+cd "$(dirname "$0")"
 
 PYTHON="${PYTHON:-uv run python}"
 
-# Distributed backend (default): real ClickHouse + PostgreSQL orchestration,
-# matching scripts/setup_clickhouse and scripts/setup_postgres. Override either
-# URL to point at an existing cluster.
+# Distributed backend: a real ClickHouse server + PostgreSQL orchestration, the
+# right fit for the worker-process execution model below. Point either URL at an
+# existing cluster and setup_aaiclick probes it instead of provisioning.
 export AAICLICK_SQL_URL="${AAICLICK_SQL_URL:-postgresql+asyncpg://aaiclick:secret@localhost:5432/aaiclick}"
 export AAICLICK_CH_URL="${AAICLICK_CH_URL:-clickhouse://default:benchmark@localhost:8123/default}"
 export AAICLICK_LOG_DIR="${AAICLICK_LOG_DIR:-tmp/logs}"
-
-WORKER_LOG="tmp/ghx_worker.log"
 export AAICLICK_REPORT_FILE="tmp/ghx_report.md"
+WORKER_LOG="tmp/ghx_worker.log"
 mkdir -p tmp "$AAICLICK_LOG_DIR"
 
-# Parse flags
-PARAMS_PARTS=()
+# Pipeline kwargs go straight through as `run-job --set KEY=VALUE` (JSON-typed),
+# so only --targets needs shaping — into the JSON array the job expects.
+KWARGS=()
 while [ $# -gt 0 ]; do
     case "$1" in
-        --targets)
-            IFS=',' read -ra _TARGS <<< "$2"
-            _JSON_TARGS=$(printf '"%s",' "${_TARGS[@]}")
-            _JSON_TARGS="[${_JSON_TARGS%,}]"
-            PARAMS_PARTS+=("\"targets\": $_JSON_TARGS")
-            shift 2
-            ;;
-        --max-repos)
-            PARAMS_PARTS+=("\"max_repos\": $2")
-            shift 2
-            ;;
-        --max-file-kb)
-            PARAMS_PARTS+=("\"max_file_kb\": $2")
-            shift 2
-            ;;
-        --head-only)
-            PARAMS_PARTS+=('"head_only": true')
-            shift
-            ;;
-        --max-repo-mb)
-            PARAMS_PARTS+=("\"max_repo_mb\": $2")
-            shift 2
-            ;;
-        --max-commits)
-            PARAMS_PARTS+=("\"max_commits\": $2")
-            shift 2
-            ;;
-        --max-blobs)
-            PARAMS_PARTS+=("\"max_blobs\": $2")
-            shift 2
-            ;;
-        --clone-timeout)
-            PARAMS_PARTS+=("\"clone_timeout\": $2")
-            shift 2
-            ;;
-        --airtable)
-            echo "Airtable publishing enabled..."
-            PARAMS_PARTS+=('"publish_airtable": true')
-            shift
-            ;;
-        *)
-            echo "Unknown flag: $1" >&2
-            echo "Usage: $0 [--targets LIST] [--max-repos N] [--max-file-kb N] [--head-only]" \
-                 "[--max-repo-mb N] [--max-commits N] [--max-blobs N] [--clone-timeout N] [--airtable]" >&2
-            exit 1
-            ;;
+        --targets)       KWARGS+=(--set "targets=[\"${2//,/\",\"}\"]"); shift 2 ;;
+        --max-repos)     KWARGS+=(--set "max_repos=$2"); shift 2 ;;
+        --max-file-kb)   KWARGS+=(--set "max_file_kb=$2"); shift 2 ;;
+        --max-repo-mb)   KWARGS+=(--set "max_repo_mb=$2"); shift 2 ;;
+        --max-commits)   KWARGS+=(--set "max_commits=$2"); shift 2 ;;
+        --max-blobs)     KWARGS+=(--set "max_blobs=$2"); shift 2 ;;
+        --clone-timeout) KWARGS+=(--set "clone_timeout=$2"); shift 2 ;;
+        --head-only)     KWARGS+=(--set "head_only=true"); shift ;;
+        --airtable)      KWARGS+=(--set "publish_airtable=true"); shift ;;
+        *) echo "Unknown flag: $1" >&2
+           echo "Usage: $0 [--targets LIST] [--max-repos N] [--max-file-kb N] [--head-only]" \
+                "[--max-repo-mb N] [--max-commits N] [--max-blobs N] [--clone-timeout N] [--airtable]" >&2
+           exit 1 ;;
     esac
 done
 
-PARAMS_ARG=""
-if [ ${#PARAMS_PARTS[@]} -gt 0 ]; then
-    PARAMS_ARG="{$(IFS=, ; echo "${PARAMS_PARTS[*]}")}"
-fi
+../scripts/setup_aaiclick
 
 echo "## GitHub Exposure Scanner Pipeline"
-echo
 
-# Step 1: Register the job and capture its ID
-echo "Registering job..."
-if [ -n "$PARAMS_ARG" ]; then
-    REGISTER_OUTPUT=$($PYTHON -m github_exposure_scanner --params "$PARAMS_ARG")
-else
-    REGISTER_OUTPUT=$($PYTHON -m github_exposure_scanner)
-fi
-echo "$REGISTER_OUTPUT"
-JOB_ID=$(echo "$REGISTER_OUTPUT" | grep -oP 'ID: \K[0-9]+')
-echo
+# Workers execute the DAG's tasks; the EXIT trap stops them, so a failed run
+# never leaves them behind.
+stop_workers() { kill ${WORKER_PID:-} ${BG_PID:-} 2>/dev/null || true; wait ${WORKER_PID:-} ${BG_PID:-} 2>/dev/null || true; }
+trap stop_workers EXIT
+$PYTHON -m aaiclick background start >/dev/null 2>&1 & BG_PID=$!
+$PYTHON -m aaiclick execution-worker start > "$WORKER_LOG" 2>&1 & WORKER_PID=$!
 
-# Step 2: Start background cleanup worker
-echo "Starting background cleanup worker..."
-$PYTHON -m aaiclick background start &
-BACKGROUND_PID=$!
-echo
+# `run-job --progress` registers the job, streams per-task progress, blocks until
+# it reaches a terminal status, and exits non-zero if it failed — so no job-id
+# scraping, no poll loop, and no status branching is needed here.
+STATUS=0
+$PYTHON -m aaiclick run-job github_exposure_scanner.exposure_pipeline "${KWARGS[@]}" --progress || STATUS=$?
 
-# Step 3: Start worker
-echo "Starting worker..."
-$PYTHON -m aaiclick execution-worker start > "$WORKER_LOG" 2>&1 &
-WORKER_PID=$!
-echo "Worker started (PID: $WORKER_PID)"
-echo
-
-# Step 4: Poll job status until completed or failed
-echo "Waiting for pipeline execution..."
-MAX_WAIT=600
-ELAPSED=0
-while [ $ELAPSED -lt $MAX_WAIT ]; do
-    sleep 5
-    ELAPSED=$((ELAPSED + 5))
-    JOB_STATUS=$($PYTHON -m aaiclick job get "$JOB_ID" 2>/dev/null | grep "Status:" | awk '{print $2}')
-    if [ "$JOB_STATUS" = "COMPLETED" ] || [ "$JOB_STATUS" = "FAILED" ]; then
-        break
-    fi
-done
-echo
-
-# Step 5: Show job stats
-echo "Job stats:"
-$PYTHON -m aaiclick job stats "$JOB_ID"
-echo
-
-# Step 6: Stop workers
-echo "Stopping workers..."
-kill $WORKER_PID 2>/dev/null || true
-kill $BACKGROUND_PID 2>/dev/null || true
-wait $WORKER_PID 2>/dev/null || true
-wait $BACKGROUND_PID 2>/dev/null || true
-
-# Step 7: Display worker log, then report
-echo
-echo "### Worker Log"
-echo
+printf '\n### Worker Log\n\n'
 cat "$WORKER_LOG"
-echo
-echo "### Exposure Report"
-echo
-cat "$AAICLICK_REPORT_FILE"
-
-echo
-if [ "$JOB_STATUS" = "COMPLETED" ]; then
-    echo "Pipeline completed successfully."
-elif [ "$JOB_STATUS" = "FAILED" ]; then
-    echo "Pipeline FAILED."
-    exit 1
-else
-    echo "Pipeline timed out (status: ${JOB_STATUS:-unknown})."
-    exit 1
+if [ $STATUS -eq 0 ]; then
+    printf '\n### Exposure Report\n\n'
+    cat "$AAICLICK_REPORT_FILE"
 fi
+exit $STATUS

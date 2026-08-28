@@ -1,8 +1,8 @@
 name: imdb-dataset-builder
 
 # Manual-only: regenerate (and optionally publish) the curated IMDb dataset.
-# Databases are provided as service containers, so the runner script is invoked
-# WITHOUT --local-setup (no apt provisioning).
+# Databases are provided as service containers; scripts/setup_aaiclick detects
+# them and applies migrations instead of provisioning anything via apt.
 on:
   workflow_dispatch:
     inputs:
@@ -71,19 +71,9 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Run orchestration DB migrations
-        # The Postgres service container is empty; create the aaiclick
-        # orchestration schema (the part scripts/setup_postgres does that a bare
-        # container does not).
-        env:
-          AAICLICK_SQL_URL: postgresql+asyncpg://aaiclick:secret@localhost:5432/aaiclick
-          POSTGRES_HOST: localhost
-          POSTGRES_PORT: '5432'
-          POSTGRES_USER: aaiclick
-          POSTGRES_PASSWORD: secret
-          POSTGRES_DB: aaiclick
-        run: uv run python -m aaiclick migrate upgrade head
-
+      # The runner calls scripts/setup_aaiclick, which probes both service
+      # containers, finds them reachable, and applies the orchestration
+      # migrations a bare Postgres container does not have.
       - name: Run pipeline
         env:
           SAMPLE: ${{ inputs.sample }}

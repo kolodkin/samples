@@ -12,6 +12,18 @@ DAG::
     validate_airtable_credentials ─┬─► publish_findings ─┘
                                    └─► publish_summary ───┘
 
+Usage:
+    # With a worker running, run the pipeline and block on its progress
+    # (requires PostgreSQL or SQLite orchestration backend):
+    python -m aaiclick execution-worker start &
+    python -m aaiclick run-job github_exposure_scanner.exposure_pipeline \
+        --set 'targets=["octocat"]' --progress
+
+    # Or execute the whole DAG in-process against embedded chdb + SQLite, no
+    # worker — handy for debugging:
+    python -m aaiclick setup
+    python -m github_exposure_scanner --params '{"targets": ["octocat"]}'
+
 Environment variables:
     GITHUB_TOKEN         — raises GitHub API rate limit (optional)
     GITHUB_REPOS         — default targets when no explicit ``targets`` are

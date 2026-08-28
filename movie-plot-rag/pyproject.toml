@@ -8,11 +8,12 @@ dependencies = [
     # [distributed] brings the PostgreSQL (asyncpg/psycopg2) + ClickHouse-server
     # (clickhouse-connect) drivers the default distributed backend needs;
     # [ai] brings litellm for the optional generation step.
-    # >=0.0.23: curate_corpus relies on ORDER BY + LIMIT surviving `copy()`
-    # and on `rename()` after a field selection — both fixed in 0.0.23. Also
-    # 0.0.22's `run-job --set K=V --progress` (used by the shell runner) and
-    # 0.0.21's embedded-chdb url() redirect fix (needed to load the corpus).
-    "aaiclick[distributed,ai]>=0.0.23",
+    # The floor tracks the latest release. 0.0.23 is the oldest that works:
+    # curate_corpus relies on ORDER BY + LIMIT surviving `copy()` and on
+    # `rename()` after a field selection, both fixed there — on top of 0.0.22's
+    # `run-job --set K=V --progress` (used by the shell runner) and 0.0.21's
+    # embedded-chdb url() redirect fix (needed to load the corpus).
+    "aaiclick[distributed,ai]>=0.0.24",
     "sentence-transformers>=3.0.0",
     # Declared explicitly so the [tool.uv.sources] CPU-index pin below applies
     # (uv sources only cover the project's own declared dependencies).

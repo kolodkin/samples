@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# Local Ollama setup: install the server, start it, and pull the configured model.
+#
+# aaiclick's AI steps default to ollama/llama3.1:8b, which needs no API key —
+# only a local Ollama server holding that model. `aaiclick setup --ai` pulls the
+# model but assumes a server is already running; this script provides one.
+#
+# Contract (override via env):
+#   server   http://localhost:11434   (OLLAMA_HOST)
+#   model    llama3.1:8b              (AAICLICK_AI_MODEL; the "ollama/" prefix
+#                                      aaiclick uses is stripped automatically)
+#
+# Usage:
+#   scripts/setup_ollama
+#   AAICLICK_AI_MODEL=ollama/qwen2.5:7b scripts/setup_ollama
+#
+# Verify:
+#   ollama list
+
+set -euo pipefail
+
+OLLAMA_URL="${OLLAMA_HOST:-http://localhost:11434}"
+MODEL="${AAICLICK_AI_MODEL:-ollama/llama3.1:8b}"
+
+# A hosted model (anthropic/..., openai/...) has no local server to set up —
+# refuse rather than silently pulling something else under its name.
+case "$MODEL" in
+    ollama/*) MODEL="${MODEL#ollama/}" ;;
+    */*)
+        echo "ERROR: AAICLICK_AI_MODEL='${MODEL}' is a hosted model, not an Ollama one." >&2
+        echo "       Set AAICLICK_AI_API_KEY for it instead — no Ollama server needed." >&2
+        exit 1
+        ;;
+esac
+
+echo "Installing Ollama..."
+if ! command -v ollama &>/dev/null; then
+    curl -fsSL https://ollama.com/install.sh | sh
+fi
+
+echo "Starting Ollama server..."
+# The installer registers a systemd unit where systemd exists; containers and CI
+# runners usually have neither, so fall back to a detached `ollama serve`.
+if ! curl -sf "${OLLAMA_URL}/api/version" &>/dev/null; then
+    SUDO=""
+    [ "$(id -u)" -eq 0 ] || SUDO="sudo"
+    if ! (command -v systemctl &>/dev/null && $SUDO systemctl start ollama >/dev/null 2>&1); then
+        nohup ollama serve >/tmp/ollama-serve.log 2>&1 &
+    fi
+fi
+
+echo "Waiting for Ollama to start..."
+for _ in $(seq 1 30); do
+    curl -sf "${OLLAMA_URL}/api/version" &>/dev/null && break
+    sleep 1
+done
+if ! curl -sf "${OLLAMA_URL}/api/version" &>/dev/null; then
+    echo "ERROR: Ollama did not become ready at ${OLLAMA_URL} within 30 seconds" >&2
+    exit 1
+fi
+
+echo "Pulling ${MODEL}..."
+ollama pull "$MODEL"
+
+# Warm the weights: an 8B model loading cold can outlast a caller's first-request
+# timeout, especially while the same machine is busy embedding or querying.
+echo "Warming ${MODEL}..."
+ollama run "$MODEL" 'hi' </dev/null >/dev/null
+
+echo "Ollama is ready (server=${OLLAMA_URL}, model=${MODEL})."
