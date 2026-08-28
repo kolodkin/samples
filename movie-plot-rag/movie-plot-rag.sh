@@ -21,7 +21,6 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
 PYTHON="${PYTHON:-uv run python}"
-ENTRYPOINT="movie_plot_rag.movie_plot_rag_pipeline"
 
 # Distributed backend (default): real ClickHouse server + PostgreSQL
 # orchestration — the right fit for the worker-process execution model below.
@@ -36,20 +35,20 @@ mkdir -p tmp "$AAICLICK_LOG_DIR"
 
 # Pipeline kwargs are passed straight through as `run-job --set KEY=VALUE`
 # (JSON-typed), so no JSON string assembly is needed here.
-SET_ARGS=()
+KWARGS=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --movies)
-            SET_ARGS+=(--set "corpus_size=$2")
+            KWARGS+=(--set "corpus_size=$2")
             shift 2
             ;;
         --top-k)
-            SET_ARGS+=(--set "top_k=$2")
+            KWARGS+=(--set "top_k=$2")
             shift 2
             ;;
         --generate)
             echo "LLM answer generation enabled..."
-            SET_ARGS+=(--set "generate=true")
+            KWARGS+=(--set "generate=true")
             shift
             ;;
         --local-setup)
@@ -100,7 +99,7 @@ echo
 # until it reaches a terminal status, and exits non-zero if it failed — so no
 # job-id scraping, no poll loop, and no status branching is needed here.
 STATUS=0
-$PYTHON -m aaiclick run-job "$ENTRYPOINT" "${SET_ARGS[@]}" --progress || STATUS=$?
+$PYTHON -m aaiclick run-job movie_plot_rag.movie_plot_rag_pipeline "${KWARGS[@]}" --progress || STATUS=$?
 
 echo
 echo "### Worker Log"
