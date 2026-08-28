@@ -45,4 +45,4 @@ load_movie_pool ─► curate_corpus ─┬─► profile_corpus ─────
   job, streams per-task progress, blocks until it is terminal, and exits
   non-zero on failure. That removes the job-id scraping, poll loop, and status
   branching a runner otherwise needs; flags map straight to `--set` pairs
-  rather than being assembled into a JSON string. Requires aaiclick >= 0.0.22.
+  rather than being assembled into a JSON string. Requires aaiclick >= 0.0.23.

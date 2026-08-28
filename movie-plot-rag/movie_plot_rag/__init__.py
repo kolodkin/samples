@@ -112,26 +112,21 @@ async def curate_corpus(pool: Object, corpus_size: int = 1000) -> Object:
     id); ``group_by(tconst).agg(any)`` collapses them. The corpus is then the
     top rows by IMDb vote count — famous movies, so the demo queries have
     real targets to hit. ``release_date`` is reduced to a year and
-    ``overview`` aliased to ``plot`` for the public schema.
+    ``overview`` renamed to ``plot`` for the public schema.
 
-    Top-N is selected via a vote-count threshold (the N-th largest value,
-    pulled as a single small column) rather than ORDER BY ... LIMIT, because
-    ``View.copy()`` materializes the LIMIT without the ORDER BY.
+    Nothing leaves ClickHouse here: the whole shape-dedupe-rank chain is one
+    query materialized by ``copy()``.
     """
     deduped = await pool.group_by("tconst").agg(
         {col: GB_ANY for col in POOL_COLUMNS if col != "tconst"}
     )
-    votes = sorted(await deduped["numVotes"].data(), reverse=True)
-    threshold = votes[min(corpus_size, len(votes)) - 1] if votes else 0
-
     shaped = deduped.with_columns(
-        {
-            "year": Computed("UInt16", "toUInt16OrZero(substring(release_date, 1, 4))"),
-            "plot": Computed("String", "overview"),
-        }
+        {"year": Computed("UInt16", "toUInt16OrZero(substring(release_date, 1, 4))")}
     )
-    final = shaped[["tconst", "title", "year", "genres", "plot", "numVotes"]]
-    top = final.where(f"numVotes >= {int(threshold)}").view(limit=corpus_size)
+    final = shaped[["tconst", "title", "year", "genres", "overview", "numVotes"]].rename(
+        {"overview": "plot"}
+    )
+    top = final.view(order_by="numVotes DESC", limit=corpus_size)
     return await top.copy(name="corpus", scope="job")
 
 
