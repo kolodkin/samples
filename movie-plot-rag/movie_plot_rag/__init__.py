@@ -338,10 +338,10 @@ def movie_plot_rag_pipeline(
 
     DAG Structure::
 
-        load_movie_pool ─┬► curate_corpus ─┬► profile_corpus
-                         │                  └► embed_plots ─┬► measure_embeddings
-                         │                                   └► search ─► generate_answers
-                         └────────────────────────────────────────────────┐
+        load_movie_pool ─┬─► curate_corpus ─┬─► profile_corpus
+                         │                  └─► embed_plots ─┬─► measure_embeddings
+                         │                                   └─► search ─► generate_answers
+                         └──────────────────────────────────────────────────┐
                                                                             ▼
         All terminal tasks fan in to generate_report.
 
