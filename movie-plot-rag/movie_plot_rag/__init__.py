@@ -80,10 +80,10 @@ def _require_ai_provider() -> None:
     needs ``AAICLICK_AI_API_KEY``; an Ollama model needs the local server up
     with the model pulled — so this no longer hard-codes one vendor's key.
 
-    Checked from both ``main()`` (CLI registration, fast feedback) and the
-    ``@job`` body (authoritative — workers and catalog re-runs bypass main),
-    so a missing provider costs a second at registration rather than a
-    minute of embedding followed by a failed generation step.
+    Checked from both ``main()`` and the ``@job`` body. The body is the
+    authoritative one — ``run-job`` and catalog re-runs never go through
+    ``main()`` — and it still fires before any data is loaded, so a missing
+    provider costs seconds rather than a full embed-and-search run.
 
     Imported lazily: ``aaiclick.ai.config`` pulls in litellm, which every
     other task in this pipeline can do without.
@@ -334,7 +334,9 @@ def movie_plot_rag_pipeline(
     similarity in SQL, and grounds an LLM answer in what came back.
 
     Requires a reachable AI provider: the generation step is part of the
-    pipeline, not an add-on, so registration fails fast without one.
+    pipeline, not an add-on. ``aaiclick run-job`` only records the job, so
+    the check here fires when a worker starts the entry point; going through
+    ``main()`` catches it a step earlier, at the CLI.
 
     DAG Structure::
 

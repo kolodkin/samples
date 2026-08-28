@@ -1,9 +1,11 @@
 """Entry point for `python -m movie_plot_rag`.
 
 Accepts ``--params '<JSON object>'`` to override pipeline kwargs (e.g.
-``--params '{"corpus_size": 200, "generate": true}'``). With ``--run``, the
-job is registered AND executed inline via ``ajob_test`` (useful for local
-debugging without spinning up a worker).
+``--params '{"corpus_size": 200, "top_k": 5}'``). With ``--run``, the job is
+registered AND executed inline via ``ajob_test`` — the whole DAG in one
+process, which ``aaiclick run-job`` cannot do since it always dispatches to
+a worker. That is the reason this entry point still exists; plain
+registration is better served by ``run-job``.
 """
 
 import argparse
