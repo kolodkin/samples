@@ -36,7 +36,6 @@ Environment variables:
     AIRTABLE_FINDINGS_TABLE / AIRTABLE_SUMMARY_TABLE — table name overrides
 """
 
-import asyncio
 from datetime import UTC, datetime
 
 from aaiclick import ORIENT_DICT
@@ -131,10 +130,14 @@ async def exposure_pipeline(
 
 
 async def main(**kwargs):
+    """Register the pipeline job and return it.
+
+    Kept as the seam ``__main__`` uses to get a job it can hand to ``ajob_test``
+    for an inline run; the shell runner registers through ``aaiclick run-job``
+    instead and never calls this. ``**kwargs`` are forwarded to
+    ``exposure_pipeline`` (e.g. ``targets``, ``head_only``).
+    """
     created_job = await exposure_pipeline(**kwargs)
     print(f"Registered job: {created_job.name} (ID: {created_job.id})")
     return created_job
 
-
-if __name__ == "__main__":
-    asyncio.run(main())

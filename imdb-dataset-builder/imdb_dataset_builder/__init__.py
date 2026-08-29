@@ -439,6 +439,3 @@ async def main(**kwargs):
     print(f"Registered job: {created_job.name} (ID: {created_job.id})")
     return created_job
 
-
-if __name__ == "__main__":
-    asyncio.run(main())
