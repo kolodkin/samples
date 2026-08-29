@@ -7,9 +7,16 @@ on:
       - 'distributed-data-libs/**'
       - '.github/workflows/distributed-data-libs.yml'
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_RUNNER_NODE_VERSION: node24
+
 jobs:
   benchmark:
     runs-on: ubuntu-latest
+    environment: CICD
+    permissions:
+      contents: read
+      checks: write
     defaults:
       run:
         working-directory: distributed-data-libs
@@ -42,3 +49,13 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           cat /tmp/bench.txt >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish benchmark report
+        if: always()
+        uses: ./.github/actions/publish-bench
+        with:
+          workflow-name: distributed-data-libs
+          files: |
+            /tmp/bench.txt
+          deploy-key: ${{ secrets.DEPLOY_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}

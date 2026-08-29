@@ -1,0 +1,85 @@
+name: Publish benchmark report
+description: Stage benchmark output files, publish to kolodkin/artifact-view, and create a check linking to the published page.
+inputs:
+  workflow-name:
+    description: Used as the path segment under samples/ on artifact-view.
+    required: true
+  files:
+    description: Multiline list of benchmark output file paths to publish.
+    required: true
+  deploy-key:
+    description: SSH deploy key with write access to kolodkin/artifact-view.
+    required: true
+  github-token:
+    description: Token used to create the report check on this repo.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Check deploy key is set
+      shell: bash
+      env:
+        DEPLOY_KEY: ${{ inputs.deploy-key }}
+      run: |
+        if [ -z "${DEPLOY_KEY:-}" ]; then
+          echo "::error::deploy-key input is empty. The DEPLOY_KEY secret in the CICD environment is missing or has no value. Set it to an SSH private key whose public counterpart is registered as a write-access deploy key on kolodkin/artifact-view."
+          exit 1
+        fi
+
+    - name: Stage benchmark report
+      id: stage
+      shell: bash
+      env:
+        FILES: ${{ inputs.files }}
+      run: |
+        set -euo pipefail
+        dir="$RUNNER_TEMP/bench-report"
+        mkdir -p "$dir"
+        any=false
+        while IFS= read -r f; do
+          [ -z "$f" ] && continue
+          if [ -f "$f" ]; then
+            cp "$f" "$dir/"
+            any=true
+          fi
+        done <<< "$FILES"
+        if [ "$any" = "false" ]; then
+          echo "skip=true" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        {
+          echo '<!doctype html><meta charset="utf-8"><title>${{ inputs.workflow-name }} benchmark</title>'
+          echo '<h1>${{ inputs.workflow-name }} benchmark</h1><ul>'
+          for f in "$dir"/*.txt; do
+            [ -f "$f" ] || continue
+            name=$(basename "$f")
+            echo "<li><a href=\"$name\">$name</a></li>"
+          done
+          echo '</ul>'
+        } > "$dir/index.html"
+        echo "skip=false" >> "$GITHUB_OUTPUT"
+        echo "dir=$dir" >> "$GITHUB_OUTPUT"
+
+    - name: Deploy benchmark report
+      if: steps.stage.outputs.skip != 'true'
+      uses: peaceiris/actions-gh-pages@v4
+      with:
+        deploy_key: ${{ inputs.deploy-key }}
+        external_repository: kolodkin/artifact-view
+        publish_dir: ${{ steps.stage.outputs.dir }}
+        destination_dir: samples/${{ inputs.workflow-name }}/${{ github.run_number }}
+        publish_branch: gh-pages
+        keep_files: true
+
+    - name: Create benchmark report check
+      if: steps.stage.outputs.skip != 'true'
+      uses: LouisBrunner/checks-action@v2.0.0
+      env:
+        REPORT_URL: https://${{ github.repository_owner }}.github.io/artifact-view/samples/${{ inputs.workflow-name }}/${{ github.run_number }}/
+      with:
+        token: ${{ inputs.github-token }}
+        name: ${{ inputs.workflow-name }} Report
+        conclusion: ${{ job.status }}
+        details_url: ${{ env.REPORT_URL }}
+        output: |
+          {"title":"Benchmark output","summary":"[View benchmark report](${{ env.REPORT_URL }})"}
