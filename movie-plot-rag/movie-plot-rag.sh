@@ -3,14 +3,15 @@
 # store the vectors in ClickHouse, answer natural-language queries with
 # cosine-similarity SQL, and ground LLM answers in what came back.
 #
-# Usage: ./movie-plot-rag.sh [--movies N] [--top-k N] [--ollama]
+# Usage: ./movie-plot-rag.sh [--movies N] [--top-k N]
 #
 # Options:
 #   --movies N   Corpus size — top-N movies by IMDb vote count (default: 1000)
 #   --top-k N    Retrieved movies per query (default: 3)
-#   --ollama     Install and start a local Ollama server as well. Without it the
-#                generation step needs an Ollama server already running, or a
-#                hosted AAICLICK_AI_MODEL + AAICLICK_AI_API_KEY.
+#
+# The generation step's provider follows AAICLICK_AI_MODEL: the default
+# ollama/llama3.1:8b has its server and weights set up here, a hosted model just
+# needs AAICLICK_AI_API_KEY.
 
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -31,19 +32,17 @@ mkdir -p tmp
 
 # Pipeline kwargs go straight through as `run-job --set KEY=VALUE` (JSON-typed),
 # so there is no JSON string to assemble here.
-SETUP=(--ai)
 KWARGS=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --movies) KWARGS+=(--set "corpus_size=$2"); shift 2 ;;
         --top-k)  KWARGS+=(--set "top_k=$2"); shift 2 ;;
-        --ollama) SETUP=(--ollama); shift ;;
         *) echo "Unknown flag: $1" >&2
-           echo "Usage: $0 [--movies N] [--top-k N] [--ollama]" >&2; exit 1 ;;
+           echo "Usage: $0 [--movies N] [--top-k N]" >&2; exit 1 ;;
     esac
 done
 
-../scripts/setup_aaiclick "${SETUP[@]}"
+../scripts/setup_aaiclick --ai
 
 echo "## Movie Plot RAG Pipeline"
 

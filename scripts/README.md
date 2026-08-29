@@ -34,7 +34,7 @@ So a run script that exports both gets ClickHouse + PostgreSQL + migrations, and
 
 Every step is **probe-first**: a server that already answers at its URL is left alone, so CI — where the databases are service containers — runs the same command as a laptop with nothing installed and pays only for the migrations. That is why the orchestration run scripts call it unconditionally instead of hiding it behind an opt-in flag.
 
-`--ai` prepares the provider `AAICLICK_AI_MODEL` names: for an `ollama/*` model it pulls and warms the weights against a running server (and fails with a pointer to `setup_ollama` if there is none); for a hosted model it checks `AAICLICK_AI_API_KEY` is set.
+`--ai` prepares whatever provider `AAICLICK_AI_MODEL` names: an `ollama/*` model (including the unset default) gets its server and weights set up via `setup_ollama`; a hosted model just needs `AAICLICK_AI_API_KEY`. `--ollama` is for the case `--ai` cannot infer — forcing the local path even when `AAICLICK_AI_MODEL` names a hosted model, so the box is provisioned for Ollama regardless.
 
 ## Connection contracts
 

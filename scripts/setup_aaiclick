@@ -97,28 +97,28 @@ if [ "$EMBEDDED" -eq 1 ]; then
 fi
 
 if [ "$OLLAMA" -eq 1 ]; then
-    "$SCRIPT_DIR/setup_ollama"
+    # Explicitly asking for the local path. Drop a hosted AAICLICK_AI_MODEL for
+    # this call so setup_ollama provisions its own default rather than refusing;
+    # --ai is the flag that follows whatever the model names.
+    case "${AAICLICK_AI_MODEL:-ollama/}" in
+        ollama/*) "$SCRIPT_DIR/setup_ollama" ;;
+        *)        env -u AAICLICK_AI_MODEL "$SCRIPT_DIR/setup_ollama" ;;
+    esac
 elif [ "$AI" -eq 1 ]; then
     # AAICLICK_AI_MODEL is aaiclick's variable too; its default lives in
     # aaiclick.ai.ollama, and an unset value means that default.
-    MODEL="${AAICLICK_AI_MODEL:-ollama/llama3.1:8b}"
-    case "$MODEL" in
-        ollama/*)
-            # `aaiclick setup --ai` pulls the model but cannot install a server.
-            if ! curl -sf "${OLLAMA_HOST:-http://localhost:11434}/api/version" &>/dev/null; then
-                echo "ERROR: no Ollama server for '${MODEL}'. Run scripts/setup_ollama," >&2
-                echo "       or point AAICLICK_AI_MODEL / AAICLICK_AI_API_KEY at a hosted model." >&2
-                exit 1
-            fi
-            "$SCRIPT_DIR/setup_ollama"
-            ;;
+    case "${AAICLICK_AI_MODEL:-ollama/llama3.1:8b}" in
+        # setup_ollama is probe-first the whole way down — it installs only when
+        # ollama is missing, starts only when the server is down, and pulling an
+        # already-present model is a no-op — so there is nothing to gate here.
+        ollama/*) "$SCRIPT_DIR/setup_ollama" ;;
         *)
             if [ -z "${AAICLICK_AI_API_KEY:-}" ]; then
-                echo "ERROR: AAICLICK_AI_MODEL='${MODEL}' is a hosted model but" >&2
-                echo "       AAICLICK_AI_API_KEY is unset." >&2
+                echo "ERROR: AAICLICK_AI_MODEL='${AAICLICK_AI_MODEL}' is a hosted model" >&2
+                echo "       but AAICLICK_AI_API_KEY is unset." >&2
                 exit 1
             fi
-            echo "AI provider ready (model=${MODEL}, hosted)."
+            echo "AI provider ready (model=${AAICLICK_AI_MODEL}, hosted)."
             ;;
     esac
 fi
