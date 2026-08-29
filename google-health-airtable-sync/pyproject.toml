@@ -1,0 +1,16 @@
+[project]
+name = "google-health-airtable-sync"
+version = "0.1.0"
+description = "Daily sync of Google Health activities, steps, and weight into Airtable"
+requires-python = ">=3.10"
+
+dependencies = [
+    "aaiclick[distributed]",
+    "pydantic>=2.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+]

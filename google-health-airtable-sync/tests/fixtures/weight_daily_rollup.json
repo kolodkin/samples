@@ -1,0 +1,14 @@
+{
+  "rollupDataPoints": [
+    {
+      "civilStartTime": {"year": 2026, "month": 8, "day": 22},
+      "civilEndTime": {"year": 2026, "month": 8, "day": 23},
+      "weight": {"weightGramsAvg": 78450.0}
+    },
+    {
+      "civilStartTime": {"year": 2026, "month": 8, "day": 24},
+      "civilEndTime": {"year": 2026, "month": 8, "day": 25},
+      "weight": {"weightGramsAvg": 78100.0}
+    }
+  ]
+}
