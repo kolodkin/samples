@@ -24,6 +24,9 @@ PYTHON="${PYTHON:-uv run python}"
 # cluster and it probes that instead of provisioning.
 export AAICLICK_SQL_URL="${AAICLICK_SQL_URL:-postgresql+asyncpg://aaiclick:secret@localhost:5432/aaiclick}"
 export AAICLICK_CH_URL="${AAICLICK_CH_URL:-clickhouse://default:benchmark@localhost:8123/default}"
+# Generation needs a provider, so declare which one the same way: setup_aaiclick
+# sets up whatever this names, and aaiclick itself already defaults to this model.
+export AAICLICK_AI_MODEL="${AAICLICK_AI_MODEL:-ollama/llama3.1:8b}"
 export AAICLICK_REPORT_FILE="tmp/movie_plot_rag_report.md"
 # Task stdout/stderr streams to the ClickHouse task_logs table; this catches
 # only worker-process-level messages, so it stays empty on a clean run.
@@ -42,7 +45,7 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-../scripts/setup_aaiclick --ai
+../scripts/setup_aaiclick
 
 echo "## Movie Plot RAG Pipeline"
 

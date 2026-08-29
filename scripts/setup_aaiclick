@@ -2,20 +2,22 @@
 # One entry point for every backend an example project needs, so a run script
 # can provision its dependencies with a single line.
 #
-#   scripts/setup_aaiclick            # whatever AAICLICK_SQL_URL / AAICLICK_CH_URL ask for
-#   scripts/setup_aaiclick --local    # ignore those and set up the embedded backend
-#   scripts/setup_aaiclick --ollama   # local Ollama server holding the configured model
-#   scripts/setup_aaiclick --ai       # AI provider only: pull the model / check the API key
+#   scripts/setup_aaiclick            # whatever the AAICLICK_* environment asks for
+#   scripts/setup_aaiclick --local    # override: embedded backend, whatever the URLs say
+#   scripts/setup_aaiclick --ollama   # override: local Ollama, whatever the model says
 #
-# There is no connection contract here: the caller owns it. Which backend to set
-# up is read from the same two variables aaiclick itself reads (see its
-# backend.py), and each is independent —
+# There is no contract here: the caller owns it. What to set up is read from the
+# environment aaiclick itself reads, each variable independent —
 #
-#   AAICLICK_CH_URL   clickhouse://…  a server to provision   unset or chdb://  embedded
-#   AAICLICK_SQL_URL  postgresql://…  a server to provision   unset or sqlite   embedded
+#   AAICLICK_CH_URL    clickhouse://…  a server to provision   unset or chdb://  embedded
+#   AAICLICK_SQL_URL   postgresql://…  a server to provision   unset or sqlite   embedded
+#   AAICLICK_AI_MODEL  ollama/…        server + weights        hosted  needs an API key
+#                                                              unset   no AI step
 #
-# so a run script that exports both gets ClickHouse + PostgreSQL + migrations,
-# and a bare shell gets chdb + SQLite. Flags combine (`--ollama` implies `--ai`).
+# so a run script exports what it needs and calls this with no flags: both URLs
+# get ClickHouse + PostgreSQL + migrations, a bare shell gets chdb + SQLite, and
+# only a project that exports a model pays for an AI provider. The two flags are
+# escape hatches for overriding that environment, not the way to drive it.
 #
 # Every step is probe-first and idempotent: a server that already answers at its
 # URL is left alone, so CI (databases as service containers) runs the same
@@ -25,15 +27,14 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-OLLAMA=0 AI=0
+OLLAMA=0
 while [ $# -gt 0 ]; do
     case "$1" in
         # Both URLs unset is exactly how aaiclick spells "embedded", so the
         # flag needs no branch of its own — everything below follows from it.
         --local)  unset AAICLICK_SQL_URL AAICLICK_CH_URL ;;
-        --ollama) OLLAMA=1; AI=1 ;;
-        --ai)     AI=1 ;;
-        -h|--help) sed -n '2,22p' "$0" | cut -c3- ; exit 0 ;;
+        --ollama) OLLAMA=1 ;;
+        -h|--help) sed -n '2,24p' "$0" | cut -c3- ; exit 0 ;;
         *) echo "Unknown flag: $1" >&2; exit 1 ;;
     esac
     shift
@@ -97,17 +98,20 @@ if [ "$EMBEDDED" -eq 1 ]; then
 fi
 
 if [ "$OLLAMA" -eq 1 ]; then
-    # Explicitly asking for the local path. Drop a hosted AAICLICK_AI_MODEL for
-    # this call so setup_ollama provisions its own default rather than refusing;
-    # --ai is the flag that follows whatever the model names.
+    # The override: set up the local path whatever the model says. Drop a hosted
+    # AAICLICK_AI_MODEL for the call so setup_ollama provisions its own default
+    # rather than refusing.
     case "${AAICLICK_AI_MODEL:-ollama/}" in
         ollama/*) "$SCRIPT_DIR/setup_ollama" ;;
         *)        env -u AAICLICK_AI_MODEL "$SCRIPT_DIR/setup_ollama" ;;
     esac
-elif [ "$AI" -eq 1 ]; then
-    # AAICLICK_AI_MODEL is aaiclick's variable too; its default lives in
-    # aaiclick.ai.ollama, and an unset value means that default.
-    case "${AAICLICK_AI_MODEL:-ollama/llama3.1:8b}" in
+else
+    # Same rule as the databases: the variable is the request. A project that
+    # needs an AI provider exports AAICLICK_AI_MODEL — unset means no AI step to
+    # set up, not "use aaiclick's default", which is why this does not fall back
+    # to one.
+    case "${AAICLICK_AI_MODEL:-}" in
+        "") ;;
         # setup_ollama is probe-first the whole way down — it installs only when
         # ollama is missing, starts only when the server is down, and pulling an
         # already-present model is a no-op — so there is nothing to gate here.

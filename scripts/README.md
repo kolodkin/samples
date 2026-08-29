@@ -17,24 +17,26 @@ Each script is idempotent (safe to re-run) and uses `sudo` automatically when no
 The one entry point a run script calls, so provisioning is a single line:
 
 ```bash
-scripts/setup_aaiclick            # whatever AAICLICK_SQL_URL / AAICLICK_CH_URL ask for
-scripts/setup_aaiclick --local    # ignore those and set up the embedded backend
-scripts/setup_aaiclick --ollama   # local Ollama server holding the configured model
-scripts/setup_aaiclick --ai       # AI provider only: pull the model / check the API key
+scripts/setup_aaiclick            # whatever the AAICLICK_* environment asks for
+scripts/setup_aaiclick --local    # override: embedded backend, whatever the URLs say
+scripts/setup_aaiclick --ollama   # override: local Ollama, whatever the model says
 ```
 
-It defines no connection contract of its own — the caller owns that. Which backend to set up is read from the same two variables aaiclick itself reads (`backend.py`), and each is independent:
+It defines no contract of its own — the caller owns that. What to set up is read from the environment aaiclick itself reads (`backend.py`, `ai/ollama.py`), each variable independent:
 
-| | points at a server | unset, or embedded scheme |
+| | asks for a server | otherwise |
 |---|---|---|
-| `AAICLICK_CH_URL` | `clickhouse://…` — provisioned | `chdb://` — embedded |
-| `AAICLICK_SQL_URL` | `postgresql://…` — provisioned + migrated | `sqlite` — embedded |
+| `AAICLICK_CH_URL` | `clickhouse://…` — provisioned | unset or `chdb://` — embedded |
+| `AAICLICK_SQL_URL` | `postgresql://…` — provisioned + migrated | unset or `sqlite` — embedded |
+| `AAICLICK_AI_MODEL` | `ollama/…` — server + weights | hosted — needs `AAICLICK_AI_API_KEY`; unset — no AI step |
 
-So a run script that exports both gets ClickHouse + PostgreSQL + migrations, and a bare shell gets chdb + SQLite. `--local` needs no branch of its own: it just unsets both, which is exactly how aaiclick spells "embedded". Flags combine (`--ollama` implies `--ai`).
+So a run script exports what it needs and calls this with **no flags**: both URLs get ClickHouse + PostgreSQL + migrations, a bare shell gets chdb + SQLite, and only a project that exports a model pays for an AI provider.
+
+Note the asymmetry that makes that work: an unset URL still means a backend (the embedded one), because aaiclick always needs somewhere to put state — but an unset model means *no AI step at all*, not aaiclick's default model, so `imdb-dataset-builder` and `github-exposure-scanner` never provision an LLM they don't use.
+
+The two flags are escape hatches for overriding that environment, not the way to drive it. `--local` needs no branch of its own — it unsets both URLs, which is exactly how aaiclick spells "embedded". `--ollama` forces the local AI path even when `AAICLICK_AI_MODEL` names a hosted model.
 
 Every step is **probe-first**: a server that already answers at its URL is left alone, so CI — where the databases are service containers — runs the same command as a laptop with nothing installed and pays only for the migrations. That is why the orchestration run scripts call it unconditionally instead of hiding it behind an opt-in flag.
-
-`--ai` prepares whatever provider `AAICLICK_AI_MODEL` names: an `ollama/*` model (including the unset default) gets its server and weights set up via `setup_ollama`; a hosted model just needs `AAICLICK_AI_API_KEY`. `--ollama` is for the case `--ai` cannot infer — forcing the local path even when `AAICLICK_AI_MODEL` names a hosted model, so the box is provisioned for Ollama regardless.
 
 ## Connection contracts
 
