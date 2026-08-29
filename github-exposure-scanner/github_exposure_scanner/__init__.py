@@ -12,6 +12,18 @@ DAG::
     validate_airtable_credentials ─┬─► publish_findings ─┘
                                    └─► publish_summary ───┘
 
+Usage:
+    # With a worker running, run the pipeline and block on its progress
+    # (requires PostgreSQL or SQLite orchestration backend):
+    python -m aaiclick execution-worker start &
+    python -m aaiclick run-job github_exposure_scanner.exposure_pipeline \
+        --set 'targets=["octocat"]' --progress
+
+    # Or execute the whole DAG in-process against embedded chdb + SQLite, no
+    # worker — handy for debugging:
+    python -m aaiclick setup
+    python -m github_exposure_scanner --params '{"targets": ["octocat"]}'
+
 Environment variables:
     GITHUB_TOKEN         — raises GitHub API rate limit (optional)
     GITHUB_REPOS         — default targets when no explicit ``targets`` are
@@ -24,7 +36,6 @@ Environment variables:
     AIRTABLE_FINDINGS_TABLE / AIRTABLE_SUMMARY_TABLE — table name overrides
 """
 
-import asyncio
 from datetime import UTC, datetime
 
 from aaiclick import ORIENT_DICT
@@ -119,10 +130,14 @@ async def exposure_pipeline(
 
 
 async def main(**kwargs):
+    """Register the pipeline job and return it.
+
+    Kept as the seam ``__main__`` uses to get a job it can hand to ``ajob_test``
+    for an inline run; the shell runner registers through ``aaiclick run-job``
+    instead and never calls this. ``**kwargs`` are forwarded to
+    ``exposure_pipeline`` (e.g. ``targets``, ``head_only``).
+    """
     created_job = await exposure_pipeline(**kwargs)
     print(f"Registered job: {created_job.name} (ID: {created_job.id})")
     return created_job
 
-
-if __name__ == "__main__":
-    asyncio.run(main())

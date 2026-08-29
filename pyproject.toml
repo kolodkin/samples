@@ -3,7 +3,7 @@ name = "databear"
 version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
-    "aaiclick>=0.0.16",
+    "aaiclick>=0.0.24",
     "clickhouse-connect",
     "duckdb",
     "numpy",

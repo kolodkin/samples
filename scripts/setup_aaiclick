@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+# One entry point for every backend an example project needs, so a run script
+# can provision its dependencies with a single line.
+#
+#   scripts/setup_aaiclick            # whatever the AAICLICK_* environment asks for
+#   scripts/setup_aaiclick --local    # override: embedded backend, whatever the URLs say
+#   scripts/setup_aaiclick --ollama   # override: local Ollama, whatever the model says
+#
+# There is no contract here: the caller owns it. What to set up is read from the
+# environment aaiclick itself reads, each variable independent —
+#
+#   AAICLICK_CH_URL    clickhouse://…  a server to provision   unset or chdb://  embedded
+#   AAICLICK_SQL_URL   postgresql://…  a server to provision   unset or sqlite   embedded
+#   AAICLICK_AI_MODEL  ollama/…        server + weights        hosted  needs an API key
+#                                                              unset   no AI step
+#
+# so a run script exports what it needs and calls this with no flags: both URLs
+# get ClickHouse + PostgreSQL + migrations, a bare shell gets chdb + SQLite, and
+# only a project that exports a model pays for an AI provider. The two flags are
+# escape hatches for overriding that environment, not the way to drive it.
+#
+# Every step is probe-first and idempotent: a server that already answers at its
+# URL is left alone, so CI (databases as service containers) runs the same
+# command as a laptop with nothing installed and pays only for the migrations.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+OLLAMA=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        # Both URLs unset is exactly how aaiclick spells "embedded", so the
+        # flag needs no branch of its own — everything below follows from it.
+        --local)  unset AAICLICK_SQL_URL AAICLICK_CH_URL ;;
+        --ollama) OLLAMA=1 ;;
+        -h|--help) sed -n '2,24p' "$0" | cut -c3- ; exit 0 ;;
+        *) echo "Unknown flag: $1" >&2; exit 1 ;;
+    esac
+    shift
+done
+
+# scheme://user:pass@host:port/db -> the parts each caller needs, any of which
+# may come back empty when the URL omits them.
+parse_url() {
+    local rest="${1#*://}" creds="" hostport
+    case "$rest" in *@*) creds="${rest%%@*}"; rest="${rest#*@}" ;; esac
+    hostport="${rest%%/*}"
+    case "$creds" in *:*) _USER="${creds%%:*}"; _PASS="${creds#*:}" ;;
+                     *)   _USER="$creds"; _PASS="" ;; esac
+    _HOST="${hostport%%:*}"; _PORT="${hostport##*:}"
+    _DB="${rest#*/}"
+}
+
+tcp_open() { (exec 3<>"/dev/tcp/$1/$2") 2>/dev/null; }
+
+EMBEDDED=0
+
+case "${AAICLICK_CH_URL:-}" in
+    clickhouse*|http*)
+        parse_url "$AAICLICK_CH_URL"
+        if curl -sf "http://${_HOST}:${_PORT}/ping" &>/dev/null; then
+            echo "ClickHouse already reachable at ${_HOST}:${_PORT} — skipping install."
+        else
+            # Only pass what the URL actually carried; setup_clickhouse owns the
+            # defaults for the rest.
+            if [ -n "$_PASS" ]; then export CH_PASSWORD="$_PASS"; fi
+            "$SCRIPT_DIR/setup_clickhouse"
+        fi
+        ;;
+    *) EMBEDDED=1 ;;
+esac
+
+case "${AAICLICK_SQL_URL:-}" in
+    postgresql*)
+        parse_url "$AAICLICK_SQL_URL"
+        export POSTGRES_HOST="$_HOST" POSTGRES_PORT="$_PORT" POSTGRES_USER="$_USER" \
+               POSTGRES_PASSWORD="$_PASS" POSTGRES_DB="$_DB"
+        if tcp_open "$_HOST" "$_PORT"; then
+            # A server we did not provision (a CI service container, a real
+            # cluster) holds no aaiclick schema; setup_postgres migrates the
+            # ones it creates, so only this path has migrating left to do.
+            echo "PostgreSQL already reachable at ${_HOST}:${_PORT} — applying migrations only."
+            uv run --with aaiclick --with asyncpg --with psycopg2-binary \
+                python -m aaiclick migrate upgrade head
+        else
+            "$SCRIPT_DIR/setup_postgres"
+        fi
+        ;;
+    *) EMBEDDED=1 ;;
+esac
+
+# Whatever is left embedded — either half, or both — is aaiclick's own to set
+# up; `aaiclick setup` skips the side that points at a server.
+if [ "$EMBEDDED" -eq 1 ]; then
+    echo "Setting up the embedded backend (chdb + SQLite)..."
+    ${PYTHON:-uv run python} -m aaiclick setup
+fi
+
+if [ "$OLLAMA" -eq 1 ]; then
+    # The override: set up the local path whatever the model says. Drop a hosted
+    # AAICLICK_AI_MODEL for the call so setup_ollama provisions its own default
+    # rather than refusing.
+    case "${AAICLICK_AI_MODEL:-ollama/}" in
+        ollama/*) "$SCRIPT_DIR/setup_ollama" ;;
+        *)        env -u AAICLICK_AI_MODEL "$SCRIPT_DIR/setup_ollama" ;;
+    esac
+else
+    # Same rule as the databases: the variable is the request. A project that
+    # needs an AI provider exports AAICLICK_AI_MODEL — unset means no AI step to
+    # set up, not "use aaiclick's default", which is why this does not fall back
+    # to one.
+    case "${AAICLICK_AI_MODEL:-}" in
+        "") ;;
+        # setup_ollama is probe-first the whole way down — it installs only when
+        # ollama is missing, starts only when the server is down, and pulling an
+        # already-present model is a no-op — so there is nothing to gate here.
+        ollama/*) "$SCRIPT_DIR/setup_ollama" ;;
+        *)
+            if [ -z "${AAICLICK_AI_API_KEY:-}" ]; then
+                echo "ERROR: AAICLICK_AI_MODEL='${AAICLICK_AI_MODEL}' is a hosted model" >&2
+                echo "       but AAICLICK_AI_API_KEY is unset." >&2
+                exit 1
+            fi
+            echo "AI provider ready (model=${AAICLICK_AI_MODEL}, hosted)."
+            ;;
+    esac
+fi

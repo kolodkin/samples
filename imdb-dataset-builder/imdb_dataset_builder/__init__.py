@@ -26,11 +26,16 @@ https://datasets.imdbws.com/title.basics.tsv.gz
 License: IMDb Non-Commercial Use — https://developer.imdb.com/non-commercial-datasets/
 
 Usage:
-    # Register job (requires PostgreSQL or SQLite orchestration backend)
-    python -m imdb_dataset_builder
+    # With a worker running, run the pipeline and block on its progress
+    # (requires PostgreSQL or SQLite orchestration backend):
+    python -m aaiclick execution-worker start &
+    python -m aaiclick run-job imdb_dataset_builder.imdb_dataset_pipeline \
+        --set limit=500000 --progress
 
-    # Then run worker to execute
-    python -m aaiclick worker start
+    # Or execute the whole DAG in-process against embedded chdb + SQLite, no
+    # worker — handy for debugging:
+    python -m aaiclick setup
+    python -m imdb_dataset_builder --params '{"limit": 500000}'
 
 Environment variables:
     HF_TOKEN             — Hugging Face token for dataset publishing (optional)
@@ -424,17 +429,13 @@ async def main(**kwargs):
     """Register the IMDb dataset builder pipeline job.
 
     ``**kwargs`` are forwarded to ``imdb_dataset_pipeline`` (e.g. ``limit``,
-    ``year_from``) so the shell runner can pass tuning via ``--params``.
+    ``year_from``), so the inline entry point can pass tuning via ``--params``.
 
-    The ``publish_hf`` / ``HF_TOKEN`` invariant is checked here too so the CLI
-    registration path fails immediately (before a worker picks up the job),
-    not just when the entry-point task runs.
+    The ``publish_hf`` / ``HF_TOKEN`` invariant is checked here too so this path
+    fails immediately at registration, not just when the entry-point task runs.
     """
     _require_hf_token_if_publishing(bool(kwargs.get("publish_hf")))
     created_job = await imdb_dataset_pipeline(**kwargs)
     print(f"Registered job: {created_job.name} (ID: {created_job.id})")
     return created_job
 
-
-if __name__ == "__main__":
-    asyncio.run(main())
