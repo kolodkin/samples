@@ -2,87 +2,105 @@
 # One entry point for every backend an example project needs, so a run script
 # can provision its dependencies with a single line.
 #
-#   scripts/setup_aaiclick            # distributed backend: ClickHouse + PostgreSQL + migrations
-#   scripts/setup_aaiclick --local    # embedded backend instead: chdb + SQLite, no servers
+#   scripts/setup_aaiclick            # whatever AAICLICK_SQL_URL / AAICLICK_CH_URL ask for
+#   scripts/setup_aaiclick --local    # ignore those and set up the embedded backend
 #   scripts/setup_aaiclick --ollama   # local Ollama server holding the configured model
 #   scripts/setup_aaiclick --ai       # AI provider only: pull the model / check the API key
 #
-# Flags combine (`--local --ai`, `--ollama` implies `--ai`). Every step is
-# probe-first and idempotent: a backend that already answers is left alone, so
-# CI (databases as service containers) runs the same command as a laptop with
-# nothing installed and pays only for the migrations.
+# There is no connection contract here: the caller owns it. Which backend to set
+# up is read from the same two variables aaiclick itself reads (see its
+# backend.py), and each is independent —
 #
-# Connection contract (override via env; matches setup_clickhouse / setup_postgres):
-#   AAICLICK_CH_URL    clickhouse://default:benchmark@localhost:8123/default
-#   AAICLICK_SQL_URL   postgresql+asyncpg://aaiclick:secret@localhost:5432/aaiclick
-#   AAICLICK_AI_MODEL  ollama/llama3.1:8b
+#   AAICLICK_CH_URL   clickhouse://…  a server to provision   unset or chdb://  embedded
+#   AAICLICK_SQL_URL  postgresql://…  a server to provision   unset or sqlite   embedded
+#
+# so a run script that exports both gets ClickHouse + PostgreSQL + migrations,
+# and a bare shell gets chdb + SQLite. Flags combine (`--ollama` implies `--ai`).
+#
+# Every step is probe-first and idempotent: a server that already answers at its
+# URL is left alone, so CI (databases as service containers) runs the same
+# command as a laptop with nothing installed and pays only for the migrations.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-LOCAL=0 OLLAMA=0 AI=0
+OLLAMA=0 AI=0
 while [ $# -gt 0 ]; do
     case "$1" in
-        --local)  LOCAL=1 ;;
+        # Both URLs unset is exactly how aaiclick spells "embedded", so the
+        # flag needs no branch of its own — everything below follows from it.
+        --local)  unset AAICLICK_SQL_URL AAICLICK_CH_URL ;;
         --ollama) OLLAMA=1; AI=1 ;;
         --ai)     AI=1 ;;
-        -h|--help) sed -n '2,19p' "$0" | cut -c3- ; exit 0 ;;
+        -h|--help) sed -n '2,22p' "$0" | cut -c3- ; exit 0 ;;
         *) echo "Unknown flag: $1" >&2; exit 1 ;;
     esac
     shift
 done
 
-CH_URL="${AAICLICK_CH_URL:-clickhouse://default:benchmark@localhost:8123/default}"
-SQL_URL="${AAICLICK_SQL_URL:-postgresql+asyncpg://aaiclick:secret@localhost:5432/aaiclick}"
-
-# scheme://user:pass@host:port/db -> the four parts each caller needs. Set as
-# _USER/_PASS/_HOST/_PORT/_DB so a caller can pick what it wants off one call.
+# scheme://user:pass@host:port/db -> the parts each caller needs, any of which
+# may come back empty when the URL omits them.
 parse_url() {
     local rest="${1#*://}" creds="" hostport
     case "$rest" in *@*) creds="${rest%%@*}"; rest="${rest#*@}" ;; esac
     hostport="${rest%%/*}"
-    _USER="${creds%%:*}"; _PASS="${creds#*:}"
+    case "$creds" in *:*) _USER="${creds%%:*}"; _PASS="${creds#*:}" ;;
+                     *)   _USER="$creds"; _PASS="" ;; esac
     _HOST="${hostport%%:*}"; _PORT="${hostport##*:}"
     _DB="${rest#*/}"
 }
 
 tcp_open() { (exec 3<>"/dev/tcp/$1/$2") 2>/dev/null; }
 
-if [ "$LOCAL" -eq 1 ]; then
-    # Embedded mode is selected by the *absence* of server URLs, so drop any a
-    # caller exported before handing off to aaiclick's own local setup.
-    echo "Setting up the embedded backend (chdb + SQLite)..."
-    env -u AAICLICK_SQL_URL -u AAICLICK_CH_URL \
-        ${PYTHON:-uv run python} -m aaiclick setup
-else
-    parse_url "$CH_URL"; CH_HOST="$_HOST" CH_PORT="$_PORT" CH_PASS="$_PASS"
-    if curl -sf "http://${CH_HOST}:${CH_PORT}/ping" &>/dev/null; then
-        echo "ClickHouse already reachable at ${CH_HOST}:${CH_PORT} — skipping install."
-    else
-        CH_PASSWORD="$CH_PASS" "$SCRIPT_DIR/setup_clickhouse"
-    fi
+EMBEDDED=0
 
-    parse_url "$SQL_URL"
-    if tcp_open "$_HOST" "$_PORT"; then
-        # A server we did not provision (a CI service container, a real cluster)
-        # holds no aaiclick schema; setup_postgres migrates the ones it creates.
-        echo "PostgreSQL already reachable at ${_HOST}:${_PORT} — applying migrations only."
-        AAICLICK_SQL_URL="$SQL_URL" \
-        POSTGRES_HOST="$_HOST" POSTGRES_PORT="$_PORT" POSTGRES_USER="$_USER" \
-        POSTGRES_PASSWORD="$_PASS" POSTGRES_DB="$_DB" \
+case "${AAICLICK_CH_URL:-}" in
+    clickhouse*|http*)
+        parse_url "$AAICLICK_CH_URL"
+        if curl -sf "http://${_HOST}:${_PORT}/ping" &>/dev/null; then
+            echo "ClickHouse already reachable at ${_HOST}:${_PORT} — skipping install."
+        else
+            # Only pass what the URL actually carried; setup_clickhouse owns the
+            # defaults for the rest.
+            if [ -n "$_PASS" ]; then export CH_PASSWORD="$_PASS"; fi
+            "$SCRIPT_DIR/setup_clickhouse"
+        fi
+        ;;
+    *) EMBEDDED=1 ;;
+esac
+
+case "${AAICLICK_SQL_URL:-}" in
+    postgresql*)
+        parse_url "$AAICLICK_SQL_URL"
+        export POSTGRES_HOST="$_HOST" POSTGRES_PORT="$_PORT" POSTGRES_USER="$_USER" \
+               POSTGRES_PASSWORD="$_PASS" POSTGRES_DB="$_DB"
+        if tcp_open "$_HOST" "$_PORT"; then
+            # A server we did not provision (a CI service container, a real
+            # cluster) holds no aaiclick schema; setup_postgres migrates the
+            # ones it creates, so only this path has migrating left to do.
+            echo "PostgreSQL already reachable at ${_HOST}:${_PORT} — applying migrations only."
             uv run --with aaiclick --with asyncpg --with psycopg2-binary \
                 python -m aaiclick migrate upgrade head
-    else
-        POSTGRES_PORT="$_PORT" POSTGRES_USER="$_USER" \
-        POSTGRES_PASSWORD="$_PASS" POSTGRES_DB="$_DB" \
+        else
             "$SCRIPT_DIR/setup_postgres"
-    fi
+        fi
+        ;;
+    *) EMBEDDED=1 ;;
+esac
+
+# Whatever is left embedded — either half, or both — is aaiclick's own to set
+# up; `aaiclick setup` skips the side that points at a server.
+if [ "$EMBEDDED" -eq 1 ]; then
+    echo "Setting up the embedded backend (chdb + SQLite)..."
+    ${PYTHON:-uv run python} -m aaiclick setup
 fi
 
 if [ "$OLLAMA" -eq 1 ]; then
     "$SCRIPT_DIR/setup_ollama"
 elif [ "$AI" -eq 1 ]; then
+    # AAICLICK_AI_MODEL is aaiclick's variable too; its default lives in
+    # aaiclick.ai.ollama, and an unset value means that default.
     MODEL="${AAICLICK_AI_MODEL:-ollama/llama3.1:8b}"
     case "$MODEL" in
         ollama/*)

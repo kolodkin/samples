@@ -18,8 +18,9 @@ cd "$(dirname "$0")"
 PYTHON="${PYTHON:-uv run python}"
 
 # Distributed backend: a real ClickHouse server + PostgreSQL orchestration, the
-# right fit for the worker-process execution model below. Point either URL at an
-# existing cluster and setup_aaiclick probes it instead of provisioning.
+# right fit for the worker-process execution model below. Exporting these is what
+# tells setup_aaiclick to set up servers at all; point either at an existing
+# cluster and it probes that instead of provisioning.
 export AAICLICK_SQL_URL="${AAICLICK_SQL_URL:-postgresql+asyncpg://aaiclick:secret@localhost:5432/aaiclick}"
 export AAICLICK_CH_URL="${AAICLICK_CH_URL:-clickhouse://default:benchmark@localhost:8123/default}"
 export AAICLICK_LOG_DIR="${AAICLICK_LOG_DIR:-tmp/logs}"

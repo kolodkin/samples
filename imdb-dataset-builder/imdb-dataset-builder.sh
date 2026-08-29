@@ -18,8 +18,9 @@ PYTHON="${PYTHON:-uv run python}"
 
 # Distributed backend: a real ClickHouse server + PostgreSQL orchestration rather
 # than embedded chdb + SQLite, which is single-process and so a poor fit for the
-# worker below. Point either URL at an existing cluster (CI passes service
-# containers) and setup_aaiclick probes it instead of provisioning.
+# worker below. Exporting these is what tells setup_aaiclick to set up servers at
+# all; point either at an existing cluster (CI passes service containers) and it
+# probes that instead of provisioning.
 export AAICLICK_SQL_URL="${AAICLICK_SQL_URL:-postgresql+asyncpg://aaiclick:secret@localhost:5432/aaiclick}"
 export AAICLICK_CH_URL="${AAICLICK_CH_URL:-clickhouse://default:benchmark@localhost:8123/default}"
 # aaiclick defaults to /var/log/aaiclick in distributed mode on Linux, which a
