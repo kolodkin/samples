@@ -23,10 +23,11 @@ PYTHON="${PYTHON:-uv run python}"
 # cluster and it probes that instead of provisioning.
 export AAICLICK_SQL_URL="${AAICLICK_SQL_URL:-postgresql+asyncpg://aaiclick:secret@localhost:5432/aaiclick}"
 export AAICLICK_CH_URL="${AAICLICK_CH_URL:-clickhouse://default:benchmark@localhost:8123/default}"
-export AAICLICK_LOG_DIR="${AAICLICK_LOG_DIR:-tmp/logs}"
 export AAICLICK_REPORT_FILE="tmp/movie_plot_rag_report.md"
+# Task stdout/stderr streams to the ClickHouse task_logs table; this catches
+# only worker-process-level messages, so it stays empty on a clean run.
 WORKER_LOG="tmp/movie_plot_rag_worker.log"
-mkdir -p tmp "$AAICLICK_LOG_DIR"
+mkdir -p tmp
 
 # Pipeline kwargs go straight through as `run-job --set KEY=VALUE` (JSON-typed),
 # so there is no JSON string to assemble here.
@@ -59,8 +60,10 @@ $PYTHON -m aaiclick execution-worker start > "$WORKER_LOG" 2>&1 & WORKER_PID=$!
 STATUS=0
 $PYTHON -m aaiclick run-job movie_plot_rag.movie_plot_rag_pipeline "${KWARGS[@]}" --progress || STATUS=$?
 
-printf '\n### Worker Log\n\n'
-cat "$WORKER_LOG"
+if [ -s "$WORKER_LOG" ]; then
+    printf '\n### Worker Log\n\n'
+    cat "$WORKER_LOG"
+fi
 if [ $STATUS -eq 0 ]; then
     printf '\n### RAG Report\n\n'
     cat "$AAICLICK_REPORT_FILE"
