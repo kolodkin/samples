@@ -187,7 +187,7 @@ async def detect_quality_issues(movies: Object, year_from: int = 1950) -> Qualit
     Computed columns to count runtime range and year violations.
     All counting is done inside ClickHouse.
     """
-    total = await (await movies["tconst"].count()).data()
+    total = await movies["tconst"].count().data()
 
     # Single-scan count for missing runtime
     missing_obj = await movies.count_if(r"runtimeMinutes = '\N'")

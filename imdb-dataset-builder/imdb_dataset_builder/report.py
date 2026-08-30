@@ -188,7 +188,7 @@ async def generate_report(
 
     clean_md = await clean.view(limit=5).markdown(truncate={"primaryTitle": 40})
 
-    tmdb_total = await (await tmdb["tconst"].count()).data()
+    tmdb_total = await tmdb["tconst"].count().data()
     tmdb_sample_md = (
         await tmdb[["tconst", "title", "overview"]].view(limit=5).markdown(truncate={"title": 40, "overview": 120})
     )

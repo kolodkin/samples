@@ -1,4 +1,4 @@
-name: pages
+name: pcl-viewer-archer-pages
 
 # GitHub Pages serves ONE artifact per repo, so every web sample is staged
 # into the same site here: /pcl-viewer and /archer side by side, with the
@@ -15,7 +15,7 @@ on:
       - 'pcl-viewer/pages-index.html'
       - 'archer/web/**'
       - 'archer/vendor.sh'
-      - '.github/workflows/pages.yml'
+      - '.github/workflows/pcl-viewer-archer-pages.yml'
   pull_request:
     branches: [main]
     paths:
@@ -24,7 +24,7 @@ on:
       - 'pcl-viewer/pages-index.html'
       - 'archer/web/**'
       - 'archer/vendor.sh'
-      - '.github/workflows/pages.yml'
+      - '.github/workflows/pcl-viewer-archer-pages.yml'
 
 # Allow the GITHUB_TOKEN to deploy to GitHub Pages.
 permissions:

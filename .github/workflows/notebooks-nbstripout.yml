@@ -1,11 +1,7 @@
-name: nbstripout
+name: notebooks-nbstripout
 
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - '**/*.ipynb'
-      - '.pre-commit-config.yaml'
   push:
     paths:
       - '**/*.ipynb'
