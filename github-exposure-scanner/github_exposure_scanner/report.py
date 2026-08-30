@@ -18,7 +18,7 @@ async def render_report(
     total_findings: int | None = None,
 ) -> str:
     if total_findings is None:
-        total_findings = await (await findings["org"].count()).data()
+        total_findings = await findings["org"].count().data()
     lines: list[str] = ["# Company Cyber Profile", "", "## GitHub Exposure", ""]
 
     lines.append("### Exposure Summary")
@@ -43,7 +43,7 @@ async def render_report(
 
     lines.append("### Findings — Live at HEAD (redacted)")
     lines.append("")
-    live_count = await (await findings.view(where="still_present_at_head = 1")["org"].count()).data()
+    live_count = await findings.view(where="still_present_at_head = 1")["org"].count().data()
     if live_count:
         lines.append(await _findings_table("still_present_at_head = 1"))
     else:
@@ -52,7 +52,7 @@ async def render_report(
 
     lines.append("### Findings — Historical-only (redacted)")
     lines.append("")
-    hist_count = await (await findings.view(where="still_present_at_head = 0")["org"].count()).data()
+    hist_count = await findings.view(where="still_present_at_head = 0")["org"].count().data()
     if hist_count:
         lines.append(await _findings_table("still_present_at_head = 0"))
     else:
@@ -84,7 +84,7 @@ async def generate_report(
     findings_publish: AirtablePublishResult | None = None,
     summary_publish: AirtablePublishResult | None = None,
 ) -> dict:
-    total_findings = await (await findings["org"].count()).data()
+    total_findings = await findings["org"].count().data()
     rendered = await render_report(
         repos, findings, summary, findings_publish, summary_publish, total_findings=total_findings
     )
@@ -96,7 +96,7 @@ async def generate_report(
         print(rendered)
 
     return {
-        "repos_scanned": await (await repos["org"].count()).data(),
+        "repos_scanned": await repos["org"].count().data(),
         "total_findings": total_findings,
         "findings_airtable": findings_publish.status if findings_publish else "skipped",
         "summary_airtable": summary_publish.status if summary_publish else "skipped",

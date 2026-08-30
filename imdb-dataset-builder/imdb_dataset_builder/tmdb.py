@@ -94,14 +94,14 @@ async def enrich_with_tmdb(clean: Object, tmdb: Object) -> Object:
 @task
 async def measure_enrichment(clean: Object, plots: Object) -> EnrichmentStats:
     """Compute coverage stats for the TMDB enrichment."""
-    total_clean = await (await clean["tconst"].count()).data()
-    matched = await (await plots["tconst"].count()).data()
+    total_clean = await clean["tconst"].count().data()
+    matched = await plots["tconst"].count().data()
 
-    plot_stats = await (await plots.count_if({"usable": "length(plot) >= 120"})).data()
+    plot_stats = await plots.count_if({"usable": "length(plot) >= 120"}).data()
     plots_usable = plot_stats["usable"]
 
     avg_obj = plots.with_columns({"plot_len": Computed("UInt32", "length(plot)")})
-    avg = await (await avg_obj["plot_len"].mean()).data()
+    avg = await avg_obj["plot_len"].mean().data()
 
     def pct(n: int) -> float:
         return (n / total_clean * 100) if total_clean > 0 else 0.0
