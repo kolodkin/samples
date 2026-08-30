@@ -1,4 +1,4 @@
-name: nbstripout
+name: notebooks-nbstripout
 
 on:
   workflow_dispatch:
