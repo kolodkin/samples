@@ -164,10 +164,10 @@ async def curate_corpus(pool: Object, corpus_size: int = 1000) -> Object:
 @task
 async def profile_corpus(pool: Object, corpus: Object) -> CorpusStats:
     """Small summary stats — all aggregation runs inside ClickHouse."""
-    pool_size = await (await pool["tconst"].count()).data()
-    corpus_size = await (await corpus["tconst"].count()).data()
+    pool_size = await pool["tconst"].count().data()
+    corpus_size = await corpus["tconst"].count().data()
     with_len = corpus.with_columns({"plot_len": Computed("UInt32", "length(plot)")})
-    avg_chars = await (await with_len["plot_len"].mean()).data()
+    avg_chars = await with_len["plot_len"].mean().data()
     return CorpusStats(
         pool_size=pool_size,
         corpus_size=corpus_size,
@@ -216,9 +216,9 @@ async def embed_plots(corpus: Object) -> Object:
 @task
 async def measure_embeddings(embedded: Object) -> EmbeddingInfo:
     """Read back vector shape from ClickHouse as a sanity check."""
-    rows = await (await embedded["tconst"].count()).data()
+    rows = await embedded["tconst"].count().data()
     dims_obj = embedded.with_columns({"dims": Computed("UInt32", "length(embedding)")})
-    dims = await (await dims_obj["dims"].max()).data()
+    dims = await dims_obj["dims"].max().data()
     return EmbeddingInfo(model=EMBEDDING_MODEL, dims=int(dims or 0), rows=rows)
 
 
