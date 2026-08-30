@@ -3,12 +3,6 @@ name: github-exposure-scanner
 on:
   workflow_dispatch:
   push:
-    branches: [main]
-    paths:
-      - 'github-exposure-scanner/**'
-      - '.github/workflows/github-exposure-scanner.yml'
-  pull_request:
-    branches: [main]
     paths:
       - 'github-exposure-scanner/**'
       - '.github/workflows/github-exposure-scanner.yml'
