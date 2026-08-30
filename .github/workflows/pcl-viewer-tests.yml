@@ -3,12 +3,6 @@ name: pcl-viewer-tests
 on:
   workflow_dispatch:
   push:
-    branches: [main]
-    paths:
-      - 'pcl-viewer/**'
-      - '.github/workflows/pcl-viewer-tests.yml'
-  pull_request:
-    branches: [main]
     paths:
       - 'pcl-viewer/**'
       - '.github/workflows/pcl-viewer-tests.yml'
