@@ -1,0 +1,71 @@
+{
+  "dataPoints": [
+    {
+      "name": "users/2515055256096816351/dataTypes/exercise/dataPoints/8896720705097069096",
+      "dataSource": {
+        "recordingMethod": "AUTOMATICALLY_DETECTED",
+        "platform": "FITBIT"
+      },
+      "exercise": {
+        "interval": {
+          "startTime": "2026-08-22T06:10:00Z",
+          "startUtcOffset": "-18000s",
+          "endTime": "2026-08-22T06:45:00Z",
+          "endUtcOffset": "-18000s"
+        },
+        "exerciseType": "RUNNING",
+        "metricsSummary": {
+          "caloriesKcal": 412,
+          "distanceMillimiters": 5230000,
+          "steps": "6210",
+          "averagePaceSecondsPerMeter": 0.4,
+          "averageHeartRateBeatsPerMinute": "156"
+        },
+        "exerciseMetadata": {},
+        "displayName": "Run",
+        "activeDuration": "2100s",
+        "updateTime": "2026-08-22T12:19:22.450466Z"
+      }
+    },
+    {
+      "name": "users/2515055256096816351/dataTypes/exercise/dataPoints/5870930690409355408",
+      "dataSource": {
+        "recordingMethod": "MANUAL",
+        "platform": "FITBIT"
+      },
+      "exercise": {
+        "interval": {
+          "startTime": "2026-08-23T13:10:00Z",
+          "startUtcOffset": "-18000s",
+          "endTime": "2026-08-23T13:25:00Z",
+          "endUtcOffset": "-18000s"
+        },
+        "exerciseType": "WALKING",
+        "metricsSummary": {
+          "caloriesKcal": 16,
+          "distanceMillimiters": 1609344,
+          "steps": "2038",
+          "averagePaceSecondsPerMeter": 0.55923407301360051,
+          "activeZoneMinutes": "0"
+        },
+        "exerciseMetadata": {},
+        "displayName": "Walk",
+        "activeDuration": "900s",
+        "exerciseEvents": [
+          {
+            "eventTime": "2026-08-23T13:10:00Z",
+            "eventUtcOffset": "-18000s",
+            "exerciseEventType": "START"
+          },
+          {
+            "eventTime": "2026-08-23T13:25:00Z",
+            "eventUtcOffset": "-18000s",
+            "exerciseEventType": "STOP"
+          }
+        ],
+        "updateTime": "2026-08-23T20:29:39.480437Z"
+      }
+    }
+  ],
+  "nextPageToken": ""
+}

@@ -1,0 +1,43 @@
+name: google-health-airtable-sync
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'google-health-airtable-sync/**'
+      - '.github/workflows/google-health-airtable-sync.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'google-health-airtable-sync/**'
+      - '.github/workflows/google-health-airtable-sync.yml'
+
+permissions:
+  contents: read
+
+# A newer push to the same ref supersedes an in-flight run.
+concurrency:
+  group: google-health-airtable-sync-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: google-health-airtable-sync
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      # Deterministic + offline: the suite runs the full pipeline in-process
+      # against the committed tests/fixtures via GHS_FIXTURE_DIR, so no Google
+      # Health network, OAuth tokens, or Postgres/ClickHouse services are needed.
+      - name: Run tests
+        run: uv run --group dev pytest -q
