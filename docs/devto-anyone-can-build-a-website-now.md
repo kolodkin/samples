@@ -134,7 +134,7 @@ These are just a few examples. Most of the pull requests were this kind of small
 
 ## Why the tight build makes the slow part survivable
 
-Every one of those commits was cheap, and that is the point of the build process being this small:
+Every one of those pull requests was cheap, and that is the point of the build process being this small:
 
 - **The screenshots are the review.** After `uv run pytest`, I look at a folder of PNGs, not a running app I have to click through. A camera-default change is two files side by side.
 - **Every push is a deploy.** Ten minutes after a change I could send a link and ask "does the aim cue read better now?"
