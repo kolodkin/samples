@@ -136,7 +136,7 @@ Every one of those pull requests was cheap, and that is the point of the build p
 - **Nothing between the edit and the browser.** No stale build, no watcher to restart, no source-map mismatch. The file I edited is the file the browser ran.
 - **The tests already drive the app.** When a UI element moved, the e2e that clicked it failed and the screenshot showed where it went. Archer's tests guard that the title screen quotes the real stage count.
 
-Oscillating between "size to content" and "cap at 50vh" is not a broken process. It is what building a UI looks like. A tight loop makes each swing cost minutes instead of an afternoon.
+Going back and forth on a panel height a few times in one day might look like indecision. It isn't. It's just what it takes to get a UI right, and when each try costs a few minutes instead of an afternoon, you can afford to keep going until it feels right.
 
 ## Steal it
 
