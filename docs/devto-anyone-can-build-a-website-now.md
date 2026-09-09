@@ -123,13 +123,11 @@ Nothing to install beyond `uv` and a browser. No `node_modules`, no watcher. Ref
 
 ## Concept to preliminary site: fast
 
-The commit timestamps tell it better than I can.
+From empty folder to a tested, documented, deployable first version:
 
-**PCL Viewer**, June 19: scaffold and static server at 04:04. Three.js viewer, page, styles and a sample PCD at 04:11. Preact control panel and stats overlay at 04:15. Playwright e2e at 04:17. Runner script and README at 04:20. Sixteen minutes from empty folder to a tested, documented, deployable point-cloud viewer.
-
-**What They Mean**, June 23: initial commit, the first concept demo ("What is an API?") and the Playwright suite, all in one day.
-
-**Archer**, July 7: scaffold with a boot test at 09:59. Seeded stage builders at 10:00. First-person player with a bow at 10:01. Ballistic arrows at 10:02. Goblins and ogres at 10:04. Skeleton archers with cover-seeking AI at 10:06. Exploding, freezing and burning arrows at 10:08. Waves, stage progression, a Preact HUD with title, pause and game-over screens, then README and SPEC at 10:23. Twenty-four minutes.
+- **PCL Viewer** — 16 minutes
+- **Archer** — 24 minutes
+- **What They Mean** — one day, first demo and test suite included
 
 These apps are not trivial. The viewer decodes Draco-compressed LiDAR frames through a bounded worker queue. The game runs animated glTF characters with arrow physics, cover, and a monster radar. The speed comes from the skeleton removing every question that is not about the app. Where do files go? `web/`. How do I run it? `./run.sh`. How do I ship it? Push.
 
