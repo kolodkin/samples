@@ -143,7 +143,7 @@ The first version of every site was live within a day. Then the UI ate weeks: 24
 
 **Archer — When should things be visible?** The perch underfoot went invisible, visible, slightly translucent, then shrank and grew back until it read as a platform. On a phone the bow was clipped off the right edge, because the field of view is vertical and a portrait frustum is narrow.
 
-None of this was planned. You cannot plan it. You look at the page, something is off, you change it, you look again.
+These are just a few examples. Every one of those pull requests has a story like this. None of it was planned. You cannot plan it. You look at the page, something is off, you change it, you look again.
 
 ## Why the tight build makes the slow part survivable
 
