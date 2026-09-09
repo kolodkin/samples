@@ -47,7 +47,7 @@ conftest.py       starts the server on a free port for the tests
 <script type="module" src="./main.js"></script>
 ```
 
-Preact plus [htm](https://github.com/developit/htm) gives components without JSX, so nothing needs transpiling. The import map is the practice worth keeping; where its entries point is up to the project. A CDN works as above. The three sites point at copies downloaded into `web/vendor/` instead, so tests run offline and the deployed site has no third-party runtime dependency.
+Preact plus [htm](https://github.com/developit/htm) gives components without JSX, so nothing needs transpiling. The import map is the practice worth keeping; where its entries point is up to the project. A CDN works as above. The three sites point at copies downloaded into `web/vendor/` instead, which only takes the CDN out of the loop as something that can be down.
 
 **The filesystem is the router.** What They Mean has six concept pages, each its own folder with its own `index.html`, `app.js` and `styles.css`, reached by a relative link from the menu. Styles cannot leak between demos, and adding one is `cp -r web/db web/<name>` plus a card on the menu. No JS router, no server rewrites, and relative links mean the project-path Pages URL just works.
 
