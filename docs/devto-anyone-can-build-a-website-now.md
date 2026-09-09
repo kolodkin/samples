@@ -133,7 +133,7 @@ These apps are not trivial. The viewer decodes Draco-compressed LiDAR frames thr
 
 ## Fine-tuning the UI: slow
 
-The first version of every site was live within a day. Then the UI ate weeks: over a hundred commits on PCL Viewer between June 19 and 26, roughly 150 on Archer from July 7 to August 7, 95 and counting on What They Mean.
+The first version of every site was live within a day. Then the UI ate weeks: 24 pull requests on PCL Viewer in 8 days, 48 on Archer in a month, 25 and counting on What They Mean.
 
 The log shows what "fine-tuning" actually means. Rarely one big decision. The same small thing, over and over, until it stops bothering you.
 
