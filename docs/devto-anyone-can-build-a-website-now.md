@@ -20,8 +20,8 @@ Idea to deployed page took under half an hour each time. Making the UI feel righ
 
 ```
 web/
-  index.html      one <script type="module">
-  main.js         nine lines: set the ready flag, replace with your app
+  index.html      import map + one <script type="module">
+  main.js         exports init(); replace with your app
   styles.css
   favicon.svg
 serve.py          static server with ES-module MIME types, no caching
@@ -31,7 +31,7 @@ conftest.py       starts the server on a free port for the tests
 .github/workflows/pages.yml
 ```
 
-**No bundler.** The template ships with zero dependencies: one HTML file, one module script. When an app needs a library, bare module specifiers resolve through an import map in `index.html`, and that is the whole build system. This is what the three sites add:
+**No bundler.** The template ships with zero dependencies. Its import map has one entry, `"app": "./main.js"`, and `index.html` does `import { init } from "app"`. When an app needs a library, it goes in the same map, and that is the whole build system. This is what the three sites add:
 
 ```html
 <script type="importmap">
