@@ -31,7 +31,7 @@ conftest.py       starts the server on a free port for the tests
 .github/workflows/pages.yml
 ```
 
-**No bundler.** The template ships with zero dependencies: one HTML file, one module script. When an app needs a library, bare module specifiers resolve through an import map in `index.html`, and that is the whole build system:
+**No bundler.** The template ships with zero dependencies: one HTML file, one module script. When an app needs a library, bare module specifiers resolve through an import map in `index.html`, and that is the whole build system. This is what the three sites add:
 
 ```html
 <script type="importmap">
@@ -47,7 +47,7 @@ conftest.py       starts the server on a free port for the tests
 <script type="module" src="./main.js"></script>
 ```
 
-Preact plus [htm](https://github.com/developit/htm) gives components without JSX, so nothing needs transpiling.
+They picked Preact plus [htm](https://github.com/developit/htm) for components without JSX, so nothing needs transpiling. That is a project choice; the template does not care which libraries go in the map.
 
 **The filesystem is the router.** What They Mean has six concept pages, each its own folder with its own `index.html`, `app.js` and `styles.css`, reached by a relative link from the menu. Styles cannot leak between demos, and adding one is `cp -r web/db web/<name>` plus a card on the menu. No JS router, no server rewrites, and relative links mean the project-path Pages URL just works.
 
