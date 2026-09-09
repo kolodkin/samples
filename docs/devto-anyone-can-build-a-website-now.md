@@ -135,7 +135,7 @@ These apps are not trivial. The viewer decodes Draco-compressed LiDAR frames thr
 
 The first version of every site was live within a day. Then the UI ate weeks: 24 pull requests on PCL Viewer in 8 days, 48 on Archer in a month, 25 and counting on What They Mean.
 
-**PCL Viewer — Where should the camera start?** Bird's-eye, then low and forward-facing, then closer to the sensor, then aimed down the road, then an elevated chase-cam. Six tries in one afternoon for a question a user never consciously asks.
+**PCL Viewer — Where should the camera start?** Bird's-eye, then low and forward-facing, then closer to the sensor, then aimed down the road, then an elevated chase-cam. Six tries for a question a user never consciously asks.
 
 **Archer — How should the aim cue look?** A bullseye, then a dashed trajectory lane, then a marker at the impact point, then a soft warmth on the hit zone, then a brighter one. The final answer is a small point light on the patch of ground or enemy the arrow would hit, nothing drawn over the scene.
 
