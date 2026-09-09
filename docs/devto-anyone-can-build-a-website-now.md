@@ -20,8 +20,8 @@ Idea to deployed page took under half an hour each time. Making the UI feel righ
 
 ```
 web/
-  index.html      import map + one <script type="module">
-  main.js         the app
+  index.html      one <script type="module">
+  main.js         nine lines: set the ready flag, replace with your app
   styles.css
   favicon.svg
 serve.py          static server with ES-module MIME types, no caching
