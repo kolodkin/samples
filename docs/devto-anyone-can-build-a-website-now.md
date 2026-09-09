@@ -31,23 +31,20 @@ conftest.py       starts the server on a free port for the tests
 .github/workflows/pages.yml
 ```
 
-**No bundler.** Libraries are resolved by an import map in `index.html`, and that is the whole build system. This is what the three sites add:
+**No bundler.** Libraries are resolved by an import map in `index.html`, and that is the whole build system. This is what PCL Viewer adds for three.js, for example:
 
 ```html
 <script type="importmap">
 {
   "imports": {
-    "three":        "https://unpkg.com/three@0.160.0/build/three.module.js",
-    "preact":       "https://unpkg.com/preact@10.19.3/dist/preact.module.js",
-    "preact/hooks": "https://unpkg.com/preact@10.19.3/hooks/dist/hooks.module.js",
-    "htm":          "https://unpkg.com/htm@3.1.1/dist/htm.module.js"
+    "three":         "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
   }
 }
 </script>
-<script type="module" src="./main.js"></script>
 ```
 
-They picked Preact plus [htm](https://github.com/developit/htm) for components without JSX, so nothing needs transpiling. That is a project choice; the template does not care which libraries go in the map.
+The three sites also use Preact plus [htm](https://github.com/developit/htm) for components without JSX, so nothing needs transpiling. That is a project choice; the template does not care which libraries go in the map.
 
 **The filesystem is the router.** What They Mean has six concept pages, each its own folder with its own `index.html`, `app.js` and `styles.css`, reached by a relative link from the menu. Styles cannot leak between demos, and adding one is `cp -r web/db web/<name>` plus a card on the menu. No JS router, no server rewrites, and relative links mean the project-path Pages URL just works.
 
