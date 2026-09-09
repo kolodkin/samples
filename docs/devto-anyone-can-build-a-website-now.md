@@ -24,7 +24,6 @@ web/
   main.js         the app
   styles.css
   favicon.svg
-  vendor/         pinned ES-module builds (gitignored, fetched by vendor.sh)
 serve.py          static server with ES-module MIME types, no caching
 run.sh            ./run.sh -> http://127.0.0.1:8000
 tests/            Playwright e2e
@@ -32,32 +31,23 @@ conftest.py       starts the server on a free port for the tests
 .github/workflows/pages.yml
 ```
 
-**No bundler.** Bare module specifiers resolve through an import map in `index.html`. This is the whole build system:
+**No bundler.** The template ships with zero dependencies: one HTML file, one module script. When an app needs a library, bare module specifiers resolve through an import map in `index.html`, and that is the whole build system:
 
 ```html
 <script type="importmap">
 {
   "imports": {
-    "three":        "./vendor/three.module.js",
-    "preact":       "./vendor/preact.module.js",
-    "preact/hooks": "./vendor/preact-hooks.module.js",
-    "htm":          "./vendor/htm.module.js"
+    "three":        "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "preact":       "https://unpkg.com/preact@10.19.3/dist/preact.module.js",
+    "preact/hooks": "https://unpkg.com/preact@10.19.3/hooks/dist/hooks.module.js",
+    "htm":          "https://unpkg.com/htm@3.1.1/dist/htm.module.js"
   }
 }
 </script>
 <script type="module" src="./main.js"></script>
 ```
 
-`vendor.sh` is a few `curl` lines that download pinned builds into `web/vendor/`:
-
-```bash
-THREE=0.160.0; PREACT=10.19.3; HTM=3.1.1
-fetch "https://unpkg.com/three@$THREE/build/three.module.js"    "$DEST/three.module.js"
-fetch "https://unpkg.com/preact@$PREACT/dist/preact.module.js"  "$DEST/preact.module.js"
-fetch "https://unpkg.com/htm@$HTM/dist/htm.module.js"           "$DEST/htm.module.js"
-```
-
-Preact plus [htm](https://github.com/developit/htm) gives components without JSX, so nothing needs transpiling. The browser fetches libraries from my own server, never a CDN: tests run offline and the deployed site has no third-party runtime dependency.
+Preact plus [htm](https://github.com/developit/htm) gives components without JSX, so nothing needs transpiling. The three sites point those entries at copies downloaded into `web/vendor/` instead of the CDN, so tests run offline and the deployed site has no third-party runtime dependency, but that is a per-project choice, not part of the skeleton.
 
 **The filesystem is the router.** What They Mean has six concept pages, each its own folder with its own `index.html`, `app.js` and `styles.css`, reached by a relative link from the menu. Styles cannot leak between demos, and adding one is `cp -r web/db web/<name>` plus a card on the menu. No JS router, no server rewrites, and relative links mean the project-path Pages URL just works.
 
