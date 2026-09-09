@@ -31,7 +31,7 @@ conftest.py       starts the server on a free port for the tests
 .github/workflows/pages.yml
 ```
 
-**No bundler.** The template ships with zero dependencies. Its import map has one entry, `"app": "./main.js"`, and `index.html` does `import { init } from "app"`. When an app needs a library, it goes in the same map, and that is the whole build system. This is what the three sites add:
+**No bundler.** Libraries are resolved by an import map in `index.html`, and that is the whole build system. This is what the three sites add:
 
 ```html
 <script type="importmap">
