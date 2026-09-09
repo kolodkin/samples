@@ -63,7 +63,7 @@ def test_page_loads(server_url, page, shot):
 
 `shot("home")` is the other half. Tests screenshot at visually meaningful moments, numbered in order, so `test-results/shots/` reads as a walkthrough of the app after every run. Archer goes further: its suite plays the game through `window.__ARCHER` hooks with a seeded RNG, so runs are reproducible and the screenshots show real arrows in flight.
 
-**Deploy: test, build, deploy, tag.** Pull requests run the first two jobs as a check. Pushes to `main` run all three.
+**Deploy: test, build, deploy.** Pull requests run the first two jobs as a check. Pushes to `main` run all three.
 
 ```yaml
 jobs:
@@ -92,12 +92,9 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
-      - run: |
-          tag="deploy-$(date -u +%Y-%m-%d-%H%M%S)"
-          git tag -a "$tag" -m "Pages deployment" "$GITHUB_SHA" && git push origin "$tag"
 ```
 
-The "build" is a `cp`. The tag makes `git tag -l 'deploy-*'` the deploy history, which answers "what was live on Tuesday?"
+The "build" is a `cp`.
 
 One-time setup: **Settings → Pages → Source: GitHub Actions**. The site appears at `https://<owner>.github.io/<repo>/`. Pages serves one artifact per repo, so the samples repo stages both apps into it (`_site/pcl-viewer`, `_site/archer`) with a root redirect.
 
@@ -106,7 +103,7 @@ One-time setup: **Settings → Pages → Source: GitHub Actions**. The site appe
 ```bash
 ./run.sh              # edit, refresh, repeat
 uv run pytest         # tests + fresh screenshots
-git push              # CI tests, deploys, tags
+git push              # CI tests and deploys
 ```
 
 Nothing to install beyond `uv` and a browser. No `node_modules`, no watcher. Refresh the tab and the edit is there, because `serve.py` sends `Cache-Control: no-store`.
@@ -140,7 +137,7 @@ These are just a few examples. Most of the pull requests were this kind of small
 Every one of those commits was cheap, and that is the point of the build process being this small:
 
 - **The screenshots are the review.** After `uv run pytest`, I look at a folder of PNGs, not a running app I have to click through. A camera-default change is two files side by side.
-- **Every push is a deploy.** Ten minutes after a change I could send a link and ask "does the aim cue read better now?", and the `deploy-*` tag says exactly what they saw.
+- **Every push is a deploy.** Ten minutes after a change I could send a link and ask "does the aim cue read better now?"
 - **Nothing between the edit and the browser.** No stale build, no watcher to restart, no source-map mismatch. The file I edited is the file the browser ran.
 - **The tests already drive the app.** When a UI element moved, the e2e that clicked it failed and the screenshot showed where it went. Archer's tests guard that the title screen quotes the real stage count.
 
@@ -148,7 +145,7 @@ Oscillating between "size to content" and "cap at 50vh" is not a broken process.
 
 ## Steal it
 
-The skeleton lives at [kolodkin/spa-template](https://github.com/kolodkin/spa-template): a "Hello, world" page, the server, three e2e tests with screenshots, and the test-build-deploy-tag workflow. It is a GitHub template repository: click **Use this template**, flip Pages to "GitHub Actions" in the new repo, push, and you have a live site with a deploy history.
+The skeleton lives at [kolodkin/spa-template](https://github.com/kolodkin/spa-template): a "Hello, world" page, the server, three e2e tests with screenshots, and the test-build-deploy workflow. It is a GitHub template repository: click **Use this template**, flip Pages to "GitHub Actions" in the new repo, push, and you have a live site.
 
 Then replace `web/` with whatever you want to make. The build will not slow you down. The UI will, and that is fine. That part is the actual work.
 
