@@ -162,7 +162,7 @@ Oscillating between "size to content" and "cap at 50vh" is not a broken process.
 
 ## Steal it
 
-The skeleton lives at [kolodkin/spa-template](https://github.com/kolodkin/spa-template): a "Hello, world" page, the server, three e2e tests with screenshots, and the test-build-deploy-tag workflow. Clone it, flip Pages to "GitHub Actions," push, and you have a live site with a deploy history.
+The skeleton lives at [kolodkin/spa-template](https://github.com/kolodkin/spa-template): a "Hello, world" page, the server, three e2e tests with screenshots, and the test-build-deploy-tag workflow. It is a GitHub template repository: click **Use this template**, flip Pages to "GitHub Actions" in the new repo, push, and you have a live site with a deploy history.
 
 Then replace `web/` with whatever you want to make. The build will not slow you down. The UI will, and that is fine. That part is the actual work.
 
