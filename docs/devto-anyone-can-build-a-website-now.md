@@ -135,15 +135,13 @@ These apps are not trivial. The viewer decodes Draco-compressed LiDAR frames thr
 
 The first version of every site was live within a day. Then the UI ate weeks: 24 pull requests on PCL Viewer in 8 days, 48 on Archer in a month, 25 and counting on What They Mean.
 
-The log shows what "fine-tuning" actually means. Rarely one big decision. The same small thing, over and over, until it stops bothering you.
+**PCL Viewer — Where should the camera start?** Bird's-eye, then low and forward-facing, then closer to the sensor, then aimed down the road, then an elevated chase-cam. Six tries in one afternoon for a question a user never consciously asks.
 
-**Where should the camera start?** PCL Viewer, one afternoon: bird's-eye view. "Low forward-facing onboard camera instead of bird's-eye." "Move onboard camera in toward the sensor origin." "Set onboard camera direction to (0, -0.5, 0.5)." "Aim onboard camera forward and down the road." Days later: "elevated chase-cam default view." Six commits for a question a user never consciously thinks about.
+**Archer — How should the aim cue look?** A bullseye, then a dashed trajectory lane, then a marker at the impact point, then a soft warmth on the hit zone, then a brighter one. The final answer is a small point light on the patch of ground or enemy the arrow would hit, nothing drawn over the scene.
 
-**How should the aim cue look?** Archer, two days: dashed trajectory lane instead of a bullseye. Tighten the dash pattern. Mark the impact point with a gentle bullseye. Soften it to a hit-zone warmth. Make the warmth actually visible. Tint it yellow-white on ground hits. Each step was a playtest reaction. The final version is a small point light warming the patch of ground or enemy the arrow would hit, nothing drawn over the scene at all.
+**What They Mean — How tall should a panel be?** The database demo's context pane went from half the screen to "size to content" to "cap at 50vh" in one day. The Play demo button moved three times before it settled next to the back link.
 
-**How tall should a panel be?** What They Mean's database demo: "size context pane to content, not half the screen." Same day: "cap the context pane at 50vh." The Play demo button moved to the top explanation, then "just below the All concepts link," then into a right-aligned header column with the back link. The menu got a "Learn more" expander and lost it the same day.
-
-**When should things be visible?** The archer's perch went from invisible to visible to "slightly translucent"; its radius shrank from 2.2 to 1.4, then grew back to 1.6 because it vanished underfoot. The title screen copy was reworked, bolded, cut down to only the controls line matching your input device, then enlarged on desktop. On a phone the bow was clipped off the right edge, because a 70° field of view is vertical and a portrait frustum is narrow.
+**Archer — When should things be visible?** The perch underfoot went invisible, visible, slightly translucent, then shrank and grew back until it read as a platform. On a phone the bow was clipped off the right edge, because the field of view is vertical and a portrait frustum is narrow.
 
 None of this was planned. You cannot plan it. You look at the page, something is off, you change it, you look again.
 
