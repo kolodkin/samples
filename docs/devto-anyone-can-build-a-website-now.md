@@ -6,15 +6,15 @@ tags: webdev, javascript, github, showdev
 series: "Anyone Can Build a Website Now"
 ---
 
-Three live sites that look nothing alike:
+I've got three sites live that look nothing like each other:
 
 - **[What They Mean](https://kolodkin.github.io/what-they-mean/)** — tech concepts explained to non-developers, one idea per screen
 - **[PCL Viewer](https://kolodkin.github.io/samples/pcl-viewer/)** — a LiDAR point-cloud viewer that streams a KITTI drive and decodes it in the browser
 - **[Archer](https://kolodkin.github.io/samples/archer/)** — a first-person wave-defense archery game in three.js
 
-Underneath they are the same thing: a folder of plain HTML, CSS and ES modules, a Python `http.server` for local dev, Playwright tests, and a GitHub Actions workflow that deploys to Pages on every push to `main`. No bundler, no Node toolchain, no build step.
+Under the hood they're the same thing: a folder of plain HTML, CSS and ES modules, a Python `http.server` for local dev, Playwright tests, and a GitHub Actions workflow that deploys to Pages on every push to `main`. No bundler, no Node toolchain, no build step.
 
-Idea to deployed page took under half an hour each time. Making the UI feel right took weeks. The skeleton is what made those weeks bearable.
+Each one went from idea to a deployed page in under half an hour. Making the UI feel right took weeks. This post is about the skeleton, because it's what made those weeks bearable.
 
 ## The skeleton
 
@@ -31,7 +31,7 @@ conftest.py       starts the server on a free port for the tests
 .github/workflows/pages.yml
 ```
 
-**No bundler.** Libraries are resolved by an import map in `index.html`, and that is the whole build system. This is what PCL Viewer adds for three.js, for example:
+**No bundler.** Libraries are resolved by an import map in `index.html`, and that's the whole build system. Here's what PCL Viewer adds for three.js, for example:
 
 ```html
 <script type="importmap">
@@ -44,11 +44,11 @@ conftest.py       starts the server on a free port for the tests
 </script>
 ```
 
-The three sites also use Preact plus [htm](https://github.com/developit/htm) for components without JSX, so nothing needs transpiling. That is a project choice; the template does not care which libraries go in the map.
+All three sites also use Preact with [htm](https://github.com/developit/htm), which gives you components without JSX, so there's nothing to transpile. That's my choice for these projects, not something the template cares about. Put whatever you like in the map.
 
-**The filesystem is the router.** What They Mean has six concept pages, each its own folder with its own `index.html`, `app.js` and `styles.css`, reached by a relative link from the menu. Styles cannot leak between demos, and adding one is `cp -r web/db web/<name>` plus a card on the menu. No JS router, no server rewrites, and relative links mean the project-path Pages URL just works.
+**The filesystem is the router.** What They Mean has six concept pages. Each one is its own folder with its own `index.html`, `app.js` and `styles.css`, and the menu links to it with a relative path. Styles can't leak between demos, and adding a new one is `cp -r web/db web/<name>` plus a card on the menu. There's no JS router and no server rewrites, and because every link is relative, the project-path Pages URL just works.
 
-**One flag makes the tests fast.** Every app sets `window.__APP = { ready: true }` once rendered, and the tests wait on it instead of sleeping:
+**One flag keeps the tests fast.** Every app sets `window.__APP = { ready: true }` once it has rendered, and the tests wait on that instead of sleeping:
 
 ```python
 def test_page_loads(server_url, page, shot):
@@ -58,7 +58,7 @@ def test_page_loads(server_url, page, shot):
     shot("home")
 ```
 
-`shot("home")` is the other half. Tests screenshot at visually meaningful moments, numbered in order, so `test-results/shots/` reads as a walkthrough of the app after every run. Archer goes further: its suite plays the game through `window.__ARCHER` hooks with a seeded RNG, so runs are reproducible and the screenshots show real arrows in flight.
+That `shot("home")` is the other half of the trick. Tests take a screenshot whenever they reach a state worth seeing, numbered in order, so after every run `test-results/shots/` reads like a walkthrough of the app. Archer takes this further: its suite actually plays the game through `window.__ARCHER` hooks with a seeded RNG, so every run is reproducible and the screenshots show real arrows in flight.
 
 **Deploy: test, build, deploy.** Pull requests run the first two jobs as a check. Pushes to `main` run all three.
 
@@ -91,9 +91,9 @@ jobs:
         uses: actions/deploy-pages@v4
 ```
 
-The "build" is a `cp`.
+Yes, the "build" is a `cp`.
 
-One-time setup: **Settings → Pages → Source: GitHub Actions**. The site appears at `https://<owner>.github.io/<repo>/`. Pages serves one artifact per repo, so the samples repo stages both apps into it (`_site/pcl-viewer`, `_site/archer`) with a root redirect.
+The one-time setup is **Settings → Pages → Source: GitHub Actions**, and the site shows up at `https://<owner>.github.io/<repo>/`. Pages only serves one artifact per repo, so the samples repo stages both apps into it (`_site/pcl-viewer` and `_site/archer`) with a root redirect.
 
 ## The loop
 
@@ -103,46 +103,46 @@ uv run pytest         # tests + fresh screenshots
 git push              # CI tests and deploys
 ```
 
-Nothing to install beyond `uv` and a browser. No `node_modules`, no watcher. Refresh the tab and the edit is there, because `serve.py` sends `Cache-Control: no-store`.
+There's nothing to install beyond `uv` and a browser. No `node_modules`, no watcher. You refresh the tab and your edit is there, because `serve.py` sends `Cache-Control: no-store`.
 
 ## Concept to preliminary site: fast
 
-From empty folder to a tested, documented, deployable first version:
+From an empty folder to a tested, documented, deployable first version:
 
 - **PCL Viewer** — 16 minutes
 - **Archer** — 24 minutes
 - **What They Mean** — one day, first demo and test suite included
 
-These apps are not trivial. The viewer decodes Draco-compressed LiDAR frames through a bounded worker queue. The game runs animated glTF characters with arrow physics, cover, and a monster radar. The speed comes from the skeleton removing every question that is not about the app. Where do files go? `web/`. How do I run it? `./run.sh`. How do I ship it? Push.
+These aren't toy apps. The viewer decodes Draco-compressed LiDAR frames through a bounded worker queue. The game runs animated glTF characters with arrow physics, cover, and a monster radar. What makes them fast to start is that the skeleton has already answered every question that isn't about the app itself. Where do files go? `web/`. How do I run it? `./run.sh`. How do I ship it? Push.
 
 ## Fine-tuning the UI: slow
 
-The first version of every site was live within a day. Then the UI ate weeks: 24 pull requests on PCL Viewer in 8 days, 48 on Archer in a month, 25 and counting on What They Mean.
+Every one of these sites was live within a day. Then the UI ate weeks: 24 pull requests on PCL Viewer in 8 days, 48 on Archer in a month, 25 and counting on What They Mean.
 
-**PCL Viewer — Where should the camera start?** Bird's-eye, then low and forward-facing, then closer to the sensor, then aimed down the road, then an elevated chase-cam. Six tries for a question a user never consciously asks.
+**PCL Viewer — Where should the camera start?** Bird's-eye at first. Then low and forward-facing. Then closer to the sensor. Then aimed down the road. Then an elevated chase-cam. Six tries to settle a question no user ever consciously asks.
 
-**Archer — How should the aim cue look?** A bullseye, then a dashed trajectory lane, then a marker at the impact point, then a soft warmth on the hit zone, then a brighter one. The final answer is a small point light on the patch of ground or enemy the arrow would hit, nothing drawn over the scene.
+**Archer — How should the aim cue look?** It started as a bullseye, became a dashed trajectory lane, then got a marker at the impact point, then a soft warmth on the hit zone, then a brighter one. Where it ended up is a small point light on the exact patch of ground or enemy the arrow would hit, with nothing drawn over the scene at all.
 
-**What They Mean — How tall should a panel be?** The database demo's context pane went from half the screen to "size to content" to "cap at 50vh" in one day. The Play demo button moved three times before it settled next to the back link.
+**What They Mean — How tall should a panel be?** The database demo's context pane went from half the screen to "size to content" to "cap at 50vh", all in one day. The Play demo button moved three times before it settled next to the back link.
 
-These are just a few examples. Most of the pull requests were this kind of small correction, and none of them could have been planned up front. You look at the page, something is off, you change it, you look again.
+Those are just a few examples. Most of the pull requests were this kind of small correction, and I couldn't have planned any of them up front. You look at the page, something's off, you change it, you look again.
 
 ## Why the tight build makes the slow part survivable
 
-Every one of those pull requests was cheap, and that is the point of the build process being this small:
+Every one of those pull requests was cheap, and that's the whole point of keeping the build this small:
 
-- **The screenshots are the review.** After `uv run pytest`, I look at a folder of PNGs, not a running app I have to click through. A camera-default change is two files side by side.
-- **Every push is a deploy.** Ten minutes after a change I could send a link and ask "does the aim cue read better now?"
-- **Nothing between the edit and the browser.** No stale build, no watcher to restart, no source-map mismatch. The file I edited is the file the browser ran.
-- **The tests already drive the app.** When a UI element moved, the e2e that clicked it failed and the screenshot showed where it went. Archer's tests guard that the title screen quotes the real stage count.
+- **The screenshots are the review.** After `uv run pytest` I look at a folder of PNGs, not a running app I have to click through. A camera-default change is two files side by side.
+- **Every push is a deploy.** Ten minutes after a change I could send someone a link and ask "does the aim cue read better now?"
+- **Nothing sits between the edit and the browser.** No stale build, no watcher to restart, no source-map mismatch. The file I edited is the file the browser ran.
+- **The tests already drive the app.** When a UI element moved, the e2e that clicked it failed and the screenshot showed me where it went. Archer's tests even check that the title screen quotes the real stage count.
 
 Going back and forth on a panel height a few times in one day might look like indecision. It isn't. It's just what it takes to get a UI right, and when each try costs a few minutes instead of an afternoon, you can afford to keep going until it feels right.
 
 ## Steal it
 
-The skeleton lives at [kolodkin/spa-template](https://github.com/kolodkin/spa-template): a "Hello, world" page, the server, three e2e tests with screenshots, and the test-build-deploy workflow. It is a GitHub template repository: click **Use this template**, flip Pages to "GitHub Actions" in the new repo, push, and you have a live site.
+The skeleton lives at [kolodkin/spa-template](https://github.com/kolodkin/spa-template): a "Hello, world" page, the server, three e2e tests with screenshots, and the test-build-deploy workflow. It's a GitHub template repository, so click **Use this template**, flip Pages to "GitHub Actions" in the new repo, push, and you have a live site.
 
-Then replace `web/` with whatever you want to make. The build will not slow you down. The UI will, and that is fine. That part is the actual work.
+Then replace `web/` with whatever you want to make. The build won't be what slows you down. The UI will, and that's fine. That part is the actual work.
 
 - [What They Mean](https://github.com/kolodkin/what-they-mean) — Preact + htm, six standalone demo folders
 - [PCL Viewer](https://github.com/kolodkin/samples/tree/main/pcl-viewer) — three.js, Draco, hyparquet, streaming from a Hugging Face dataset
