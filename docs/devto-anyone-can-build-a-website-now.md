@@ -14,6 +14,10 @@ I've got three sites live that look nothing like each other:
 
 Under the hood they're the same thing: a folder of plain HTML, CSS and ES modules, a Python `http.server` for local dev, Playwright tests, and a GitHub Actions workflow that deploys to Pages on every push to `main`. No bundler, no Node toolchain, no build step.
 
+Want one? Create a repo from the template at [kolodkin/spa-template](https://github.com/kolodkin/spa-template) with **Use this template**. Or prompt your agent:
+
+> create an SPA GitHub Pages repo based on https://github.com/kolodkin/spa-template
+
 Each one went from idea to a deployed page in under half an hour. Making the UI feel right took weeks. This post is about the skeleton, because it's what made those weeks bearable.
 
 ## The skeleton
@@ -30,10 +34,6 @@ tests/            Playwright e2e
 conftest.py       starts the server on a free port for the tests
 .github/workflows/pages.yml
 ```
-
-Create a repo from the template at [kolodkin/spa-template](https://github.com/kolodkin/spa-template) with **Use this template**. Or prompt your agent:
-
-> create an SPA GitHub Pages repo based on https://github.com/kolodkin/spa-template
 
 **No bundler.** Libraries are resolved by an import map in `index.html`, and that's the whole build system. Here's what PCL Viewer adds for three.js, for example:
 
