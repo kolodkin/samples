@@ -50,7 +50,7 @@ conftest.py       starts the server on a free port for the tests
 
 All three sites also use Preact with [htm](https://github.com/developit/htm), which gives you components without JSX, so there's nothing to transpile. That's my choice for these projects, not something the template cares about. Put whatever you like in the map.
 
-**The filesystem is the router.** What They Mean has six concept pages. Each one is its own folder with its own `index.html`, `app.js` and `styles.css`, and the menu links to it with a relative path. Styles can't leak between demos, and adding a new one is `cp -r web/db web/<name>` plus a card on the menu. There's no JS router and no server rewrites, and because every link is relative, the project-path Pages URL just works.
+**The filesystem is the router.** What They Mean's six concept pages are six folders, each with its own `index.html`, `app.js` and `styles.css`, linked from the menu by a relative path. No JS router, no server rewrites, and no way for one demo's styles to leak into another. Adding a page is `cp -r web/db web/<name>` plus a card on the menu.
 
 **One flag keeps the tests fast.** Every app sets `window.__APP = { ready: true }` once it has rendered, and the tests wait on that instead of sleeping:
 
