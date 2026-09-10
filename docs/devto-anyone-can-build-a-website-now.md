@@ -133,11 +133,4 @@ Those are just a few examples. Most of the pull requests were this kind of small
 
 ## Why the tight build makes the slow part survivable
 
-Every one of those pull requests was cheap, and that's the whole point of keeping the build this small:
-
-- **The screenshots are the review.** After `uv run pytest` I look at a folder of PNGs, not a running app I have to click through. A camera-default change is two files side by side.
-- **Every push is a deploy.** Ten minutes after a change I could send someone a link and ask "does the aim cue read better now?"
-- **Nothing sits between the edit and the browser.** No stale build, no watcher to restart, no source-map mismatch. The file I edited is the file the browser ran.
-- **The tests already drive the app.** When a UI element moved, the e2e that clicked it failed and the screenshot showed me where it went. Archer's tests even check that the title screen quotes the real stage count.
-
-Going back and forth on a panel height a few times in one day might look like indecision. It isn't. It's just what it takes to get a UI right, and when each try costs a few minutes instead of an afternoon, you can afford to keep going until it feels right.
+Every one of those pull requests was cheap, and that's the whole point of keeping the build this small. After `uv run pytest` I look at a folder of screenshots, not a running app I have to click through. Ten minutes after a change I can send someone a link and ask "does the aim cue read better now?" Nothing sits between the edit and the browser, so the file I edited is the file the browser ran. Going back and forth on a panel height a few times in one day might look like indecision, but it's just what it takes to get a UI right, and when each try costs minutes instead of an afternoon, you can afford to keep going until it feels right.
