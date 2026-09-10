@@ -1,7 +1,7 @@
 ---
-title: "Anyone Can Build a Website Now: One No-Build SPA Skeleton, Three Sites, a Tight Deploy Loop"
+title: "Anyone Can Build a Website Now: One No-Build SPA Structure, Three Sites, a Tight Deploy Loop"
 published: false
-description: "Three very different single-page apps share one no-bundler skeleton and a push-to-deploy loop. The build was never the slow part."
+description: "Three very different single-page apps share one no-bundler structure and a push-to-deploy loop. The build was never the slow part."
 tags: webdev, javascript, github, showdev
 series: "Anyone Can Build a Website Now"
 ---
@@ -18,9 +18,9 @@ Want one? Create a repo from the template at [kolodkin/spa-template](https://git
 
 > create an SPA GitHub Pages repo based on https://github.com/kolodkin/spa-template
 
-Each one went from idea to a deployed page in under half an hour. Making the UI feel right took weeks. This post is about the skeleton, because it's what made those weeks bearable.
+Each one went from idea to a deployed page in under half an hour. Making the UI feel right took weeks. This post is about the structure, because it's what made those weeks bearable.
 
-## The skeleton
+## The structure
 
 ```
 web/
@@ -117,7 +117,7 @@ From an empty folder to a tested, documented, deployable first version:
 - **Archer** — 24 minutes
 - **What They Mean** — one day, first demo and test suite included
 
-These aren't toy apps. The viewer decodes Draco-compressed LiDAR frames through a bounded worker queue. The game runs animated glTF characters with arrow physics, cover, and a monster radar. What makes them fast to start is that the skeleton has already answered every question that isn't about the app itself. Where do files go? `web/`. How do I run it? `./run.sh`. How do I ship it? Push.
+These aren't toy apps. The viewer decodes Draco-compressed LiDAR frames through a bounded worker queue. The game runs animated glTF characters with arrow physics, cover, and a monster radar. What makes them fast to start is that the structure has already answered every question that isn't about the app itself. Where do files go? `web/`. How do I run it? `./run.sh`. How do I ship it? Push.
 
 ## Fine-tuning the UI: slow
 
