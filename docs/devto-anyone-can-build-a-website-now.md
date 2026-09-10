@@ -31,6 +31,10 @@ conftest.py       starts the server on a free port for the tests
 .github/workflows/pages.yml
 ```
 
+Create a repo from the template at [kolodkin/spa-template](https://github.com/kolodkin/spa-template) with **Use this template**. Or prompt your agent:
+
+> create an SPA GitHub Pages repo based on https://github.com/kolodkin/spa-template
+
 **No bundler.** Libraries are resolved by an import map in `index.html`, and that's the whole build system. Here's what PCL Viewer adds for three.js, for example:
 
 ```html
@@ -137,13 +141,3 @@ Every one of those pull requests was cheap, and that's the whole point of keepin
 - **The tests already drive the app.** When a UI element moved, the e2e that clicked it failed and the screenshot showed me where it went. Archer's tests even check that the title screen quotes the real stage count.
 
 Going back and forth on a panel height a few times in one day might look like indecision. It isn't. It's just what it takes to get a UI right, and when each try costs a few minutes instead of an afternoon, you can afford to keep going until it feels right.
-
-## Steal it
-
-The skeleton lives at [kolodkin/spa-template](https://github.com/kolodkin/spa-template): a "Hello, world" page, the server, three e2e tests with screenshots, and the test-build-deploy workflow. It's a GitHub template repository, so click **Use this template**, flip Pages to "GitHub Actions" in the new repo, push, and you have a live site.
-
-Then replace `web/` with whatever you want to make. The build won't be what slows you down. The UI will, and that's fine. That part is the actual work.
-
-- [What They Mean](https://github.com/kolodkin/what-they-mean) — Preact + htm, six standalone demo folders
-- [PCL Viewer](https://github.com/kolodkin/samples/tree/main/pcl-viewer) — three.js, Draco, hyparquet, streaming from a Hugging Face dataset
-- [Archer](https://github.com/kolodkin/samples/tree/main/archer) — three.js, glTF characters, seeded RNG, e2e that plays the game
