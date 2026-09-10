@@ -133,4 +133,4 @@ Those are just a few examples. Most of the pull requests were this kind of small
 
 ## Why the tight build makes the slow part survivable
 
-Every one of those pull requests was cheap, and that's the whole point of keeping the build this small. After `uv run pytest` I look at a folder of screenshots, not a running app I have to click through. Ten minutes after a change I can send someone a link and ask "does the aim cue read better now?" Nothing sits between the edit and the browser, so the file I edited is the file the browser ran. Going back and forth on a panel height a few times in one day might look like indecision, but it's just what it takes to get a UI right, and when each try costs minutes instead of an afternoon, you can afford to keep going until it feels right.
+Going back and forth on a panel height a few times in one day might look like indecision. It's just what it takes to get a UI right. When each try costs minutes instead of an afternoon, you can afford to keep going until it feels right.
