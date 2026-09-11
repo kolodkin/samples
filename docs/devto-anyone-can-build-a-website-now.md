@@ -14,7 +14,7 @@ I've got three sites live that look nothing like each other:
 
 Under the hood they're the same thing: a folder of plain HTML, CSS and ES modules, a Python `http.server` for local dev, Playwright tests, and a GitHub Actions workflow that deploys to Pages on every push to `main`. No bundler, no Node toolchain, no build step.
 
-Want one? Create a repo from the template at [kolodkin/spa-template](https://github.com/kolodkin/spa-template) with **Use this template**. Or prompt your agent:
+Getting your own is a two-minute job. [kolodkin/spa-template](https://github.com/kolodkin/spa-template) is a GitHub template, so hit **Use this template** — or say to your agent:
 
 > create an SPA GitHub Pages repo based on https://github.com/kolodkin/spa-template
 
