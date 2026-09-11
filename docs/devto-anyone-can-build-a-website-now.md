@@ -134,3 +134,5 @@ Those are just a few examples. Most of the pull requests were this kind of small
 ## Why the tight build makes the slow part survivable
 
 Going back and forth on a panel height a few times in one day might look like indecision. It's just what it takes to get a UI right. When each try costs minutes instead of an afternoon, you can afford to keep going until it feels right.
+
+Feel free to reach out with any questions, in the comments or directly. Happy to go deeper on any part of this.
