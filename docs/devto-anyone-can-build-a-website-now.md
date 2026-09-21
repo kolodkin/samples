@@ -1,5 +1,5 @@
 ---
-title: "Agentic Flow for a Simple SPA: Three Sites, Three Runs"
+title: "Agentic Flow for a Simple SPA Anyone Can Build"
 published: false
 description: "Three single-page apps, 97 agent pull requests, one no-build structure. Getting the first version up was minutes. Steering the UI took weeks."
 tags: webdev, ai, javascript, showdev
