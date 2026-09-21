@@ -1,12 +1,12 @@
 ---
-title: "Anyone Can Build a Website Now: One No-Build SPA Structure, Three Sites, a Tight Deploy Loop"
+title: "Agentic Flow for a Simple SPA: Three Sites, Three Runs"
 published: false
-description: "Three very different single-page apps share one no-bundler structure and a push-to-deploy loop. The build was never the slow part."
-tags: webdev, javascript, github, showdev
+description: "Three single-page apps, 97 agent pull requests, one no-build structure. Getting the first version up was minutes. Steering the UI took weeks."
+tags: webdev, ai, javascript, showdev
 series: "Anyone Can Build a Website Now"
 ---
 
-I've got three sites live that look nothing like each other:
+I've got three sites live that look nothing like each other, and I didn't hand-write any of them. An agent did, across 97 pull requests that I reviewed and merged.
 
 - **[What They Mean](https://kolodkin.github.io/what-they-mean/)** — tech concepts explained to non-developers, one idea per screen
 - **[PCL Viewer](https://kolodkin.github.io/samples/pcl-viewer/)** — a LiDAR point-cloud viewer that streams a KITTI drive and decodes it in the browser
@@ -18,7 +18,7 @@ Getting your own is a two-minute job. [kolodkin/spa-template](https://github.com
 
 > create an SPA GitHub Pages repo based on https://github.com/kolodkin/spa-template
 
-Each one went from idea to a deployed page in under half an hour. Making the UI feel right took weeks. This post is about the structure, because it's what made those weeks bearable.
+Getting each one to a first deployed page took minutes. Steering the UI to something I actually liked took weeks. This post is about the flow that made the second part survivable.
 
 ## The structure
 
@@ -109,6 +109,10 @@ git push              # CI tests and deploys
 
 There's nothing to install beyond `uv` and a browser. No `node_modules`, no watcher. You refresh the tab and your edit is there, because `serve.py` sends `Cache-Control: no-store`.
 
+With an agent driving, one round is: I describe the change, it works on a branch, runs the suite, and opens a pull request. I look at the screenshots that run produced, and either merge or say what's still wrong. That's it. Every one of the 97 merged pull requests across these three repos came in on an agent branch, and I never once had to read a diff to find out what the page now looked like.
+
+The screenshots are why this works. Reviewing an agent's UI change by reading its code is slow and unreliable, and spinning the app up myself defeats the point of delegating. A folder of numbered PNGs from the run I'm reviewing answers the only question I have, which is whether it looks right yet.
+
 ## Concept to preliminary site: fast
 
 From an empty folder to a tested, documented, deployable first version:
@@ -119,9 +123,11 @@ From an empty folder to a tested, documented, deployable first version:
 
 These aren't toy apps. The viewer decodes Draco-compressed LiDAR frames through a bounded worker queue. The game runs animated glTF characters with arrow physics, cover, and a monster radar. What makes them fast to start is that the structure has already answered every question that isn't about the app itself. Where do files go? `web/`. How do I run it? `./run.sh`. How do I ship it? Push.
 
-## Fine-tuning the UI: slow
+## Steering the UI: slow
 
 Every one of these sites was live within a day. Then the UI ate weeks: 24 pull requests on PCL Viewer in 8 days, 48 on Archer in a month, 25 and counting on What They Mean.
+
+An agent will build you the thing you asked for. It cannot guess what you'll think of it once you see it, and neither can you. So most of those pull requests are one round of me looking and saying "no, more like this."
 
 **PCL Viewer — Where should the camera start?** Bird's-eye at first. Then low and forward-facing. Then closer to the sensor. Then aimed down the road. Then an elevated chase-cam. Six tries to settle a question no user ever consciously asks.
 
@@ -129,10 +135,10 @@ Every one of these sites was live within a day. Then the UI ate weeks: 24 pull r
 
 **What They Mean — How tall should a panel be?** The database demo's context pane went from half the screen to "size to content" to "cap at 50vh", all in one day. The Play demo button moved three times before it settled next to the back link.
 
-Those are just a few examples. Most of the pull requests were this kind of small correction, and I couldn't have planned any of them up front. You look at the page, something's off, you change it, you look again.
+Those are just a few examples. Most of the 97 were this kind of small correction, and I couldn't have specified any of them up front. You look at the page, something's off, you say so, you look again.
 
 ## Why the tight build makes the slow part survivable
 
-Going back and forth on a panel height a few times in one day might look like indecision. It's just what it takes to get a UI right. When each try costs minutes instead of an afternoon, you can afford to keep going until it feels right.
+Going back and forth on a panel height a few times in one day might look like indecision. It's just what it takes to get a UI right. The agent makes each try cost minutes instead of an afternoon, so you can afford to keep going until it feels right — which is the whole trick, because taste is the one part you can't delegate.
 
 Feel free to reach out with any questions, in the comments or directly. Happy to go deeper on any part of this.
