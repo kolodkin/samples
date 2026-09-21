@@ -1,5 +1,5 @@
 ---
-title: "Three Live Sites, One No-Build Setup You Can Copy"
+title: "Anyone Can Build a Website Now: One No-Build SPA Structure, Three Sites, a Tight Deploy Loop"
 published: false
 description: "Three very different single-page apps share one no-bundler structure and a push-to-deploy loop. The build was never the slow part."
 tags: webdev, javascript, github, showdev
