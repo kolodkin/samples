@@ -6,7 +6,7 @@ tags: webdev, ai, javascript, showdev
 series: "Anyone Can Build a Website Now"
 ---
 
-I've got three sites live that look nothing like each other, and I didn't hand-write any of them. An agent did, across 97 pull requests that I reviewed and merged.
+I've got three sites live that look nothing like each other, and I vibe-coded all of them. An agent wrote every line across 97 pull requests; I reviewed the screenshots and merged.
 
 - **[What They Mean](https://kolodkin.github.io/what-they-mean/)** — tech concepts explained to non-developers, one idea per screen
 - **[PCL Viewer](https://kolodkin.github.io/samples/pcl-viewer/)** — a LiDAR point-cloud viewer that streams a KITTI drive and decodes it in the browser
