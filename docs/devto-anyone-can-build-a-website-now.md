@@ -127,7 +127,7 @@ These aren't toy apps. The viewer decodes Draco-compressed LiDAR frames through 
 
 Every one of these sites was live within a day. Then the UI ate weeks: 24 pull requests on PCL Viewer in 8 days, 48 on Archer in a month, 25 and counting on What They Mean.
 
-An agent will build you the thing you asked for. It cannot guess what you'll think of it once you see it, and neither can you. So most of those pull requests are one round of me looking and saying "no, more like this."
+An agent builds exactly what you specify. Nobody knows quite what they want until they see it, so most of those pull requests carry one round of review feedback.
 
 **PCL Viewer — Where should the camera start?** Bird's-eye at first. Then low and forward-facing. Then closer to the sensor. Then aimed down the road. Then an elevated chase-cam. Six tries to settle a question no user ever consciously asks.
 
