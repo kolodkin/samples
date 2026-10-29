@@ -9,7 +9,7 @@ By default the scanner mirror-clones each repo and walks its **full git
 history**, so a secret that was committed and later "removed" is still caught.
 Every finding carries `commit_sha`, `commit_author`, `first_seen` (the
 introducing commit's date), and `still_present_at_head`; the report groups
-findings into live-at-HEAD vs historical-only. `--head-only` keeps the original
+findings into live-at-HEAD vs historical-only. `head_only=true` keeps the original
 API-based current-HEAD scan for a fast pass. History details, including the
 blob-dedup walk and safety caps, are in the sections below.
 
@@ -118,8 +118,8 @@ and `raw.githubusercontent.com` for file content. `GITHUB_TOKEN`, when set,
 raises the rate limit to 5000 req/hr (60 req/hr unauthenticated). A rate-limit
 response raises `RateLimitError`; per-repo network errors are isolated.
 
-Targets come from `--targets`/`params`; when neither is given, the
-`GITHUB_REPOS` env var is the fallback (an explicit `--targets` overrides it).
+Targets come from the `targets` job kwarg; when it is not given, the
+`GITHUB_REPOS` env var is the fallback.
 It holds comma-separated entries, each `org|repo` (a single repo) or a bare
 `org` (enumerate the org) — e.g. `GITHUB_REPOS="acme|widgets,octocat"`. The pipe
 form is confined to this env var; `parse_repos_env` normalises it to the
@@ -138,7 +138,7 @@ default remains `octocat/Hello-World`.
 
 ## Airtable output (opt-in)
 
-Gated on `--airtable` plus `AIRTABLE_API_KEY` / `AIRTABLE_BASE_ID`. Two tables
+Gated on `publish_airtable=true` plus `AIRTABLE_API_KEY` / `AIRTABLE_BASE_ID`. Two tables
 are published in replace mode: **GitHub Findings** (one row per redacted
 finding) and **GitHub Exposure Summary** (one row per org). Table names can be
 overridden via `AIRTABLE_FINDINGS_TABLE` / `AIRTABLE_SUMMARY_TABLE`.

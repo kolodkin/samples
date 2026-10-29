@@ -63,7 +63,7 @@ from .models import HFPublishResult, QualityIssues, RawProfile
 from .report import generate_report
 from .tmdb import enrich_with_tmdb, load_tmdb_dump, measure_enrichment
 
-_HF_TOKEN_REQUIRED_MSG = "publish_hf=True (--publish) requires the HF_TOKEN environment variable to be set"
+_HF_TOKEN_REQUIRED_MSG = "publish_hf=True requires the HF_TOKEN environment variable to be set"
 
 
 def _require_hf_token_if_publishing(publish_hf: bool) -> None:

@@ -18,7 +18,10 @@ example_projects/<name>/
 - `__main__.py` imports and calls `main()` from `__init__.py`
 - `<name>.sh` is the user-facing entry point — `cd`s to its own directory, runs `python -m <name>`
 - Shell scripts use `PYTHON="${PYTHON:-uv run python}"` for dual-mode support (monorepo or standalone)
-- Orchestration projects: `.sh` registers the job, starts worker, polls status, stops worker
+- Orchestration projects support exactly **one** deployment mode, named in the `.sh` header and README:
+  - **Local**: `unset AAICLICK_CH_URL AAICLICK_SQL_URL`, `python -m aaiclick setup`, then `python -m <name> "$@"` (inline `ajob_test`)
+  - **Distributed**: default the two URLs, call `../scripts/setup_aaiclick`, start `background` + `execution-worker`, then `python -m aaiclick run-job <name>.<job_func> --progress "$@"`
+  - No custom flag parsing or poll loops — callers pass job kwargs as `--set KEY=VALUE` (JSON-typed)
 - Each example project should have a `report.py` file containing final report printout logic
 - The `@job` function returns the terminal task directly (e.g. `return report`) — the framework auto-discovers all upstream tasks via the dependency graph; `report.py` is only responsible for the printout
 - Always prefer `Object.markdown()` for rendering tables in `report.py` — avoid custom table rendering logic

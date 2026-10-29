@@ -29,7 +29,7 @@ Environment variables:
     GITHUB_REPOS         — default targets when no explicit ``targets`` are
                            passed: comma-separated ``org|repo`` or bare ``org``
                            entries (e.g. ``"acme|widgets,octocat"``). An explicit
-                           ``--targets``/``params`` overrides it.
+                           ``targets`` kwarg overrides it.
     GHX_FIXTURE_DIR      — offline fixture mode (tests/CI)
     AIRTABLE_API_KEY     — Airtable PAT (required with publish_airtable=True)
     AIRTABLE_BASE_ID     — Airtable base id (required with publish_airtable=True)
