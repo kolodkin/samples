@@ -40,11 +40,15 @@ async def load_tmdb_dump(clean: Object) -> Object:
     """Fetch the TMDB-IMDB Parquet, pre-filtered to titles in ``clean``.
 
     ClickHouse's ``url()`` table function streams the upstream file but
-    only writes rows matching ``tconst IN clean`` to the local table —
+    only writes rows matching ``tconst IN keys`` to the local table —
     on a ~190 MB upstream file we end up with a few MB locally for the
-    demo dataset. Hugging Face 302-redirects ``/api/.../parquet/...``
-    URLs to a CDN host, so ``max_http_get_redirects`` is raised.
+    demo dataset. ``keys`` is a materialized single-column table because
+    ``where`` rejects subqueries, and ClickHouse's ``IN <table>`` form
+    needs the set's table to have exactly one column. Hugging Face
+    302-redirects ``/api/.../parquet/...`` URLs to a CDN host, so
+    ``max_http_get_redirects`` is raised.
     """
+    keys = await clean["tconst"].copy()
     return await create_object_from_url(
         url=TMDB_URL,
         columns=["tconst", "title", "overview"],
@@ -55,7 +59,7 @@ async def load_tmdb_dump(clean: Object) -> Object:
             "overview": ColumnInfo("String", nullable=True),
         },
         ch_settings={"max_http_get_redirects": 10},
-        where=f"tconst IN (SELECT tconst FROM {clean.table})",
+        where=f"tconst IN {keys.table}",
     )
 
 

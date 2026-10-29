@@ -8,10 +8,10 @@ Large-scale data curation pipeline that loads IMDb title.basics (~10M rows) from
 ./imdb-dataset-builder.sh
 
 # Quick sample (500k rows)
-./imdb-dataset-builder.sh --sample
+./imdb-dataset-builder.sh --set limit=500000
 
 # Against an already-running cluster (probed, not provisioned)
-AAICLICK_CH_URL=... AAICLICK_SQL_URL=... ./imdb-dataset-builder.sh --sample
+AAICLICK_CH_URL=... AAICLICK_SQL_URL=... ./imdb-dataset-builder.sh --set limit=500000
 ```
 
-Publishing is opt-in. Pass `--publish` (sets `publish_hf=True`) with `HF_TOKEN` set to publish the curated dataset to Hugging Face Hub — the flag requires the token, so the pipeline fails fast if it is unset. Pass `--airtable` (sets `publish_airtable=True`) with `AIRTABLE_API_KEY` + `AIRTABLE_BASE_ID` (table defaults to `IMDB`) to publish a ~200-row stratified-by-genre showcase sample to Airtable.
+Publishing is opt-in. Pass `--set publish_hf=true` with `HF_TOKEN` set to publish the curated dataset to Hugging Face Hub — it requires the token, so the pipeline fails fast if it is unset. Pass `--set publish_airtable=true` with `AIRTABLE_API_KEY` + `AIRTABLE_BASE_ID` (table defaults to `IMDB`) to publish a ~200-row stratified-by-genre showcase sample to Airtable.

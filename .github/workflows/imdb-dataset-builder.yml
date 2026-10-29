@@ -90,12 +90,9 @@ jobs:
           # Only export HF_REPO_ID when the input was given; an empty value
           # would override the pipeline's built-in default with "".
           if [ -n "$HF_REPO_ID_INPUT" ]; then export HF_REPO_ID="$HF_REPO_ID_INPUT"; fi
-          FLAGS=()
-          if [ "$SAMPLE" = "true" ]; then FLAGS+=(--sample); fi
-          FLAGS+=(--year-from "$YEAR_FROM")
-          if [ "$PUBLISH_HF" = "true" ]; then FLAGS+=(--publish); fi
-          if [ "$PUBLISH_AIRTABLE" = "true" ]; then FLAGS+=(--airtable); fi
-          ./imdb-dataset-builder.sh "${FLAGS[@]}"
+          ARGS=(--set "year_from=$YEAR_FROM" --set "publish_hf=$PUBLISH_HF" --set "publish_airtable=$PUBLISH_AIRTABLE")
+          if [ "$SAMPLE" = "true" ]; then ARGS+=(--set limit=500000); fi
+          ./imdb-dataset-builder.sh "${ARGS[@]}"
 
       - name: Publish report to job summary
         if: always()
