@@ -32,7 +32,7 @@ It defines no contract of its own — the caller owns that. What to set up is re
 
 So a run script exports what it needs and calls this with **no flags**: both URLs get ClickHouse + PostgreSQL + migrations, a bare shell gets chdb + SQLite, and only a project that exports a model pays for an AI provider.
 
-Note the asymmetry that makes that work: an unset URL still means a backend (the embedded one), because aaiclick always needs somewhere to put state — but an unset model means *no AI step at all*, not aaiclick's default model, so `github-exposure-scanner` never provisions an LLM it doesn't use.
+Note the asymmetry that makes that work: an unset URL still means a backend (the embedded one), because aaiclick always needs somewhere to put state — but an unset model means *no AI step at all*, not aaiclick's default model, so `imdb-dataset-builder` and `github-exposure-scanner` never provision an LLM they don't use.
 
 The two flags are escape hatches for overriding that environment, not the way to drive it. `--local` needs no branch of its own — it unsets both URLs, which is exactly how aaiclick spells "embedded". `--ollama` forces the local AI path even when `AAICLICK_AI_MODEL` names a hosted model.
 
