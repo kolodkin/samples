@@ -11,8 +11,8 @@
 #                                      aaiclick uses is stripped automatically)
 #
 # Usage:
-#   scripts/setup_ollama
-#   AAICLICK_AI_MODEL=ollama/qwen2.5:7b scripts/setup_ollama
+#   claudeai/setup_ollama
+#   AAICLICK_AI_MODEL=ollama/qwen2.5:7b claudeai/setup_ollama
 #
 # Verify:
 #   ollama list

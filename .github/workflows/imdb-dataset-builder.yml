@@ -1,7 +1,7 @@
 name: imdb-dataset-builder
 
 # Manual-only: regenerate (and optionally publish) the curated IMDb dataset.
-# Databases are provided as service containers; scripts/setup_aaiclick detects
+# Databases are provided as service containers; claudeai/setup_aaiclick detects
 # them and applies migrations instead of provisioning anything via apt.
 on:
   workflow_dispatch:
@@ -71,7 +71,7 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      # The runner calls scripts/setup_aaiclick, which probes both service
+      # The runner calls claudeai/setup_aaiclick, which probes both service
       # containers, finds them reachable, and applies the orchestration
       # migrations a bare Postgres container does not have.
       - name: Run pipeline

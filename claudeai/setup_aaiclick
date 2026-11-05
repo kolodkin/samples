@@ -2,9 +2,9 @@
 # One entry point for every backend an example project needs, so a run script
 # can provision its dependencies with a single line.
 #
-#   scripts/setup_aaiclick            # whatever the AAICLICK_* environment asks for
-#   scripts/setup_aaiclick --local    # override: embedded backend, whatever the URLs say
-#   scripts/setup_aaiclick --ollama   # override: local Ollama, whatever the model says
+#   claudeai/setup_aaiclick            # whatever the AAICLICK_* environment asks for
+#   claudeai/setup_aaiclick --local    # override: embedded backend, whatever the URLs say
+#   claudeai/setup_aaiclick --ollama   # override: local Ollama, whatever the model says
 #
 # There is no contract here: the caller owns it. What to set up is read from the
 # environment aaiclick itself reads, each variable independent —

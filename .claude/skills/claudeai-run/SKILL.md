@@ -21,4 +21,4 @@ Brings up ClickHouse (`:8123`) and PostgreSQL (`:5432`, with aaiclick migrations
 claudeai/run.sh
 ```
 
-Wraps `scripts/setup_aaiclick` with the distributed URLs defaulted. Idempotent: installs via apt on a fresh container, restarts stopped services after a resume, skips anything already answering. Extra flags pass through (e.g. `--ollama`).
+Wraps `claudeai/setup_aaiclick` with the distributed URLs defaulted. Idempotent: installs via apt on a fresh container, restarts stopped services after a resume, skips anything already answering. Extra flags pass through (e.g. `--ollama`).

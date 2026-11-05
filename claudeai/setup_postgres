@@ -18,8 +18,8 @@
 #   export AAICLICK_SQL_URL="postgresql+asyncpg://aaiclick:secret@localhost:5432/aaiclick"
 #
 # Usage:
-#   scripts/setup_postgres
-#   POSTGRES_PASSWORD=hunter2 scripts/setup_postgres
+#   claudeai/setup_postgres
+#   POSTGRES_PASSWORD=hunter2 claudeai/setup_postgres
 #
 # Verify:
 #   psql "postgresql://aaiclick:secret@localhost:5432/aaiclick" -c '\dt'
