@@ -4,10 +4,10 @@ Setup Scripts
 Repo-wide scripts that provision an example project's dependencies **locally** (apt-based, no Docker) with the same connection contract our CI uses, so code and tests behave identically on a dev machine and in CI.
 
 ```bash
-scripts/setup_aaiclick      # everything a run script needs (calls the others)
-scripts/setup_clickhouse    # local ClickHouse server, CI-aligned
-scripts/setup_postgres      # local PostgreSQL, aaiclick-ready
-scripts/setup_ollama        # local Ollama server + the configured model
+claudeai/setup_aaiclick      # everything a run script needs (calls the others)
+claudeai/setup_clickhouse    # local ClickHouse server, CI-aligned
+claudeai/setup_postgres      # local PostgreSQL, aaiclick-ready
+claudeai/setup_ollama        # local Ollama server + the configured model
 ```
 
 Each script is idempotent (safe to re-run) and uses `sudo` automatically when not run as root. Override defaults via environment variables (see each script's header).
@@ -17,9 +17,9 @@ Each script is idempotent (safe to re-run) and uses `sudo` automatically when no
 The one entry point a run script calls, so provisioning is a single line:
 
 ```bash
-scripts/setup_aaiclick            # whatever the AAICLICK_* environment asks for
-scripts/setup_aaiclick --local    # override: embedded backend, whatever the URLs say
-scripts/setup_aaiclick --ollama   # override: local Ollama, whatever the model says
+claudeai/setup_aaiclick            # whatever the AAICLICK_* environment asks for
+claudeai/setup_aaiclick --local    # override: embedded backend, whatever the URLs say
+claudeai/setup_aaiclick --ollama   # override: local Ollama, whatever the model says
 ```
 
 It defines no contract of its own — the caller owns that. What to set up is read from the environment aaiclick itself reads (`backend.py`, `ai/ollama.py`), each variable independent:

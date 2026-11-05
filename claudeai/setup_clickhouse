@@ -16,8 +16,8 @@
 #   version   latest           (CH_VERSION)
 #
 # Usage:
-#   scripts/setup_clickhouse
-#   CH_PASSWORD=secret scripts/setup_clickhouse
+#   claudeai/setup_clickhouse
+#   CH_PASSWORD=secret claudeai/setup_clickhouse
 #
 # Verify:
 #   clickhouse client --password "$CH_PASSWORD" -q 'SELECT version()'
